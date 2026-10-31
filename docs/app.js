@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.5';
+const VERSION = '1.6';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -169,6 +169,8 @@ function messageErreur(e) {
     ? 'Votre licence KOORDIN a expiré : l’application est en lecture seule. Renouvelez-la dans Abonnement.'
     : 'La licence KOORDIN de votre entreprise a expiré : l’application est en lecture seule. Prévenez votre direction.';
   if (/LIMITE_PROJETS|LIMITE_UTILISATEURS/.test(m)) return `${e?.hint || 'Limite de votre formule atteinte.'} ${role() === 'direction' ? 'Passez à une formule supérieure dans Abonnement.' : 'Prévenez votre direction.'}`;
+  if (/projet_photos|galerie_projet/i.test(m) && /does not exist|schema cache|could not find/i.test(m))
+    return 'La galerie nécessite la mise à jour 1.6 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-1.6.sql.';
   if (/communiques/i.test(m) && /does not exist|schema cache|could not find/i.test(m))
     return 'Cette fonction nécessite la mise à jour 1.5 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-1.5.sql (voir le guide d’installation).';
   if (/row-level security|permission denied|42501/i.test(m)) return 'Vous n’avez pas l’autorisation pour cette action.';
@@ -1284,6 +1286,7 @@ PAGES.projet = async (id) => {
     ...(can(...ROLES_RAPPORT) ? [['rapports', 'Rapports']] : []),
     ['equipe', 'Équipe'],
     ...(can('direction', 'coordinateur', 'achats', 'comptable', 'magasinier') ? [['achats', 'Achats et factures']] : []),
+    ['galerie', '📷 Galerie'],
     ['communiques', 'Communiqués'],
   ];
   if (!onglets.some(([k]) => k === ongletProjet)) ongletProjet = 'apercu';
@@ -1319,6 +1322,7 @@ PAGES.projet = async (id) => {
       const { error } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: 'image/jpeg' });
       if (error) throw error;
       await q(sb.from('projets').update({ photo: chemin }).eq('id', projet.id));
+      await sb.from('projet_photos').insert({ projet_id: projet.id, chemin, legende: 'Photo de couverture' });
       toast('Photo du chantier enregistrée.');
       naviguer();
     } catch (err) {
@@ -1345,7 +1349,7 @@ async function rendreOngletProjet(projet) {
   const zone = $('#onglet');
   zone.innerHTML = loading();
   detruireGraphiques();
-  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques };
+  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques, galerie: ongletGalerie };
   try {
     await ONGLETS[ongletProjet](projet, zone);
   } catch (e) {
@@ -1862,6 +1866,132 @@ PAGES.communiques = async () => {
 
 async function ongletCommuniques(projet, zone) {
   await listeCommuniques(zone, { projetId: projet.id });
+}
+
+// ─── Galerie photo du projet ───
+// Photos ajoutées directement + photos des rapports du terrain, rangées par mois.
+
+async function ongletGalerie(projet, zone) {
+  const ajouter = can('direction', 'coordinateur', 'technicien') && !DEMO;
+  const gerer = can('direction', 'coordinateur');
+  const { data, error } = await sb.rpc('galerie_projet', { p_projet: projet.id });
+  if (error) { zone.innerHTML = `<div class="card">${empty('📷', messageErreur(error))}</div>`; return; }
+  const photos = data || [];
+  const url = await urlsPhotos(photos.map((x) => x.chemin));
+  const visibles = photos.filter((x) => url(x.chemin));
+  let filtre = 'toutes';
+
+  const rendre = () => {
+    const liste = visibles.filter((x) => filtre === 'toutes' || x.source === filtre);
+    const mois = new Map();
+    liste.forEach((x, i) => {
+      const cle = new Date(x.date_photo).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      if (!mois.has(cle)) mois.set(cle, []);
+      mois.get(cle).push(i);
+    });
+    const nb = (src) => visibles.filter((x) => src === 'toutes' || x.source === src).length;
+    zone.innerHTML = `<div class="galerie-barre">
+        <div class="galerie-filtres">${[['toutes', 'Toutes'], ['galerie', 'Ajoutées'], ['rapport', 'Des rapports']].map(([k, l]) => `<button type="button" class="chip-filtre ${k === filtre ? 'actif' : ''}" data-filtre="${k}">${l} <b>${nb(k)}</b></button>`).join('')}</div>
+        ${ajouter ? '<label class="btn primary">📷 Ajouter des photos<input type="file" id="g-ajout" accept="image/*" multiple hidden></label>' : ''}
+      </div>
+      ${liste.length ? [...mois].map(([m, idx]) => `<section class="galerie-mois"><h4>${esc(m.charAt(0).toUpperCase() + m.slice(1))} <span class="muted">· ${idx.length} photo${idx.length > 1 ? 's' : ''}</span></h4>
+        <div class="galerie">${idx.map((i) => `<button type="button" class="galerie-vignette" data-i="${i}" aria-label="Agrandir la photo du ${fdate(liste[i].date_photo)}">
+          <img src="${esc(url(liste[i].chemin))}" alt="" loading="lazy">${liste[i].source === 'rapport' ? '<span class="galerie-tag">📋</span>' : ''}</button>`).join('')}</div></section>`).join('')
+      : `<div class="card">${empty('📷', photos.length ? 'Aucune photo dans ce filtre.' : 'Aucune photo pour ce chantier. Les photos ajoutées ici et celles des rapports du terrain s’afficheront dans la galerie.')}</div>`}`;
+    $$('[data-filtre]', zone).forEach((b) => (b.onclick = () => { filtre = b.dataset.filtre; rendre(); }));
+    $$('[data-i]', zone).forEach((b) => (b.onclick = () => visionneuse(liste, Number(b.dataset.i))));
+    $('#g-ajout', zone)?.addEventListener('change', (e) => envoyerGalerie([...e.target.files]));
+  };
+
+  const envoyerGalerie = (fichiers) => {
+    if (!fichiers.length) return;
+    ouvrirModale({
+      titre: `Ajouter ${fichiers.length} photo${fichiers.length > 1 ? 's' : ''} à la galerie`,
+      boutonOk: 'Envoyer',
+      corps: `<div class="form-grid">${F.text('legende', 'Légende (facultatif)', '', { full: true, placeholder: 'Ex. Coulage de la dalle du R+2' })}
+        <p class="hint full">Les photos sont compressées automatiquement pour économiser vos données mobiles.</p></div>`,
+      onSubmit: async (d, form) => {
+        const btn = $('button[type="submit"]', form);
+        let echecs = 0;
+        for (let i = 0; i < fichiers.length; i++) {
+          btn.textContent = `Envoi ${i + 1}/${fichiers.length}…`;
+          try {
+            const blob = await compresserImage(fichiers[i], 1920, 0.82);
+            const chemin = `${S.entreprise.id}/galerie/${projet.id}/${Date.now()}-${i + 1}.jpg`;
+            const { error: e1 } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: 'image/jpeg' });
+            if (e1) throw e1;
+            await q(sb.from('projet_photos').insert({ projet_id: projet.id, chemin, legende: d.legende }));
+          } catch (err) {
+            echecs++;
+            if (echecs === fichiers.length) { btn.textContent = 'Envoyer'; throw err; }
+          }
+        }
+        toast(echecs ? `${fichiers.length - echecs} photo(s) ajoutée(s), ${echecs} en échec.` : 'Photos ajoutées à la galerie 📷', echecs ? 'warn' : 'ok');
+        ongletGalerie(projet, zone);
+      },
+    });
+  };
+
+  const visionneuse = (liste, depart) => {
+    let i = depart;
+    const ov = document.createElement('div');
+    ov.className = 'visionneuse';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    const fermer = () => { ov.remove(); document.removeEventListener('keydown', clavier); };
+    const aller = (d) => { i = (i + d + liste.length) % liste.length; afficher(); };
+    const clavier = (e) => { if (e.key === 'Escape') fermer(); else if (e.key === 'ArrowLeft') aller(-1); else if (e.key === 'ArrowRight') aller(1); };
+    const afficher = () => {
+      const x = liste[i];
+      const lien = url(x.chemin);
+      const supprimable = x.source === 'galerie' && (gerer || x.auteur_id === S.profil.id) && !DEMO;
+      ov.innerHTML = `<div class="vis-haut"><span>${i + 1} / ${liste.length}</span><button type="button" class="vis-fermer" aria-label="Fermer">×</button></div>
+        <div class="vis-image">${liste.length > 1 ? '<button type="button" class="vis-nav vis-prec" aria-label="Photo précédente">‹</button>' : ''}
+          <img src="${esc(lien)}" alt="${esc(x.legende || 'Photo du chantier')}">
+          ${liste.length > 1 ? '<button type="button" class="vis-nav vis-suiv" aria-label="Photo suivante">›</button>' : ''}</div>
+        <div class="vis-bas">
+          <div class="vis-infos">${x.legende ? `<b>${esc(x.legende)}</b>` : ''}
+            <span>${x.source === 'rapport' ? '📋 Rapport du ' : '📷 Ajoutée le '}${fdate(x.date_photo)} · ${esc(x.auteur || '—')}</span></div>
+          <div class="vis-actions">
+            <a class="btn sm" href="${esc(lien)}" target="_blank" rel="noopener" download>⬇️ Télécharger</a>
+            ${x.source === 'rapport' && (can('direction', 'coordinateur') || x.auteur_id === S.profil.id) ? '<button type="button" class="btn sm" id="vis-rapport">📋 Voir le rapport</button>' : ''}
+            ${gerer && !DEMO ? '<button type="button" class="btn sm" id="vis-couv">🖼️ Mettre en couverture</button>' : ''}
+            ${supprimable ? '<button type="button" class="btn sm danger" id="vis-suppr">Supprimer</button>' : ''}
+          </div></div>`;
+      $('.vis-fermer', ov).onclick = fermer;
+      $('.vis-prec', ov)?.addEventListener('click', () => aller(-1));
+      $('.vis-suiv', ov)?.addEventListener('click', () => aller(1));
+      $('#vis-rapport', ov)?.addEventListener('click', () => { fermer(); detailRapport(x.rapport_id); });
+      $('#vis-couv', ov)?.addEventListener('click', async () => {
+        try {
+          await q(sb.from('projets').update({ photo: x.chemin }).eq('id', projet.id));
+          toast('Photo de couverture mise à jour.');
+          fermer();
+          naviguer();
+        } catch (e) { toast(messageErreur(e), 'err'); }
+      });
+      $('#vis-suppr', ov)?.addEventListener('click', async () => {
+        if (!(await confirmer('Supprimer cette photo de la galerie ?', 'Supprimer'))) return;
+        try {
+          await q(sb.from('projet_photos').delete().eq('id', x.id));
+          if (projet.photo !== x.chemin) sb.storage.from('photos-chantier').remove([x.chemin]);
+          toast('Photo supprimée.');
+          fermer();
+          ongletGalerie(projet, zone);
+        } catch (e) { toast(messageErreur(e), 'err'); }
+      });
+    };
+    // Glisser le doigt pour passer d'une photo à l'autre
+    let x0 = null;
+    ov.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    ov.addEventListener('touchend', (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) aller(dx < 0 ? 1 : -1); x0 = null; });
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.classList.contains('vis-image')) fermer(); });
+    document.addEventListener('keydown', clavier);
+    afficher();
+    document.body.appendChild(ov);
+  };
+
+  rendre();
 }
 
 // Encart « Communiqués récents » en haut du tableau de bord (30 derniers jours)

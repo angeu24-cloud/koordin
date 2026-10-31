@@ -1,11 +1,10 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "date": "2026-11-01",
   "nouveautes": [
-    "Chaque chantier a sa photo de couverture : ajoutez-la depuis la page du chantier (bouton 📷), sinon la dernière photo envoyée par le terrain s'affiche automatiquement.",
-    "Nouvelles illustrations de chantier sur l'écran de connexion, l'accueil et les chantiers sans photo.",
-    "Communiqués : la Direction et la Coordination publient une information ou une affiche (avec image) pour toute l'entreprise ou un seul chantier ; ils apparaissent sur le tableau de bord de chacun.",
-    "Annonces de partenaires (fournisseurs, location d'engins…) dans les tableaux de bord, marquées « Sponsorisé ».",
-    "Graphiques plus lisibles sur téléphone."
+    "Galerie photo pour chaque chantier : onglet « 📷 Galerie » dans la page du projet.",
+    "La galerie réunit les photos ajoutées directement et toutes celles envoyées avec les rapports du terrain, rangées par mois.",
+    "Touchez une photo pour l'afficher en grand, passez à la suivante en glissant le doigt, téléchargez-la ou mettez-la en photo de couverture.",
+    "Direction, Coordination et Techniciens peuvent ajouter plusieurs photos d'un coup, avec une légende."
   ]
 }
