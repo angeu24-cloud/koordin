@@ -1693,7 +1693,8 @@ PAGES['nouveau-rapport'] = async () => {
         ${F.area('incidents', 'Incidents, retards ou problèmes (laisser vide si aucun)', brouillon.incidents, { placeholder: 'Ex. Pluie de 10 h à 13 h, panne bétonnière, absence de 3 ouvriers…' })}
         ${F.area('besoins', 'Besoins (matériaux, matériel, main-d’œuvre)', brouillon.besoins, { placeholder: 'Ex. 50 sacs de ciment pour jeudi, 2 ferrailleurs supplémentaires…' })}
         <div class="field full">Photos du chantier
-          <label class="btn" style="width:max-content">📷 Prendre / ajouter des photos<input type="file" id="photos" accept="image/*" capture="environment" multiple hidden></label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn">📷 Prendre une photo<input type="file" class="choix-photos" accept="image/*" capture="environment" hidden></label>
+            <label class="btn">🖼️ Choisir dans la galerie<input type="file" class="choix-photos" accept="image/*" multiple hidden></label></div>
           <span class="hint">Les photos sont compressées automatiquement pour économiser vos données mobiles.</span>
           <div class="photos mt" id="apercu-photos"></div></div>
       </div>
@@ -1732,7 +1733,7 @@ PAGES['nouveau-rapport'] = async () => {
     $('#apercu-photos', p).innerHTML = photos.map((ph, i) => `<div class="photo-pick"><img src="${ph.url}" alt="Photo ${i + 1}"><button type="button" data-suppr="${i}" aria-label="Retirer">×</button></div>`).join('');
     $$('[data-suppr]', p).forEach((b) => (b.onclick = () => { URL.revokeObjectURL(photos[b.dataset.suppr].url); photos.splice(Number(b.dataset.suppr), 1); rendrePhotos(); }));
   };
-  $('#photos', p).onchange = async (e) => {
+  const ajouterPhotos = async (e) => {
     const fichiers = [...e.target.files].slice(0, 12 - photos.length);
     for (const f of fichiers) {
       const blob = await compresserImage(f);
@@ -1741,6 +1742,7 @@ PAGES['nouveau-rapport'] = async () => {
     e.target.value = '';
     rendrePhotos();
   };
+  $$('.choix-photos', p).forEach((inp) => (inp.onchange = ajouterPhotos));
   $('#effacer', p).onclick = () => { try { localStorage.removeItem(cle); } catch { /* rien */ } naviguer(); };
 
   form.addEventListener('submit', async (e) => {
