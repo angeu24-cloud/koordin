@@ -41,6 +41,7 @@ const ROLES_RAPPORT = ['technicien', 'coordinateur', 'direction'];
 const MENU = [
   { r: 'dashboard', court: 'Accueil',       label: 'Tableau de bord', ico: '📊', roles: TOUS },
   { r: 'projets', court: 'Projets',         label: 'Projets',         ico: '🏗️', roles: TOUS, labelTech: 'Mes chantiers' },
+  { r: 'communiques', court: 'Infos',       label: 'Communiqués',     ico: '📢', roles: TOUS },
   { r: 'nouveau-rapport', court: 'Rapport', label: 'Nouveau rapport', ico: '➕', roles: ['technicien'] },
   { r: 'rapports', court: 'Rapports',        label: 'Rapports',        ico: '📋', roles: ROLES_RAPPORT, labelTech: 'Mes rapports' },
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
@@ -168,6 +169,8 @@ function messageErreur(e) {
     ? 'Votre licence KOORDIN a expiré : l’application est en lecture seule. Renouvelez-la dans Abonnement.'
     : 'La licence KOORDIN de votre entreprise a expiré : l’application est en lecture seule. Prévenez votre direction.';
   if (/LIMITE_PROJETS|LIMITE_UTILISATEURS/.test(m)) return `${e?.hint || 'Limite de votre formule atteinte.'} ${role() === 'direction' ? 'Passez à une formule supérieure dans Abonnement.' : 'Prévenez votre direction.'}`;
+  if (/communiques/i.test(m) && /does not exist|schema cache|could not find/i.test(m))
+    return 'Cette fonction nécessite la mise à jour 1.5 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-1.5.sql (voir le guide d’installation).';
   if (/row-level security|permission denied|42501/i.test(m)) return 'Vous n’avez pas l’autorisation pour cette action.';
   if (/factures_numero_unique|duplicate key/i.test(m)) return 'Ce numéro existe déjà pour ce fournisseur (doublon possible).';
   if (/Invalid login credentials/i.test(m)) return 'Email ou mot de passe incorrect.';
@@ -880,7 +883,7 @@ function ecouterTempsReel() {
     .subscribe();
 }
 
-const ICONES_ACTIVITE = { projet: '🏗️', rapport: '📋', validation: '✅', commande: '🛒', facture: '🧾', stock: '📦', alerte: '🚨', equipe: '👥' };
+const ICONES_ACTIVITE = { projet: '🏗️', rapport: '📋', validation: '✅', commande: '🛒', facture: '🧾', stock: '📦', alerte: '🚨', equipe: '👥', communique: '📢' };
 function feedHTML(activites) {
   if (!activites.length) return empty('🕊️', 'Aucune activité pour le moment');
   return `<div class="feed">${activites.map((a) => `
@@ -967,6 +970,7 @@ PAGES.dashboard = async () => {
   const tableaux = { technicien: dashTechnicien, achats: dashAchats, comptable: dashComptable, magasinier: dashMagasinier };
   await (tableaux[role()] || dashDirection)();
   placerAnnonce($('#zone-annonce'));
+  await encartCommuniques();
 };
 
 function tableauProjets(projets, { montants = true } = {}) {
@@ -1280,6 +1284,7 @@ PAGES.projet = async (id) => {
     ...(can(...ROLES_RAPPORT) ? [['rapports', 'Rapports']] : []),
     ['equipe', 'Équipe'],
     ...(can('direction', 'coordinateur', 'achats', 'comptable', 'magasinier') ? [['achats', 'Achats et factures']] : []),
+    ['communiques', 'Communiqués'],
   ];
   if (!onglets.some(([k]) => k === ongletProjet)) ongletProjet = 'apercu';
   const url = await urlsPhotos([couvertureDe(projet)]);
@@ -1317,7 +1322,7 @@ PAGES.projet = async (id) => {
       toast('Photo du chantier enregistrée.');
       naviguer();
     } catch (err) {
-      toast(/photo/.test(String(err?.message)) ? 'La mise à jour de la base de données « Images et annonces » est nécessaire (voir le kit).' : messageErreur(err), 'err', 7000);
+      toast(/photo/.test(String(err?.message)) ? 'Cette fonction nécessite la mise à jour 1.5 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-1.5.sql.' : messageErreur(err), 'err', 7000);
     }
   });
   $('#del-p', p)?.addEventListener('click', async () => {
@@ -1340,7 +1345,7 @@ async function rendreOngletProjet(projet) {
   const zone = $('#onglet');
   zone.innerHTML = loading();
   detruireGraphiques();
-  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet };
+  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques };
   try {
     await ONGLETS[ongletProjet](projet, zone);
   } catch (e) {
@@ -1766,6 +1771,113 @@ PAGES['nouveau-rapport'] = async () => {
     }
   });
 };
+
+// ═══════════════════════════════ COMMUNIQUÉS ═══════════════════════════════
+// Messages de la Direction ou de la Coordination à l'équipe, pour toute l'entreprise ou un chantier.
+// Images rangées dans photos-chantier : <entreprise>/communiques/…
+
+const SELECT_COMMUNIQUE = 'id, titre, contenu, important, photo, projet_id, created_at, projets(nom), profils(nom)';
+
+function carteCommunique(c, url, gerer = false) {
+  const img = url(c.photo);
+  return `<article class="communique ${c.important ? 'important' : ''}">
+    ${img ? `<a class="communique-photo" href="${esc(img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="Image du communiqué ${esc(c.titre)}" loading="lazy"></a>` : ''}
+    <div class="communique-corps">
+      <div class="communique-tete">${c.important ? '<span class="badge crit">📌 Important</span>' : ''}${badge(['muted', c.projet_id ? `🏗️ ${c.projets?.nom || 'Chantier'}` : '🏢 Toute l’entreprise'])}</div>
+      <h3>${esc(c.titre)}</h3>
+      ${c.contenu ? `<p>${esc(c.contenu).replace(/\n/g, '<br>')}</p>` : ''}
+      <div class="communique-pied">${esc(c.profils?.nom || '—')} · ${ago(c.created_at)}${gerer ? ` <button class="btn sm ghost" type="button" data-suppr-communique="${c.id}">Supprimer</button>` : ''}</div>
+    </div>
+  </article>`;
+}
+
+async function listeCommuniques(zone, { projetId = null } = {}) {
+  const gerer = can('direction', 'coordinateur');
+  let req = sb.from('communiques').select(SELECT_COMMUNIQUE).order('created_at', { ascending: false }).limit(60);
+  if (projetId) req = req.eq('projet_id', projetId);
+  const { data, error } = await req;
+  if (error) { zone.innerHTML = `<div class="card">${empty('📢', messageErreur(error))}</div>`; return; }
+  const liste = [...data].sort((a, b) => Number(b.important) - Number(a.important));
+  const url = await urlsPhotos(liste.map((c) => c.photo));
+  zone.innerHTML = `${gerer ? '<div class="right" style="margin-bottom:12px"><button class="btn primary" id="ncom" type="button">📢 Nouveau communiqué</button></div>' : ''}
+    ${liste.length ? `<div class="communiques">${liste.map((c) => carteCommunique(c, url, gerer)).join('')}</div>`
+      : `<div class="card">${empty('📢', projetId ? 'Aucun communiqué pour ce chantier.' : 'Aucun communiqué pour le moment.')}</div>`}`;
+  const refresh = () => listeCommuniques(zone, { projetId });
+  $('#ncom', zone)?.addEventListener('click', () => formulaireCommunique({ projetId, refresh }));
+  $$('[data-suppr-communique]', zone).forEach((b) => (b.onclick = async () => {
+    const c = liste.find((x) => x.id === b.dataset.supprCommunique);
+    if (!(await confirmer(`Supprimer le communiqué « ${c.titre} » ?`, 'Supprimer'))) return;
+    try {
+      await q(sb.from('communiques').delete().eq('id', c.id));
+      if (c.photo) sb.storage.from('photos-chantier').remove([c.photo]);
+      toast('Communiqué supprimé.');
+      refresh();
+    } catch (e) { toast(messageErreur(e), 'err'); }
+  }));
+}
+
+async function formulaireCommunique({ projetId = null, refresh }) {
+  const projets = projetId ? [] : (await listeProjets()).filter((x) => x.statut !== 'termine');
+  let image = null;
+  ouvrirModale({
+    titre: 'Nouveau communiqué',
+    large: true,
+    boutonOk: 'Publier',
+    corps: `<div class="form-grid">
+      ${F.text('titre', 'Titre', '', { required: true, full: true, placeholder: 'Ex. Réunion de chantier vendredi à 8 h' })}
+      ${F.area('contenu', 'Message', '', { placeholder: 'Détails, consignes, informations pour l’équipe…' })}
+      ${projetId ? '' : F.select('projet_id', 'Pour qui ?', [['', '🏢 Toute l’entreprise'], ...projets.map((x) => [x.id, `🏗️ ${x.nom}`])], '', { full: true })}
+      <label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="important" style="width:auto"> 📌 Communiqué important (affiché en premier)</label>
+      <div class="field full">Image ou affiche (facultatif)
+        <label class="btn" style="width:max-content">📷 Ajouter une image<input type="file" id="c-image" accept="image/*" hidden></label>
+        <div class="photos mt" id="c-apercu"></div></div>
+    </div>`,
+    onOpen: (ov) => {
+      $('#c-image', ov).onchange = async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        image = await compresserImage(f, 1920, 0.82);
+        $('#c-apercu', ov).innerHTML = `<div class="photo-pick"><img src="${URL.createObjectURL(image)}" alt="Aperçu de l’image"><button type="button" id="c-retirer" aria-label="Retirer">×</button></div>`;
+        $('#c-retirer', ov).onclick = () => { image = null; $('#c-apercu', ov).innerHTML = ''; };
+      };
+    },
+    onSubmit: async (d) => {
+      let photo = null;
+      if (image) {
+        photo = `${S.entreprise.id}/communiques/${Date.now()}.jpg`;
+        const { error } = await sb.storage.from('photos-chantier').upload(photo, image, { contentType: 'image/jpeg' });
+        if (error) throw error;
+      }
+      await q(sb.from('communiques').insert({ titre: d.titre, contenu: d.contenu, projet_id: projetId || d.projet_id || null, important: !!d.important, photo }));
+      toast('Communiqué publié 📢');
+      refresh?.();
+    },
+  });
+}
+
+PAGES.communiques = async () => {
+  const p = page(`${entete('Communiqués', 'Informations et consignes pour toute l’équipe')}<div id="zone-communiques"></div>`);
+  await listeCommuniques($('#zone-communiques', p));
+};
+
+async function ongletCommuniques(projet, zone) {
+  await listeCommuniques(zone, { projetId: projet.id });
+}
+
+// Encart « Communiqués récents » en haut du tableau de bord (30 derniers jours)
+async function encartCommuniques() {
+  const pg = $('#main .page');
+  const depuis = new Date(Date.now() - 30 * 86400000).toISOString();
+  const { data, error } = await sb.from('communiques').select(SELECT_COMMUNIQUE).gte('created_at', depuis).order('created_at', { ascending: false }).limit(3);
+  if (error || !data?.length || !pg?.isConnected) return;
+  const url = await urlsPhotos(data.map((c) => c.photo));
+  const bloc = document.createElement('div');
+  bloc.className = 'card section';
+  bloc.innerHTML = `<div class="card-title">📢 Communiqués récents <small><a href="#/communiques">Tout voir</a></small></div>
+    <div class="communiques compact">${data.map((c) => carteCommunique(c, url)).join('')}</div>`;
+  const ancre = $('.hero, .page-head', pg);
+  if (ancre) ancre.after(bloc); else pg.prepend(bloc);
+}
 
 // ═══════════════════════════════ ACHATS ═══════════════════════════════
 
@@ -2665,7 +2777,7 @@ PAGES.console = async () => {
       zone.innerHTML = loading();
       const { data: annonces, error } = await sb.from('annonces').select('*').order('created_at', { ascending: false });
       if (error) {
-        zone.innerHTML = `<div class="card">${empty('🧩', 'Les annonces nécessitent la mise à jour de la base « Images et annonces » (voir le kit d’installation).')}</div>`;
+        zone.innerHTML = `<div class="card">${empty('🧩', 'Les annonces nécessitent la mise à jour 1.5 de la base de données : exécutez supabase/mise-a-jour-1.5.sql dans Supabase → SQL Editor.')}</div>`;
         return;
       }
       const auj = todayISO();
