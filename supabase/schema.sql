@@ -369,7 +369,12 @@ create policy invitations_direction on public.invitations for all
   with check (entreprise_id = public.mon_entreprise() and public.a_role('direction'));
 
 -- Projets
-create policy projets_lecture on public.projets for select using (public.voit_projet(id));
+-- Les colonnes de la ligne sont lues directement (et non via voit_projet) pour que
+-- la ligne venant d'être créée soit lisible dans la même requête (insert … returning).
+create policy projets_lecture on public.projets for select
+  using (entreprise_id = public.mon_entreprise()
+         and (public.mon_role() <> 'technicien'
+              or exists (select 1 from public.affectations a where a.projet_id = projets.id and a.profil_id = auth.uid())));
 create policy projets_creation on public.projets for insert
   with check (entreprise_id = public.mon_entreprise() and public.a_role('direction','coordinateur'));
 create policy projets_modif on public.projets for update
@@ -894,3 +899,14 @@ begin
 end $$;
 revoke execute on function public.changer_mot_de_passe_membre(uuid, text) from public, anon;
 grant execute on function public.changer_mot_de_passe_membre(uuid, text) to authenticated;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 9. CORRECTIF : création de projet refusée (« pas l'autorisation »)
+-- La règle de lecture des projets est réécrite pour accepter la ligne
+-- qui vient d'être créée. Sans effet si elle est déjà à jour.
+-- ───────────────────────────────────────────────────────────────────
+drop policy if exists projets_lecture on public.projets;
+create policy projets_lecture on public.projets for select
+  using (entreprise_id = public.mon_entreprise()
+         and (public.mon_role() <> 'technicien'
+              or exists (select 1 from public.affectations a where a.projet_id = projets.id and a.profil_id = auth.uid())));
