@@ -1,0 +1,15 @@
+{
+  "name": "KOORDIN — Pilotage de chantiers",
+  "short_name": "KOORDIN",
+  "description": "Centralisez vos chantiers BTP : direction, coordination, terrain, achats, comptabilité, magasin.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0d16",
+  "theme_color": "#111521",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
