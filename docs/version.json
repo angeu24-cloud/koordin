@@ -1,11 +1,10 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "date": "2026-11-01",
   "nouveautes": [
-    "Nouveau design : tableau de bord d'accueil, cartes de chantier avec anneau d'avancement, écrans de chargement plus fluides.",
-    "Mises à jour automatiques : un bandeau vous prévient quand une nouvelle version est disponible.",
-    "Abonnements : essai gratuit, formules mensuelles, trimestrielles ou annuelles, paiement par Mobile Money.",
-    "Invitations par numéro WhatsApp, sans adresse email.",
-    "La Direction peut redéfinir le mot de passe d'un membre depuis l'écran Équipe."
+    "Chaque chantier a sa photo de couverture : ajoutez-la depuis la page du chantier (bouton 📷), sinon la dernière photo envoyée par le terrain s'affiche automatiquement.",
+    "Nouvelles illustrations de chantier sur l'écran de connexion, l'accueil et les chantiers sans photo.",
+    "Annonces de partenaires (fournisseurs, location d'engins…) dans les tableaux de bord, marquées « Sponsorisé ».",
+    "Graphiques plus lisibles sur téléphone."
   ]
 }

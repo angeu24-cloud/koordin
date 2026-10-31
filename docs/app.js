@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.4';
+const VERSION = '1.5';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -218,6 +218,113 @@ function consoCls(consomme, budget) {
   return p > 100 ? 'crit' : p > 90 ? 'warn' : 'ok';
 }
 
+// ─────────────────────────────── Images ───────────────────────────────
+
+// Illustration de chantier dessinée (ville, immeuble en construction, grue).
+// Les couleurs viennent du thème ; la variante dépend de « graine ».
+let compteurIllu = 0;
+function hasard(graine) {
+  let s = (graine >>> 0) || 1;
+  return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+}
+function empreinte(texte) {
+  let h = 2166136261;
+  for (const c of String(texte)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return h >>> 0;
+}
+function sceneChantier(graine = 7, { classe = '' } = {}) {
+  const r = hasard(graine);
+  const id = `ill${++compteurIllu}`;
+  const W = 400, sol = 206;
+  let loin = '', milieu = '', fenetres = '';
+  for (let x = -6; x < W;) {
+    const w = 16 + r() * 26, h = 36 + r() * 74;
+    loin += `<rect x="${x.toFixed(1)}" y="${(sol - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"/>`;
+    x += w + 1;
+  }
+  for (let x = -12; x < W;) {
+    const w = 24 + r() * 30, h = 26 + r() * 48;
+    milieu += `<rect x="${x.toFixed(1)}" y="${(sol - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"/>`;
+    for (let wy = sol - h + 7; wy < sol - 6; wy += 9) for (let wx = x + 5; wx < x + w - 5; wx += 7) if (r() > 0.6) fenetres += `<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="3" height="4"/>`;
+    x += w + 5 + r() * 10;
+  }
+  // Immeuble en construction
+  const bx = 112 + r() * 50, bw = 96, etages = 7 + Math.floor(r() * 3), eh = 14, haut = sol - etages * eh, finis = 3 + Math.floor(r() * 2);
+  let bat = `<rect class="i-bat" x="${bx}" y="${sol - finis * eh}" width="${bw}" height="${finis * eh}"/>`;
+  for (let i = 0; i < finis; i++) for (let c = 0; c < 6; c++) bat += `<rect class="i-vitre" x="${bx + 6 + c * 15}" y="${sol - (i + 1) * eh + 4}" width="9" height="6"/>`;
+  for (let i = finis; i <= etages; i++) bat += `<line class="i-acier" x1="${bx}" y1="${sol - i * eh}" x2="${bx + bw}" y2="${sol - i * eh}"/>`;
+  for (let c = 0; c <= 4; c++) bat += `<line class="i-acier" x1="${bx + (c * bw) / 4}" y1="${haut}" x2="${bx + (c * bw) / 4}" y2="${sol - finis * eh}"/>`;
+  for (let i = finis; i < etages; i++) bat += `<line class="i-echafaud" x1="${bx - 8}" y1="${sol - i * eh}" x2="${bx}" y2="${sol - (i + 1) * eh}"/>`;
+  bat += `<line class="i-echafaud" x1="${bx - 8}" y1="${haut}" x2="${bx - 8}" y2="${sol}"/>`;
+  // Grue à tour
+  const mx = bx + bw + 30, mh = haut - 44, fleche = 170, contre = 52;
+  let grue = `<rect class="i-grue-mat" x="${mx - 5}" y="${mh}" width="10" height="${sol - mh}"/>`;
+  for (let y = mh; y < sol - 10; y += 10) grue += `<path class="i-grue" d="M${mx - 5} ${y} L${mx + 5} ${y + 10} M${mx + 5} ${y} L${mx - 5} ${y + 10}"/>`;
+  grue += `<path class="i-grue" d="M${mx - fleche} ${mh} L${mx + contre} ${mh} M${mx} ${mh - 22} L${mx - fleche} ${mh} M${mx} ${mh - 22} L${mx + contre} ${mh}"/>`;
+  grue += `<rect class="i-grue-mat" x="${mx + contre - 18}" y="${mh}" width="18" height="10"/><rect class="i-cabine" x="${mx - 9}" y="${mh + 2}" width="12" height="10" rx="1.5"/>`;
+  const chariot = mx - 70 - r() * 60, crochet = haut - 14 + r() * 10;
+  grue += `<line class="i-cable" x1="${chariot}" y1="${mh}" x2="${chariot}" y2="${crochet}"/><rect class="i-charge" x="${chariot - 16}" y="${crochet}" width="32" height="6" rx="1"/>`;
+  const soleil = 300 + r() * 60;
+  return `<svg class="illu ${classe}" viewBox="0 0 400 240" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--illu-ciel-1)"/><stop offset="1" style="stop-color:var(--illu-ciel-2)"/></linearGradient></defs>
+    <rect width="400" height="240" fill="url(#${id})"/>
+    <circle class="i-soleil" cx="${soleil.toFixed(0)}" cy="${(64 + r() * 20).toFixed(0)}" r="26"/>
+    <g class="i-loin">${loin}</g><g class="i-milieu">${milieu}</g><g class="i-fenetre">${fenetres}</g>
+    ${bat}${grue}
+    <rect class="i-sol" x="0" y="${sol}" width="400" height="${240 - sol}"/>
+  </svg>`;
+}
+
+// Liens temporaires vers les photos privées des chantiers (valables une heure)
+const URLS_PHOTOS = new Map();
+async function urlsPhotos(chemins) {
+  const manquants = [...new Set(chemins.filter((c) => c && !URLS_PHOTOS.has(c)))];
+  if (manquants.length && !DEMO) {
+    const { data } = await sb.storage.from('photos-chantier').createSignedUrls(manquants, 3600);
+    (data || []).forEach((x) => { if (x.signedUrl) URLS_PHOTOS.set(x.path, x.signedUrl); });
+    setTimeout(() => manquants.forEach((c) => URLS_PHOTOS.delete(c)), 50 * 60 * 1000);
+  }
+  return (c) => (c ? URLS_PHOTOS.get(c) || null : null);
+}
+const couvertureDe = (p) => p.photo || p.photo_terrain || null;
+function visuelProjet(p, url, { classe = 'pc-cover' } = {}) {
+  return `<div class="${classe}">${url ? `<img src="${esc(url)}" alt="" loading="lazy">` : sceneChantier(empreinte(p.id || p.nom))}<div class="cover-voile"></div></div>`;
+}
+
+// ─────────────────────────────── Annonces ───────────────────────────────
+
+let cacheAnnonces = null;
+const urlImageAnnonce = (chemin) => `${CFG.SUPABASE_URL}/storage/v1/object/public/annonces/${chemin}`;
+function lienAnnonce(lien) {
+  const v = String(lien || '').trim();
+  if (!v) return null;
+  if (/^\+?[\d\s.-]{8,}$/.test(v)) return `https://wa.me/${v.replace(/\D/g, '').replace(/^0(?=\d{9}$)/, '2250')}`;
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+async function placerAnnonce(zone) {
+  if (DEMO || !zone) return;
+  if (!cacheAnnonces) {
+    const { data, error } = await sb.from('annonces').select('*');
+    const auj = todayISO();
+    cacheAnnonces = error ? [] : (data || []).filter((a) => a.actif && a.debut <= auj && (!a.fin || a.fin >= auj) && (!a.roles || a.roles.includes(role())));
+    setTimeout(() => { cacheAnnonces = null; }, 10 * 60 * 1000);
+  }
+  if (!cacheAnnonces.length || !zone.isConnected) return;
+  const a = cacheAnnonces[Math.floor(Math.random() * cacheAnnonces.length)];
+  const lien = lienAnnonce(a.lien);
+  zone.innerHTML = `<article class="annonce">
+    ${a.image ? `<div class="annonce-img"><img src="${esc(urlImageAnnonce(a.image))}" alt="${esc(a.titre)}" loading="lazy"></div>` : ''}
+    <div class="annonce-corps">
+      <div class="annonce-tete"><span class="annonce-label">Sponsorisé</span><span class="muted">${esc(a.annonceur)}</span></div>
+      <h3>${esc(a.titre)}</h3>
+      ${a.texte ? `<p>${esc(a.texte)}</p>` : ''}
+      ${lien ? `<a class="btn primary sm" href="${esc(lien)}" target="_blank" rel="noopener sponsored" data-annonce="${a.id}">${esc(a.bouton || 'En savoir plus')}</a>` : ''}
+    </div></article>`;
+  const cle = `koordin-vue-${a.id}`;
+  if (!memo.get(cle)) { memo.set(cle, '1'); sb.rpc('annonce_evenement', { p_annonce: a.id, p_type: 'vue' }).then(() => {}, () => {}); }
+  $('[data-annonce]', zone)?.addEventListener('click', () => { sb.rpc('annonce_evenement', { p_annonce: a.id, p_type: 'clic' }).then(() => {}, () => {}); });
+}
+
 // Champs de formulaire
 const F = {
   text(name, label, value = '', o = {}) {
@@ -342,6 +449,7 @@ function graphiqueBarres(canvas, { labels, series, horizontal = false, format = 
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 300 },
+      layout: { padding: { left: 6 } },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -363,7 +471,7 @@ function graphiqueBarres(canvas, { labels, series, horizontal = false, format = 
         },
         [horizontal ? 'y' : 'x']: {
           grid: { display: false }, border: { color: grille },
-          ticks: { color: texte, font: { family: 'Sora', size: 11 }, autoSkip: false, callback(v) { const l = this.getLabelForValue(v); const n = this.chart.width < 480 ? 13 : 22; return l.length > n ? `${l.slice(0, n - 1)}…` : l; } },
+          ticks: { color: texte, font: { family: 'Sora', size: 11 }, autoSkip: false, callback(v) { const l = this.getLabelForValue(v); const n = this.chart.width < 480 ? 11 : 22; return l.length > n ? `${l.slice(0, n - 1)}…` : l; } },
         },
       },
     },
@@ -483,6 +591,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
   $('#root').innerHTML = `<div class="auth-wrap auth-split">
     <aside class="auth-visual" aria-hidden="true">
       <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
+      <div class="auth-illu">${sceneChantier(11)}</div>
       <h2 class="auth-slogan">Tous vos chantiers,<br><span>une seule plateforme.</span></h2>
       <ul class="auth-points">
         <li><b>🔧 Terrain</b> Rapports du jour et photos depuis le téléphone</li>
@@ -491,6 +600,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       </ul>
     </aside>
     <div class="auth-card">
+    <div class="auth-illu-mobile">${sceneChantier(11)}</div>
     <div class="brand auth-brand-mobile"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
     <p class="auth-sub">Tous vos chantiers, une seule plateforme.</p>
     <div class="auth-tabs">${Object.entries(onglets).map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === onglet ? 'active' : ''}">${l}</button>`).join('')}</div>
@@ -854,13 +964,9 @@ function bonjour() {
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
-  switch (role()) {
-    case 'technicien': return dashTechnicien();
-    case 'achats': return dashAchats();
-    case 'comptable': return dashComptable();
-    case 'magasinier': return dashMagasinier();
-    default: return dashDirection();
-  }
+  const tableaux = { technicien: dashTechnicien, achats: dashAchats, comptable: dashComptable, magasinier: dashMagasinier };
+  await (tableaux[role()] || dashDirection)();
+  placerAnnonce($('#zone-annonce'));
 };
 
 function tableauProjets(projets, { montants = true } = {}) {
@@ -900,6 +1006,7 @@ async function dashDirection() {
     : `${actifs.length} chantier${actifs.length > 1 ? 's' : ''} en cours, tout est sous contrôle.`;
   page(`
     <section class="hero">
+      <div class="hero-illu">${sceneChantier(empreinte(S.entreprise.id))}</div>
       <div class="hero-txt">
         <p class="hero-date">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${esc(S.entreprise.nom)}</p>
         <h1 class="page-title">${bonjour()}</h1>
@@ -928,7 +1035,7 @@ async function dashDirection() {
     </div>` : ''}
     <div class="grid c21 section">
       <div class="card"><div class="card-title">Tous les projets <small>Cliquez pour le détail</small></div>${tableauProjets(projets)}</div>
-      <div class="card"><div class="card-title">Activité récente</div>${feedHTML(activites)}</div>
+      <div class="col-droite"><div id="zone-annonce"></div><div class="card"><div class="card-title">Activité récente</div>${feedHTML(activites)}</div></div>
     </div>`);
 
   if (actifs.length) {
@@ -954,12 +1061,13 @@ async function dashDirection() {
 async function dashTechnicien() {
   const uid = S.profil.id;
   const [projets, rapports, taches] = await Promise.all([
-    q(sb.from('v_projets').select('id, nom, localisation, statut, avancement, avancement_attendu, date_fin_prevue, sante').neq('statut', 'termine').order('nom')),
+    q(sb.from('v_projets').select('*').neq('statut', 'termine').order('nom')),
     q(sb.from('rapports').select('id, date_rapport, statut, travaux, projet_id, commentaire_validation').eq('auteur_id', uid).order('created_at', { ascending: false }).limit(6)),
     q(sb.from('taches').select('nom, date_debut, date_fin, avancement, projet_id').gte('date_fin', todayISO()).order('date_debut').limit(8)),
   ]);
   const nomP = (id) => projets.find((p) => p.id === id)?.nom || '';
   const aujourdhui = rapports.some((r) => r.date_rapport === todayISO());
+  const url = await urlsPhotos(projets.map(couvertureDe));
   page(`
     ${entete(bonjour(), 'Votre journée sur le terrain')}
     ${!projets.length ? '<div class="notice warn">Vous n’êtes affecté à aucun chantier pour le moment. Demandez à votre coordinateur de vous ajouter à un projet.</div>' : ''}
@@ -967,11 +1075,13 @@ async function dashTechnicien() {
     ${!aujourdhui && projets.length ? '<div class="notice warn">⏰ Vous n’avez pas encore envoyé de rapport aujourd’hui.</div>' : ''}
     <div class="card"><div class="card-title">Mes chantiers</div>
       <div class="projects">${projets.map((p) => `
-        <div class="card project-card" data-go="#/projet/${p.id}">
-          <div class="pc-head">${anneau(p.avancement, p.avancement_attendu)}
+        <div class="card project-card a-couverture" data-go="#/projet/${p.id}">
+          ${visuelProjet(p, url(couvertureDe(p)))}
+          <div class="pc-body"><div class="pc-head">${anneau(p.avancement, p.avancement_attendu)}
             <div class="pc-titre"><h3>${esc(p.nom)}</h3><div class="meta">${esc(p.localisation || '')}</div><div class="pc-badges">${badge(SANTE[p.sante])}</div></div></div>
-          <div class="meta">Fin prévue : ${fdate(p.date_fin_prevue)}</div>
+          <div class="meta">Fin prévue : ${fdate(p.date_fin_prevue)}</div></div>
         </div>`).join('') || empty('🏗️', 'Aucun chantier')}</div></div>
+    <div id="zone-annonce" class="section"></div>
     <div class="grid c2 section">
       <div class="card"><div class="card-title">Mes derniers rapports <a href="#/rapports" class="btn sm">Tout voir</a></div>
         ${rapports.length ? rapports.map((r) => `<div class="report" data-rapport="${r.id}">
@@ -1008,7 +1118,8 @@ async function dashAchats() {
     <div class="grid c2 section">
       <div class="card"><div class="card-title">Budget engagé par projet</div>${tableauBudgetProjets(projets)}</div>
       <div class="card"><div class="card-title">Dernières commandes <a class="btn sm" href="#/achats">Tout voir</a></div>${tableauCommandes(commandes, { compact: true })}</div>
-    </div>`);
+    </div>
+    <div id="zone-annonce" class="section"></div>`);
 }
 
 function tableauBudgetProjets(projets) {
@@ -1043,7 +1154,8 @@ async function dashComptable() {
       <div class="card"><div class="card-title">Factures échues ou proches de l’échéance</div>
         ${tableauFactures(aPayer.slice(0, 10), { compact: true })}</div>
       <div class="card"><div class="card-title">Budget et réalisé par projet</div>${tableauBudgetProjets(projets.filter((p) => p.statut !== 'termine'))}</div>
-    </div>`);
+    </div>
+    <div id="zone-annonce" class="section"></div>`);
 }
 
 async function dashMagasinier() {
@@ -1066,13 +1178,15 @@ async function dashMagasinier() {
       <div class="card"><div class="card-title">Articles sous le seuil</div>${tableauStock(alertes, { compact: true })}</div>
       <div class="card"><div class="card-title">Commandes à réceptionner</div>${tableauCommandes(commandes, { compact: true })}</div>
     </div>
-    <div class="card section"><div class="card-title">Derniers mouvements</div>${tableauMouvements(mouvements)}</div>`);
+    <div class="card section"><div class="card-title">Derniers mouvements</div>${tableauMouvements(mouvements)}</div>
+    <div id="zone-annonce" class="section"></div>`);
 }
 
 // ═══════════════════════════════ PROJETS ═══════════════════════════════
 
 PAGES.projets = async () => {
   const projets = await q(sb.from('v_projets').select('*').order('nom'));
+  const url = await urlsPhotos(projets.map(couvertureDe));
   const tech = role() === 'technicien';
   let filtre = 'actifs';
   let recherche = '';
@@ -1088,8 +1202,9 @@ PAGES.projets = async () => {
     const l = projets.filter((x) => (filtre === 'tous' || (filtre === 'actifs' ? x.statut !== 'termine' : x.statut === filtre))
       && (!recherche || `${x.nom} ${x.client || ''} ${x.localisation || ''} ${x.reference || ''}`.toLowerCase().includes(recherche)));
     $('#liste', p).innerHTML = l.map((x) => `
-      <div class="card project-card" data-go="#/projet/${x.id}">
-        <div class="pc-head">${anneau(x.avancement, x.avancement_attendu)}
+      <div class="card project-card a-couverture" data-go="#/projet/${x.id}">
+        ${visuelProjet(x, url(couvertureDe(x)))}
+        <div class="pc-body"><div class="pc-head">${anneau(x.avancement, x.avancement_attendu)}
           <div class="pc-titre"><h3>${esc(x.nom)}</h3><div class="meta">${esc([x.reference, x.localisation].filter(Boolean).join(' · '))}</div>
           <div class="pc-badges">${badge(SANTE[x.sante])}</div></div></div>
         <div class="pc-stats">
@@ -1097,7 +1212,7 @@ PAGES.projets = async () => {
           ${tech ? `<div><b>${x.avancement_attendu ?? '—'} %</b><span>Prévu</span></div>` : `<div><b>${pct(Math.max(num(x.engage), num(x.facture)), x.budget)} %</b><span>Consommé</span></div>`}
           <div><b>${x.jours_de_retard > 0 ? `+${x.jours_de_retard} j` : fdate(x.date_fin_prevue).replace(/ \d{4}$/, '')}</b><span>${x.jours_de_retard > 0 ? 'Retard' : 'Fin prévue'}</span></div>
         </div>
-        <div class="split meta"><span>${badge(STATUT_PROJET[x.statut])}</span><span>👥 ${x.equipe} · 📋 ${x.rapports_en_attente} à valider</span></div>
+        <div class="split meta"><span>${badge(STATUT_PROJET[x.statut])}</span><span>👥 ${x.equipe} · 📋 ${x.rapports_en_attente} à valider</span></div></div>
       </div>`).join('') || `<div class="card" style="grid-column:1/-1">${empty('🏗️', tech ? 'Aucun chantier affecté' : 'Aucun projet pour ce filtre')}</div>`;
   };
   rendre();
@@ -1167,16 +1282,44 @@ PAGES.projet = async (id) => {
     ...(can('direction', 'coordinateur', 'achats', 'comptable', 'magasinier') ? [['achats', 'Achats et factures']] : []),
   ];
   if (!onglets.some(([k]) => k === ongletProjet)) ongletProjet = 'apercu';
+  const url = await urlsPhotos([couvertureDe(projet)]);
   const p = page(`
     <a class="back" href="#/projets">← ${tech ? 'Mes chantiers' : 'Projets'}</a>
-    ${entete(esc(projet.nom), `${badge(SANTE[projet.sante])} ${badge(STATUT_PROJET[projet.statut])} <span class="muted">${esc([projet.reference, projet.client, projet.localisation].filter(Boolean).join(' · '))}</span>`,
-      `${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
-       ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
-       ${can('direction') ? '<button class="btn danger" id="del-p">Supprimer</button>' : ''}`)}
+    <section class="detail-cover">
+      ${visuelProjet(projet, url(couvertureDe(projet)), { classe: 'dc-media' })}
+      <div class="dc-contenu">
+        <div class="pc-badges">${badge(SANTE[projet.sante])} ${badge(STATUT_PROJET[projet.statut])}</div>
+        <h1 class="page-title">${esc(projet.nom)}</h1>
+        <p>${esc([projet.reference, projet.client, projet.localisation].filter(Boolean).join(' · '))}</p>
+      </div>
+      <div class="dc-anneau">${anneau(projet.avancement, projet.avancement_attendu, 72)}</div>
+      ${can('direction', 'coordinateur') ? `<label class="btn sm dc-photo">📷 ${projet.photo ? 'Changer la photo' : 'Ajouter une photo'}<input type="file" id="photo-p" accept="image/*" hidden></label>` : ''}
+    </section>
+    <div class="page-actions dc-actions">
+      ${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
+      ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
+      ${can('direction') ? '<button class="btn danger" id="del-p">Supprimer</button>' : ''}
+    </div>
     <div class="tabs">${onglets.map(([k, l]) => `<button class="tab ${k === ongletProjet ? 'active' : ''}" data-onglet="${k}">${l}</button>`).join('')}</div>
     <div id="onglet"></div>`);
 
   $('#edit-p', p)?.addEventListener('click', () => formulaireProjet(projet));
+  $('#photo-p', p)?.addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    toast('Envoi de la photo…', 'warn', 2500);
+    try {
+      const blob = await compresserImage(f, 1800, 0.82);
+      const chemin = `${S.entreprise.id}/projets/${projet.id}-${Date.now()}.jpg`;
+      const { error } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: 'image/jpeg' });
+      if (error) throw error;
+      await q(sb.from('projets').update({ photo: chemin }).eq('id', projet.id));
+      toast('Photo du chantier enregistrée.');
+      naviguer();
+    } catch (err) {
+      toast(/photo/.test(String(err?.message)) ? 'La mise à jour de la base de données « Images et annonces » est nécessaire (voir le kit).' : messageErreur(err), 'err', 7000);
+    }
+  });
   $('#del-p', p)?.addEventListener('click', async () => {
     if (!(await confirmer(`Supprimer définitivement « ${projet.nom} » et toutes ses données (lots, rapports, commandes, factures) ?`, 'Supprimer'))) return;
     try {
@@ -2465,13 +2608,14 @@ PAGES.console = async () => {
     <div class="tabs section">
       <button class="tab ${ongletConsole === 'paiements' ? 'active' : ''}" data-o="paiements">Paiements${attente.length ? ` <span class="badge warn">${attente.length}</span>` : ''}</button>
       <button class="tab ${ongletConsole === 'entreprises' ? 'active' : ''}" data-o="entreprises">Entreprises</button>
+      <button class="tab ${ongletConsole === 'annonces' ? 'active' : ''}" data-o="annonces">Annonces</button>
       <button class="tab ${ongletConsole === 'tarifs' ? 'active' : ''}" data-o="tarifs">Tarifs et paiement</button>
     </div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
   const recharger = () => PAGES.console();
 
-  const rendre = () => {
+  const rendre = async () => {
     if (ongletConsole === 'paiements') {
       zone.innerHTML = `<div class="card">${paiements.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Entreprise</th><th>Formule</th><th class="num">Montant</th><th>Moyen / référence</th><th>Statut</th><th></th></tr></thead><tbody>
         ${paiements.map((x) => `<tr><td class="nowrap">${new Date(x.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
@@ -2517,6 +2661,88 @@ PAGES.console = async () => {
           },
         });
       }));
+    } else if (ongletConsole === 'annonces') {
+      zone.innerHTML = loading();
+      const { data: annonces, error } = await sb.from('annonces').select('*').order('created_at', { ascending: false });
+      if (error) {
+        zone.innerHTML = `<div class="card">${empty('🧩', 'Les annonces nécessitent la mise à jour de la base « Images et annonces » (voir le kit d’installation).')}</div>`;
+        return;
+      }
+      const auj = todayISO();
+      const enCours = (a) => a.actif && a.debut <= auj && (!a.fin || a.fin >= auj);
+      zone.innerHTML = `<div class="grid k3">
+          ${kpi('Annonces en ligne', annonces.filter(enCours).length, `${annonces.length} au total`, '', '📣')}
+          ${kpi('Affichages', nf.format(annonces.reduce((s, a) => s + a.impressions, 0)), 'Toutes annonces confondues', '', '👁️')}
+          ${kpi('Revenus publicitaires', moneyShort(annonces.reduce((s, a) => s + num(a.prix), 0)), 'Montants saisis', '', '💰')}
+        </div>
+        <div class="card section"><div class="card-title">Vos annonces <button class="btn sm primary" id="na">＋ Nouvelle annonce</button></div>
+        ${annonces.length ? `<div class="annonces-liste">${annonces.map((a) => `
+          <div class="annonce-ligne">
+            <div class="al-img">${a.image ? `<img src="${esc(urlImageAnnonce(a.image))}" alt="">` : sceneChantier(empreinte(a.id))}</div>
+            <div class="al-corps"><b>${esc(a.titre)}</b><div class="muted" style="font-size:12px">${esc(a.annonceur)} · ${a.roles?.length ? a.roles.map((r) => ROLES[r]?.label).join(', ') : 'Tous les rôles'}</div>
+              <div class="muted" style="font-size:12px">Du ${fdate(a.debut)}${a.fin ? ` au ${fdate(a.fin)}` : ' (sans fin)'}${a.prix ? ` · ${money(a.prix)}` : ''}</div></div>
+            <div class="al-stats"><b>${nf.format(a.impressions)}</b><span>vues</span></div>
+            <div class="al-stats"><b>${nf.format(a.clics)}</b><span>clics${a.impressions ? ` · ${Math.round((a.clics / a.impressions) * 1000) / 10} %` : ''}</span></div>
+            <div>${enCours(a) ? badge(['ok', '● En ligne']) : badge(['muted', a.actif ? 'Programmée / terminée' : 'En pause'])}</div>
+            <button class="btn sm" data-ea="${a.id}">Modifier</button>
+          </div>`).join('')}</div>` : empty('📣', 'Aucune annonce. Proposez aux fournisseurs, loueurs d’engins ou banques de se faire connaître auprès des entreprises du BTP.')}
+        <p class="muted mt" style="font-size:12px">Les annonces apparaissent dans les tableaux de bord, marquées « Sponsorisé », une à la fois et au hasard parmi celles en ligne.</p></div>`;
+      const form = (a = null) => ouvrirModale({
+        titre: a ? 'Modifier l’annonce' : 'Nouvelle annonce',
+        large: true,
+        corps: `<div class="form-grid">
+          ${F.text('annonceur', 'Annonceur', a?.annonceur, { required: true, placeholder: 'Ex. SOACOFER' })}
+          ${F.text('prix', 'Prix facturé (FCFA)', a?.prix ?? '', { type: 'number', min: 0, hint: 'Pour votre suivi des revenus' })}
+          ${F.text('titre', 'Titre', a?.titre, { required: true, full: true, placeholder: 'Ex. Fer à béton : −10 % pour les entreprises KOORDIN' })}
+          ${F.area('texte', 'Texte (court)', a?.texte, { placeholder: 'Une ou deux phrases' })}
+          ${F.text('lien', 'Lien : site web ou numéro WhatsApp', a?.lien, { placeholder: 'www.exemple.ci ou 07 00 00 00 00' })}
+          ${F.text('bouton', 'Texte du bouton', a?.bouton || 'En savoir plus')}
+          ${F.text('debut', 'Début', a?.debut || todayISO(), { type: 'date', required: true })}
+          ${F.text('fin', 'Fin (vide = sans fin)', a?.fin, { type: 'date' })}
+          <div class="field full">Visible par
+            <div class="chips">${Object.entries(ROLES).map(([k, r]) => `<label class="chip"><input type="checkbox" name="role_${k}" ${!a?.roles || a.roles.includes(k) ? 'checked' : ''}> ${r.ico} ${r.label}</label>`).join('')}</div></div>
+          <div class="field full">Image (format paysage conseillé)
+            <label class="btn" style="width:max-content">🖼️ Choisir une image<input type="file" id="img-annonce" accept="image/*" hidden></label>
+            <div id="apercu-annonce" class="mt">${a?.image ? `<img src="${esc(urlImageAnnonce(a.image))}" alt="" style="max-height:140px;border-radius:10px">` : ''}</div></div>
+          <label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="actif" ${a?.actif === false ? '' : 'checked'} style="width:auto"> Annonce active</label>
+        </div>${a ? '<div class="form-actions" style="justify-content:flex-start;margin-top:10px"><button type="button" class="btn danger sm" id="del-annonce">Supprimer l’annonce</button></div>' : ''}`,
+        onOpen: (el) => {
+          $('#img-annonce', el).onchange = async (e) => {
+            const f = e.target.files[0];
+            if (!f) return;
+            el.imageAnnonce = await compresserImage(f, 1400, 0.85);
+            $('#apercu-annonce', el).innerHTML = `<img src="${URL.createObjectURL(el.imageAnnonce)}" alt="" style="max-height:140px;border-radius:10px">`;
+          };
+          $('#del-annonce', el)?.addEventListener('click', async () => {
+            if (!(await confirmer('Supprimer définitivement cette annonce ?', 'Supprimer'))) return;
+            try { await q(sb.from('annonces').delete().eq('id', a.id)); el.remove(); toast('Annonce supprimée.'); cacheAnnonces = null; rendre(); } catch (err) { toast(messageErreur(err), 'err'); }
+          });
+        },
+        onSubmit: async (d, formEl) => {
+          const roles = Object.keys(ROLES).filter((k) => formEl.querySelector(`[name="role_${k}"]`).checked);
+          if (!roles.length) throw new Error('Choisissez au moins un rôle.');
+          const data = {
+            annonceur: d.annonceur, titre: d.titre, texte: d.texte, lien: d.lien, bouton: d.bouton || 'En savoir plus',
+            debut: d.debut, fin: d.fin, prix: d.prix != null ? num(d.prix) : null,
+            actif: formEl.querySelector('[name="actif"]').checked,
+            roles: roles.length === Object.keys(ROLES).length ? null : roles,
+          };
+          const blob = formEl.closest('.overlay').imageAnnonce;
+          if (blob) {
+            const chemin = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+            const { error: e2 } = await sb.storage.from('annonces').upload(chemin, blob, { contentType: 'image/jpeg' });
+            if (e2) throw e2;
+            data.image = chemin;
+          }
+          if (a) await q(sb.from('annonces').update(data).eq('id', a.id));
+          else await q(sb.from('annonces').insert(data));
+          cacheAnnonces = null;
+          toast('Annonce enregistrée.');
+          rendre();
+        },
+      });
+      $('#na', zone).onclick = () => form();
+      $$('[data-ea]', zone).forEach((b) => (b.onclick = () => form(annonces.find((x) => x.id === b.dataset.ea))));
     } else {
       zone.innerHTML = `<div class="card"><div class="card-title">Formules et prix <small>Modifiez puis enregistrez chaque ligne</small></div>
         <div class="table-wrap"><table class="tbl"><thead><tr><th>Formule</th><th>Prix mensuel (FCFA)</th><th>Projets max</th><th>Utilisateurs max</th><th>Proposée</th><th></th></tr></thead><tbody>
