@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v9';
-const FICHIERS = ['./', 'index.html', 'styles.css?v=9', 'app.js?v=9', 'config.js?v=9', 'vendor/supabase.js', 'vendor/chart.umd.js', 'icon.svg', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v10';
+const FICHIERS = ['./', 'index.html', 'styles.css?v=10', 'app.js?v=10', 'config.js?v=10', 'vendor/supabase.js', 'vendor/chart.umd.js', 'icon.svg', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
@@ -19,6 +19,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Les vidéos du guide sont lues directement (trop lourdes pour le cache)
+  if (/\/guide-[a-z]+\.(mp4|jpg)$/.test(url.pathname)) return;
   // Toujours vérifier auprès du serveur pour récupérer la dernière version publiée
   const reseau = e.request.mode === 'navigate' ? fetch(e.request) : fetch(e.request, { cache: 'no-cache' });
   e.respondWith(

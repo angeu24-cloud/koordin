@@ -1,10 +1,8 @@
 {
-  "version": "1.6",
-  "date": "2026-11-01",
+  "version": "1.7",
+  "date": "2026-11-03",
   "nouveautes": [
-    "Galerie photo pour chaque chantier : onglet « 📷 Galerie » dans la page du projet.",
-    "La galerie réunit les photos ajoutées directement et toutes celles envoyées avec les rapports du terrain, rangées par mois.",
-    "Touchez une photo pour l'afficher en grand, passez à la suivante en glissant le doigt, téléchargez-la ou mettez-la en photo de couverture.",
-    "Direction, Coordination et Techniciens peuvent ajouter plusieurs photos d'un coup, avec une légende."
+    "Guide vidéo de prise en main : à la première connexion, chaque personne voit une courte vidéo adaptée à son rôle (direction, technicien, achats, comptabilité, magasin).",
+    "Revoir le guide à tout moment : avatar en haut à droite → 🎓 Guide vidéo."
   ]
 }

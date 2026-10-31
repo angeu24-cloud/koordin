@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.6';
+const VERSION = '1.7';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -719,12 +719,42 @@ async function ouvrirApplication(session) {
     if (!DEMO) window.onhashchange = naviguer;
     await naviguer();
     if (!DEMO) suivreMisesAJour();
+    let guideVu = '1';
+    try { guideVu = localStorage.getItem(`koordin-guide-vu-${S.profil.id}`); } catch { /* rien */ }
+    if (!DEMO && !guideVu) setTimeout(() => ouvrirGuide({ premiereFois: true }), 900);
   } catch (e) {
     console.error(e);
     $('#root').innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
       <div class="auth-msg err" style="margin:16px 0">${esc(messageErreur(e))}</div>
       <button class="btn primary block" onclick="location.reload()">Réessayer</button></div></div>`;
   }
+}
+
+// ─── Guide vidéo de prise en main ───
+// Une vidéo courte par métier, montrée automatiquement à la première connexion.
+
+const GUIDES = {
+  direction: { video: 'guide-direction.mp4', titre: 'Piloter vos chantiers', duree: '1 min 30' },
+  coordinateur: { video: 'guide-direction.mp4', titre: 'Piloter vos chantiers', duree: '1 min 30' },
+  technicien: { video: 'guide-technicien.mp4', titre: 'Votre rapport du jour', duree: '1 min' },
+  achats: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
+  comptable: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
+  magasinier: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
+};
+function ouvrirGuide({ premiereFois = false } = {}) {
+  const g = GUIDES[role()] || GUIDES.direction;
+  try { localStorage.setItem(`koordin-guide-vu-${S.profil.id}`, '1'); } catch { /* rien */ }
+  const m = ouvrirModale({
+    titre: premiereFois ? `Bienvenue sur KOORDIN, ${S.profil.nom.split(' ')[0]} 👋` : '🎓 Guide vidéo',
+    corps: `<p style="margin-bottom:12px">${premiereFois ? 'Découvrez l’essentiel en' : 'Revoir la prise en main :'} <b>${esc(g.titre)}</b> · ${esc(g.duree)}</p>
+      <div class="guide-video"><video controls playsinline preload="metadata" poster="${g.video.replace('.mp4', '.jpg')}" src="${g.video}"></video>
+        <p class="guide-erreur hidden">La vidéo n’a pas pu être chargée. Vérifiez votre connexion, puis réessayez depuis le menu (avatar → 🎓 Guide vidéo).</p></div>
+      <p class="muted mt" style="font-size:12px">Vous pourrez revoir ce guide à tout moment : avatar en haut à droite → 🎓 Guide vidéo.</p>
+      <div class="form-actions"><button class="btn primary" data-close>${premiereFois ? 'Commencer' : 'Fermer'}</button></div>`,
+  });
+  const v = $('video', m.el);
+  v.addEventListener('error', () => { v.classList.add('hidden'); $('.guide-erreur', m.el).classList.remove('hidden'); });
+  m.el.addEventListener('click', (e) => { if (e.target === m.el || e.target.closest('[data-close]')) v.pause(); });
 }
 
 // ─── Mises à jour de l'application ───
@@ -833,6 +863,7 @@ function ouvrirMenuUtilisateur(e) {
     <button data-theme-set="light">${theme === 'light' ? '●' : '○'} Thème clair (chantier)</button>
     <button data-theme-set="dark">${theme === 'dark' ? '●' : '○'} Thème sombre</button>
     ${S.installPrompt ? '<button id="m-install">📲 Installer l’application</button>' : ''}
+    ${DEMO ? '' : '<button id="m-guide">🎓 Guide vidéo</button>'}
     ${DEMO ? '' : `<button id="m-news">✨ Nouveautés <span class="muted" style="margin-left:auto">v${VERSION}</span></button>`}
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
   document.body.appendChild(m);
@@ -846,6 +877,7 @@ function ouvrirMenuUtilisateur(e) {
   }));
   $('#m-install', m)?.addEventListener('click', async () => { S.installPrompt.prompt(); S.installPrompt = null; fermerPanneaux(); });
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
+  $('#m-guide', m)?.addEventListener('click', () => { fermerPanneaux(); ouvrirGuide(); });
   $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); await sb.auth.signOut(); };
 }
 
