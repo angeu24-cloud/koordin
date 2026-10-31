@@ -135,6 +135,16 @@ Il ne voit que les données que la personne connectée a le droit de voir.
 - Une sortie de stock supérieure à la quantité disponible est refusée ; passer sous le seuil déclenche une alerte **stock bas**.
 - Le flux d'activité (🔔) se met à jour **en temps réel**.
 
+## Mettre à jour une installation existante (version 1.5)
+
+La version 1.5 ajoute la **photo de couverture des chantiers**, les **communiqués** (messages de la Direction à l'équipe) et les **annonces sponsorisées** (gérées depuis la console KOORDIN). Si KOORDIN est déjà installé :
+
+1. Supabase → **SQL Editor** → **New query**.
+2. Ouvrez le fichier `supabase/mise-a-jour-1.5.sql` avec le Bloc-notes, copiez tout, collez dans l'éditeur, puis **Run**.
+3. Vous devez voir *Success. No rows returned*. Ce script peut être relancé sans risque.
+
+Tant que ce script n'a pas été exécuté, l'application affiche « Cette fonction nécessite la mise à jour 1.5 de la base de données » quand on essaie d'ajouter une photo de chantier ou un communiqué.
+
 ## En cas de problème
 
 | Symptôme | Solution |
@@ -143,5 +153,6 @@ Il ne voit que les données que la personne connectée a le droit de voir.
 | « Email ou mot de passe incorrect » après inscription | Confirmez l'email (lien reçu), ou désactivez *Confirm email* (étape 3). |
 | « Votre compte n'est rattaché à aucune entreprise » | L'invitation n'existe pas pour cet email exact. La Direction doit la créer dans **Équipe**. |
 | Le lien de confirmation ouvre une page d'erreur | Vérifiez *Site URL* et *Redirect URLs* (étape 5). |
+| « Cette fonction nécessite la mise à jour 1.5 de la base de données » | Exécutez `supabase/mise-a-jour-1.5.sql` dans Supabase → SQL Editor (voir ci-dessus). |
 | « L'assistant IA n'est pas joignable » | La fonction `koordin-ia` n'est pas déployée ou mal nommée (étape 6). |
 | « Clé ANTHROPIC_API_KEY absente ou invalide » | Vérifiez le secret dans Supabase → Edge Functions → Secrets. |

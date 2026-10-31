@@ -21,6 +21,7 @@ koordin/
 │   └── vendor/                    Bibliothèques intégrées (Supabase, Chart.js)
 └── supabase/
     ├── schema.sql                 Base de données, habilitations, alertes, démo
+    ├── mise-a-jour-1.5.sql        Mise à jour d'une base existante (photos, communiqués, annonces)
     ├── functions/koordin-ia/      Assistant IA (fonction serveur)
     └── config.toml                Configuration pour la ligne de commande Supabase (facultatif)
 ```
@@ -30,13 +31,15 @@ koordin/
 | Module | Détail |
 |---|---|
 | Tableau de bord Direction | Projets actifs/critiques, avancement réel vs prévu, budget consommé, rapports à valider, graphiques, flux d'activité |
-| Projets | Fiche, lots avec budget/engagé/facturé, planning Gantt, équipe affectée, achats et factures du projet |
+| Projets | Photo de couverture, fiche, lots avec budget/engagé/facturé, planning Gantt, équipe affectée, achats et factures du projet |
 | Rapports terrain | Formulaire mobile (photos compressées, brouillon automatique), validation/rejet avec commentaire, mise à jour de l'avancement |
 | Achats | Commandes par lot avec contrôle du reste disponible, budget par lot, fournisseurs, réception |
 | Comptabilité | Factures/dépenses par catégorie, échéances, paiements, budget/réalisé, export CSV (Excel) |
 | Stock | Articles, seuils, entrées/sorties par chantier, historique, valeur du stock |
 | Équipe | Invitations par rôle (WhatsApp/email), changement de rôle, désactivation |
 | Assistant IA | Questions en langage naturel sur les données réelles, limitées aux habilitations de l'utilisateur |
+| Communiqués | Messages avec image ou affiche, pour toute l'entreprise ou un chantier, publiés par la Direction ou la Coordination ; visibles sur le tableau de bord |
+| Annonces sponsorisées | Annonces de partenaires gérées depuis la console KOORDIN, affichées « Sponsorisé » avec suivi des vues et des clics |
 | Alertes | Dépassement de budget (projet et lot), stock bas, double facturation, incident signalé — en temps réel |
 
 ## Notes techniques (pour un développeur)
