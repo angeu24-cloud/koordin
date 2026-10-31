@@ -6,6 +6,8 @@
 'use strict';
 
 const CFG = window.KOORDIN_CONFIG || {};
+// Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
+const VERSION = '1.4';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -179,13 +181,32 @@ function messageErreur(e) {
 function toast(msg, type = 'ok', duree = 4200) {
   const t = document.createElement('div');
   t.className = `toast ${type}`;
-  t.textContent = msg;
+  const ico = document.createElement('span');
+  ico.className = 'toast-ico';
+  ico.textContent = type === 'err' ? '⚠️' : type === 'warn' ? '🔔' : '✓';
+  const txt = document.createElement('span');
+  txt.textContent = msg;
+  t.append(ico, txt);
   $('#toasts').appendChild(t);
   setTimeout(() => t.remove(), duree);
 }
 
 const empty = (ico, txt) => `<div class="empty"><div class="big">${ico}</div>${esc(txt)}</div>`;
-const loading = () => '<div class="loading"><div class="spinner"></div></div>';
+const loading = () => `<div class="skeleton" aria-label="Chargement" role="status">
+  <div class="sk sk-title"></div><div class="sk sk-sub"></div>
+  <div class="sk-row"><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div></div>
+  <div class="sk sk-block"></div></div>`;
+// Anneau d'avancement (avec repère du prévu)
+function anneau(valeur, attendu = null, taille = 56) {
+  const v = Math.max(0, Math.min(100, num(valeur)));
+  const r = 22, c = 2 * Math.PI * r;
+  const retard = attendu != null && attendu - v > 15 ? 'crit' : attendu != null && attendu - v > 5 ? 'warn' : 'ok';
+  const repere = attendu != null ? (() => { const a = (Math.max(0, Math.min(100, attendu)) / 100) * 2 * Math.PI - Math.PI / 2; return `<line x1="${28 + 17 * Math.cos(a)}" y1="${28 + 17 * Math.sin(a)}" x2="${28 + 27 * Math.cos(a)}" y2="${28 + 27 * Math.sin(a)}" class="ring-mark"/>`; })() : '';
+  return `<svg class="ring ring-${retard}" width="${taille}" height="${taille}" viewBox="0 0 56 56" role="img" aria-label="Avancement ${v} %${attendu != null ? `, prévu ${attendu} %` : ''}">
+    <circle cx="28" cy="28" r="${r}" class="ring-bg"/>
+    <circle cx="28" cy="28" r="${r}" class="ring-val" stroke-dasharray="${(v / 100) * c} ${c}" transform="rotate(-90 28 28)"/>
+    ${repere}<text x="28" y="32" text-anchor="middle" class="ring-txt">${v}%</text></svg>`;
+}
 
 function progressBar(valeur, { attendu = null, cls = '', label = null } = {}) {
   const v = Math.max(0, Math.min(100, num(valeur)));
@@ -459,8 +480,18 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       ${F.text('password', 'Choisissez un mot de passe (8 caractères minimum)', '', { type: 'password', required: true, autocomplete: 'new-password' })}
       <button class="btn primary block" type="submit">Rejoindre mon équipe</button>`,
   };
-  $('#root').innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
+  $('#root').innerHTML = `<div class="auth-wrap auth-split">
+    <aside class="auth-visual" aria-hidden="true">
+      <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
+      <h2 class="auth-slogan">Tous vos chantiers,<br><span>une seule plateforme.</span></h2>
+      <ul class="auth-points">
+        <li><b>🔧 Terrain</b> Rapports du jour et photos depuis le téléphone</li>
+        <li><b>📊 Direction</b> Avancement, budgets et retards en temps réel</li>
+        <li><b>🛒 Achats · Compta · Magasin</b> Chaque service dans son espace</li>
+      </ul>
+    </aside>
+    <div class="auth-card">
+    <div class="brand auth-brand-mobile"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
     <p class="auth-sub">Tous vos chantiers, une seule plateforme.</p>
     <div class="auth-tabs">${Object.entries(onglets).map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === onglet ? 'active' : ''}">${l}</button>`).join('')}</div>
     ${message ? `<div class="auth-msg ${message.type}" style="margin-bottom:14px">${esc(message.texte)}</div>` : ''}
@@ -572,12 +603,60 @@ async function ouvrirApplication(session) {
     ecouterTempsReel();
     if (!DEMO) window.onhashchange = naviguer;
     await naviguer();
+    if (!DEMO) suivreMisesAJour();
   } catch (e) {
     console.error(e);
     $('#root').innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
       <div class="auth-msg err" style="margin:16px 0">${esc(messageErreur(e))}</div>
       <button class="btn primary block" onclick="location.reload()">Réessayer</button></div></div>`;
   }
+}
+
+// ─── Mises à jour de l'application ───
+// version.json (publié avec l'application) annonce la dernière version et ses nouveautés.
+// Si elle diffère de la version en cours, un bandeau propose de mettre à jour.
+
+let infosVersion = null;
+async function lireVersionPubliee() {
+  try {
+    const rep = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (rep.ok) infosVersion = await rep.json();
+  } catch { /* hors ligne : on réessaiera */ }
+  return infosVersion;
+}
+function suivreMisesAJour() {
+  const verifier = async () => {
+    const v = await lireVersionPubliee();
+    if (v?.version && v.version !== VERSION && !$('#maj-bar')) {
+      const bar = document.createElement('div');
+      bar.id = 'maj-bar';
+      bar.className = 'maj-bar';
+      bar.innerHTML = `<span>✨ Une nouvelle version de KOORDIN est disponible.</span><button class="btn sm primary" type="button">Mettre à jour</button>`;
+      $('button', bar).onclick = async () => {
+        try { (await caches.keys()).forEach((k) => caches.delete(k)); } catch { /* rien */ }
+        location.reload();
+      };
+      document.body.appendChild(bar);
+    }
+  };
+  verifier();
+  setInterval(verifier, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verifier(); });
+  // Après une mise à jour : montrer les nouveautés une fois
+  let vue = null;
+  try { vue = localStorage.getItem('koordin-version-vue'); } catch { /* rien */ }
+  try { localStorage.setItem('koordin-version-vue', VERSION); } catch { /* rien */ }
+  if (vue && vue !== VERSION) setTimeout(() => afficherNouveautes(), 800);
+}
+async function afficherNouveautes() {
+  const v = infosVersion || await lireVersionPubliee();
+  const notes = v?.version === VERSION ? v.nouveautes || [] : [];
+  ouvrirModale({
+    titre: `✨ Nouveautés de KOORDIN ${VERSION}`,
+    corps: `${notes.length ? `<ul class="nouveautes">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p>Vous utilisez la dernière version de KOORDIN.</p>'}
+      <p class="muted mt" style="font-size:12px">Version ${esc(VERSION)}${v?.date ? ` · publiée le ${new Date(v.date).toLocaleDateString('fr-FR')}` : ''}</p>
+      <div class="form-actions"><button class="btn primary" data-close>Compris</button></div>`,
+  });
 }
 
 function ecranSansEntreprise(email) {
@@ -639,6 +718,7 @@ function ouvrirMenuUtilisateur(e) {
     <button data-theme-set="light">${theme === 'light' ? '●' : '○'} Thème clair (chantier)</button>
     <button data-theme-set="dark">${theme === 'dark' ? '●' : '○'} Thème sombre</button>
     ${S.installPrompt ? '<button id="m-install">📲 Installer l’application</button>' : ''}
+    ${DEMO ? '' : `<button id="m-news">✨ Nouveautés <span class="muted" style="margin-left:auto">v${VERSION}</span></button>`}
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
   document.body.appendChild(m);
   $$('[data-theme-set]', m).forEach((b) => (b.onclick = () => {
@@ -650,6 +730,7 @@ function ouvrirMenuUtilisateur(e) {
     naviguer();
   }));
   $('#m-install', m)?.addEventListener('click', async () => { S.installPrompt.prompt(); S.installPrompt = null; fermerPanneaux(); });
+  $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
   $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); await sb.auth.signOut(); };
 }
 
@@ -763,7 +844,7 @@ function page(html) {
   return $('#main .page');
 }
 const entete = (titre, sousTitre = '', actions = '') => `<div class="page-head"><div><h1 class="page-title">${titre}</h1>${sousTitre ? `<p class="page-sub">${sousTitre}</p>` : ''}</div><div class="page-actions">${actions}</div></div>`;
-const kpi = (label, valeur, pied = '', cls = '') => `<div class="kpi ${cls}"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
+const kpi = (label, valeur, pied = '', cls = '', ico = '') => `<div class="kpi ${cls}">${ico ? `<div class="kpi-ico" aria-hidden="true">${ico}</div>` : ''}<div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
 
 function bonjour() {
   const h = new Date().getHours();
@@ -814,15 +895,28 @@ async function dashDirection() {
   const attente = projets.reduce((s, p) => s + p.rapports_en_attente, 0);
   const alertesStock = stock.filter((a) => a.alerte).length;
 
+  const resume = !actifs.length ? 'Aucun chantier en cours pour le moment.'
+    : critiques || attente ? [critiques ? `${critiques} chantier${critiques > 1 ? 's' : ''} à surveiller de près` : '', attente ? `${attente} rapport${attente > 1 ? 's' : ''} à valider` : ''].filter(Boolean).join(' · ')
+    : `${actifs.length} chantier${actifs.length > 1 ? 's' : ''} en cours, tout est sous contrôle.`;
   page(`
-    ${entete(bonjour(), `Vue d’ensemble de ${esc(S.entreprise.nom)} — ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}`,
-      can('direction', 'coordinateur') ? '<a class="btn primary" href="#/projets" data-nouveau-projet>＋ Nouveau projet</a>' : '')}
+    <section class="hero">
+      <div class="hero-txt">
+        <p class="hero-date">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${esc(S.entreprise.nom)}</p>
+        <h1 class="page-title">${bonjour()}</h1>
+        <p class="hero-resume">${esc(resume)}</p>
+      </div>
+      <div class="hero-actions">
+        ${can('direction', 'coordinateur') ? '<a class="btn primary" href="#/projets" data-nouveau-projet>＋ Nouveau projet</a>' : ''}
+        ${attente ? `<a class="btn" href="#/rapports">📋 Valider ${attente} rapport${attente > 1 ? 's' : ''}</a>` : ''}
+        ${can(...ROLES_IA) ? '<a class="btn ghost" href="#/ia">🧠 Demander à l’IA</a>' : ''}
+      </div>
+    </section>
     ${!projets.length && can('direction') ? `<div class="notice">Bienvenue ! Créez votre premier projet, ou chargez des <b>données de démonstration</b> depuis <a href="#/parametres">Paramètres</a> pour découvrir KOORDIN.</div>` : ''}
     <div class="grid k4">
-      ${kpi('Projets actifs', actifs.length, critiques ? `<span style="color:var(--crit)">🚨 ${critiques} en situation critique</span>` : '✅ Aucun projet critique', critiques ? 'alert' : '')}
-      ${kpi('Avancement moyen', `${avMoyen} %`, prevuMoyen != null ? `Prévu à date : ${prevuMoyen} %` : '')}
-      ${kpi('Budget consommé', `${pct(engage, budget)} %`, `${moneyShort(engage)} sur ${moneyShort(budget)}`, pct(engage, budget) > 100 ? 'alert' : '')}
-      ${kpi('Rapports à valider', attente, alertesStock ? `📦 ${alertesStock} article(s) sous le seuil` : 'Stock : aucune alerte', attente ? 'warn' : '')}
+      ${kpi('Projets actifs', actifs.length, critiques ? `<span style="color:var(--crit)">🚨 ${critiques} en situation critique</span>` : '✅ Aucun projet critique', critiques ? 'alert' : '', '🏗️')}
+      ${kpi('Avancement moyen', `${avMoyen} %`, prevuMoyen != null ? `Prévu à date : ${prevuMoyen} %` : '', '', '📈')}
+      ${kpi('Budget consommé', `${pct(engage, budget)} %`, `${moneyShort(engage)} sur ${moneyShort(budget)}`, pct(engage, budget) > 100 ? 'alert' : '', '💰')}
+      ${kpi('Rapports à valider', attente, alertesStock ? `📦 ${alertesStock} article(s) sous le seuil` : 'Stock : aucune alerte', attente ? 'warn' : '', '📋')}
     </div>
     ${actifs.length ? `<div class="grid c2 section">
       <div class="card"><div class="card-title">Avancement réel et prévu</div>
@@ -874,8 +968,8 @@ async function dashTechnicien() {
     <div class="card"><div class="card-title">Mes chantiers</div>
       <div class="projects">${projets.map((p) => `
         <div class="card project-card" data-go="#/projet/${p.id}">
-          <div class="pc-top"><div><h3>${esc(p.nom)}</h3><div class="meta">${esc(p.localisation || '')}</div></div>${badge(SANTE[p.sante])}</div>
-          ${progressBar(p.avancement, { attendu: p.avancement_attendu })}
+          <div class="pc-head">${anneau(p.avancement, p.avancement_attendu)}
+            <div class="pc-titre"><h3>${esc(p.nom)}</h3><div class="meta">${esc(p.localisation || '')}</div><div class="pc-badges">${badge(SANTE[p.sante])}</div></div></div>
           <div class="meta">Fin prévue : ${fdate(p.date_fin_prevue)}</div>
         </div>`).join('') || empty('🏗️', 'Aucun chantier')}</div></div>
     <div class="grid c2 section">
@@ -995,8 +1089,9 @@ PAGES.projets = async () => {
       && (!recherche || `${x.nom} ${x.client || ''} ${x.localisation || ''} ${x.reference || ''}`.toLowerCase().includes(recherche)));
     $('#liste', p).innerHTML = l.map((x) => `
       <div class="card project-card" data-go="#/projet/${x.id}">
-        <div class="pc-top"><div><h3>${esc(x.nom)}</h3><div class="meta">${esc([x.reference, x.localisation].filter(Boolean).join(' · '))}</div></div>${badge(SANTE[x.sante])}</div>
-        ${progressBar(x.avancement, { attendu: x.avancement_attendu })}
+        <div class="pc-head">${anneau(x.avancement, x.avancement_attendu)}
+          <div class="pc-titre"><h3>${esc(x.nom)}</h3><div class="meta">${esc([x.reference, x.localisation].filter(Boolean).join(' · '))}</div>
+          <div class="pc-badges">${badge(SANTE[x.sante])}</div></div></div>
         <div class="pc-stats">
           ${tech ? `<div><b>${x.avancement} %</b><span>Avancement</span></div>` : `<div><b>${moneyShort(x.budget)}</b><span>Budget</span></div>`}
           ${tech ? `<div><b>${x.avancement_attendu ?? '—'} %</b><span>Prévu</span></div>` : `<div><b>${pct(Math.max(num(x.engage), num(x.facture)), x.budget)} %</b><span>Consommé</span></div>`}
