@@ -126,6 +126,27 @@ function ago(ts) {
   return new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 const initiales = (nom) => String(nom || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+// Comptes sans email : un numéro de téléphone devient un identifiant interne
+// (ex. 07 01 02 03 04 → 2250701020304@tel.koordin.app). Aucun email n'y est jamais envoyé.
+const DOMAINE_TEL = 'tel.koordin.app';
+function versIdentifiant(saisie) {
+  const v = String(saisie || '').trim().toLowerCase();
+  if (v.includes('@')) return v;
+  let n = v.replace(/[^\d+]/g, '');
+  if (n.startsWith('+')) n = n.slice(1);
+  else if (n.startsWith('00')) n = n.slice(2);
+  else if (n.length === 10 && n.startsWith('0')) n = `225${n}`;
+  n = n.replace(/\D/g, '');
+  if (n.length < 8) throw new Error('Numéro de téléphone incomplet. Exemple : 07 01 02 03 04');
+  return `${n}@${DOMAINE_TEL}`;
+}
+const estTelephone = (id) => String(id || '').endsWith(`@${DOMAINE_TEL}`);
+function afficherIdentifiant(id) {
+  if (!estTelephone(id)) return id || '';
+  const n = id.split('@')[0];
+  return n.startsWith('225') && n.length === 13 ? `+225 ${n.slice(3).replace(/(\d{2})(?=\d)/g, '$1 ')}` : `+${n}`;
+}
+const numeroWhatsApp = (id) => (estTelephone(id) ? id.split('@')[0] : null);
 const badge = ([cls, txt]) => `<span class="badge ${cls}">${esc(txt)}</span>`;
 const nomMembre = (id) => S.equipe.find((p) => p.id === id)?.nom || '—';
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -414,7 +435,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
   const onglets = { connexion: 'Se connecter', creer: 'Créer mon entreprise', invite: 'J’ai une invitation' };
   const formulaires = {
     connexion: `
-      ${F.text('email', 'Email', '', { type: 'email', required: true, autocomplete: 'email' })}
+      ${F.text('email', 'Email ou numéro de téléphone', '', { required: true, autocomplete: 'username', placeholder: 'nom@entreprise.ci ou 07 01 02 03 04' })}
       ${F.text('password', 'Mot de passe', '', { type: 'password', required: true, autocomplete: 'current-password' })}
       <button class="btn primary block" type="submit">Se connecter</button>
       <button class="auth-link" type="button" data-oubli>Mot de passe oublié ?</button>`,
@@ -426,9 +447,9 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       <button class="btn primary block" type="submit">Créer mon espace KOORDIN</button>
       <p class="muted" style="font-size:12px">Vous serez l’administrateur (rôle Direction) et pourrez inviter votre équipe.</p>`,
     invite: `
-      <p class="muted" style="font-size:12px">Utilisez <b>exactement</b> l’adresse email à laquelle votre direction vous a invité.</p>
+      <p class="muted" style="font-size:12px">Utilisez <b>exactement</b> le numéro de téléphone ou l’email indiqué dans votre invitation.</p>
       ${F.text('nom', 'Votre nom complet', '', { required: true, autocomplete: 'name' })}
-      ${F.text('email', 'Email (celui de l’invitation)', '', { type: 'email', required: true, autocomplete: 'email' })}
+      ${F.text('email', 'Numéro de téléphone ou email (celui de l’invitation)', '', { required: true, autocomplete: 'username', placeholder: '07 01 02 03 04' })}
       ${F.text('password', 'Choisissez un mot de passe (8 caractères minimum)', '', { type: 'password', required: true, autocomplete: 'new-password' })}
       <button class="btn primary block" type="submit">Rejoindre mon équipe</button>`,
   };
@@ -450,6 +471,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
     const btn = $('button[type="submit"]', form);
     btn.disabled = true;
     try {
+      v.email = versIdentifiant(v.email);
       if (onglet === 'connexion') {
         const { data, error } = await sb.auth.signInWithPassword({ email: v.email, password: v.password });
         if (error) throw error;
@@ -481,7 +503,8 @@ function ecranMotDePasseOublie() {
     <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
     <p class="auth-sub">Recevez un lien pour choisir un nouveau mot de passe.</p>
     <form class="auth-form" id="f">
-      ${F.text('email', 'Votre email', '', { type: 'email', required: true })}
+      ${F.text('email', 'Votre email', '', { required: true })}
+      <p class="muted" style="font-size:12px">Compte créé avec un numéro de téléphone ? Demandez à votre direction de vous choisir un nouveau mot de passe depuis l’écran Équipe.</p>
       <button class="btn primary block" type="submit">Envoyer le lien</button>
       <button class="auth-link" type="button" id="retour">← Retour à la connexion</button>
     </form></div></div>`;
@@ -489,6 +512,10 @@ function ecranMotDePasseOublie() {
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const { email } = lireFormulaire(e.target);
+    if (!email || !email.includes('@')) {
+      ecranConnexion('connexion', { type: 'err', texte: 'Pour un compte créé avec un numéro de téléphone, demandez à votre direction de réinitialiser votre mot de passe.' });
+      return;
+    }
     const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
     ecranConnexion('connexion', error
       ? { type: 'err', texte: messageErreur(error) }
@@ -545,9 +572,9 @@ async function ouvrirApplication(session) {
 function ecranSansEntreprise(email) {
   $('#root').innerHTML = `<div class="auth-wrap"><div class="auth-card">
     <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
-    <p class="auth-sub">Connecté en tant que ${esc(email)}</p>
+    <p class="auth-sub">Connecté en tant que ${esc(afficherIdentifiant(email))}</p>
     <div class="notice warn">Votre compte n’est rattaché à aucune entreprise, ou il a été désactivé.</div>
-    <p style="font-size:13px">Demandez à la direction de votre entreprise de vous inviter avec cette adresse email, puis reconnectez-vous.</p>
+    <p style="font-size:13px">Demandez à la direction de votre entreprise de vous inviter avec ce numéro ou cette adresse email, puis reconnectez-vous.</p>
     <div class="form-actions"><button class="btn" id="re">Réessayer</button><button class="btn primary" id="out">Se déconnecter</button></div>
   </div></div>`;
   $('#re').onclick = () => location.reload();
@@ -596,7 +623,7 @@ function ouvrirMenuUtilisateur(e) {
   try { theme = localStorage.getItem('koordin-theme') || 'auto'; } catch { /* rien */ }
   m.innerHTML = `
     <div style="padding:8px 10px 10px;border-bottom:1px solid var(--border);margin-bottom:4px">
-      <b style="font-size:13px">${esc(S.profil.nom)}</b><div class="muted" style="font-size:12px">${esc(S.profil.email)}</div></div>
+      <b style="font-size:13px">${esc(S.profil.nom)}</b><div class="muted" style="font-size:12px">${esc(afficherIdentifiant(S.profil.email))}</div></div>
     <button data-theme-set="auto">${theme === 'auto' ? '●' : '○'} Thème automatique</button>
     <button data-theme-set="light">${theme === 'light' ? '●' : '○'} Thème clair (chantier)</button>
     <button data-theme-set="dark">${theme === 'dark' ? '●' : '○'} Thème sombre</button>
@@ -1215,7 +1242,7 @@ async function ongletEquipe(projet, zone) {
     <div class="notice">Les techniciens ne voient que les chantiers auxquels ils sont affectés. Les autres rôles voient tous les projets.</div>
     ${affect.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Nom</th><th>Rôle</th><th>Contact</th>${gerer ? '<th></th>' : ''}</tr></thead><tbody>
       ${affect.map((a) => `<tr><td><b>${esc(a.profils?.nom)}</b></td><td>${ROLES[a.profils?.role]?.ico || ''} ${esc(ROLES[a.profils?.role]?.label || '')}</td>
-        <td class="muted">${esc(a.profils?.email || '')}${a.profils?.telephone ? ` · ${esc(a.profils.telephone)}` : ''}</td>
+        <td class="muted">${esc(afficherIdentifiant(a.profils?.email))}${a.profils?.telephone ? ` · ${esc(a.profils.telephone)}` : ''}</td>
         ${gerer ? `<td class="right"><button class="btn sm" data-retirer="${a.profil_id}">Retirer</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : empty('👥', 'Personne n’est encore affecté à ce projet')}</div>`;
   $('#add-a', zone)?.addEventListener('click', () => ouvrirModale({
@@ -1896,7 +1923,8 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
 
 function messageInvitation(inv) {
   const url = location.origin + location.pathname;
-  return `Bonjour ${inv.nom || ''},\n\nVous êtes invité(e) à rejoindre ${S.entreprise.nom} sur KOORDIN, notre plateforme de suivi des chantiers, en tant que ${ROLES[inv.role].label}.\n\n1. Ouvrez : ${url}\n2. Choisissez « J’ai une invitation »\n3. Utilisez cette adresse email : ${inv.email}\n\nSur téléphone, vous pouvez ensuite « Ajouter à l’écran d’accueil » pour l’utiliser comme une application.`;
+  return `Bonjour ${inv.nom || ''},\n\nVous êtes invité(e) à rejoindre ${S.entreprise.nom} sur KOORDIN, notre plateforme de suivi des chantiers, en tant que ${ROLES[inv.role].label}.\n\n1. Ouvrez : ${url}\n2. Choisissez « J’ai une invitation »\n3. ${estTelephone(inv.email) ? `Tapez ce numéro de téléphone : ${afficherIdentifiant(inv.email).replace(/^\+225 /, '')}` : `Utilisez cette adresse email : ${inv.email}`}
+4. Choisissez votre mot de passe\n\nSur téléphone, vous pouvez ensuite « Ajouter à l’écran d’accueil » pour l’utiliser comme une application.`;
 }
 
 PAGES.equipe = async () => {
@@ -1912,15 +1940,15 @@ PAGES.equipe = async () => {
       <div class="table-wrap"><table class="tbl"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th class="num">Projets affectés</th><th>Accès</th></tr></thead><tbody>
       ${S.equipe.map((m) => {
         const moi = m.id === S.profil.id;
-        return `<tr><td><b>${esc(m.nom)}</b>${moi ? ' <span class="badge muted">vous</span>' : ''}</td><td class="muted">${esc(m.email)}</td>
+        return `<tr><td><b>${esc(m.nom)}</b>${moi ? ' <span class="badge muted">vous</span>' : ''}</td><td class="muted">${esc(afficherIdentifiant(m.email))}</td>
           <td><select class="input" data-role="${m.id}" ${moi ? 'disabled' : ''} style="min-width:150px">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${k === m.role ? 'selected' : ''}>${r.ico} ${r.label}</option>`).join('')}</select></td>
           <td class="num">${m.role === 'technicien' ? nbProjets(m.id) : '<span class="muted">tous</span>'}</td>
-          <td>${moi ? badge(['ok', '✅ Actif']) : `<button class="btn sm ${m.actif ? '' : 'primary'}" data-actif="${m.id}">${m.actif ? '🚫 Désactiver' : '✅ Réactiver'}</button>`}</td></tr>`;
+          <td class="nowrap">${moi ? badge(['ok', '✅ Actif']) : `<button class="btn sm" data-mdp="${m.id}">🔑 Mot de passe</button><button class="btn sm ${m.actif ? '' : 'primary'}" data-actif="${m.id}">${m.actif ? '🚫 Désactiver' : '✅ Réactiver'}</button>`}</td></tr>`;
       }).join('')}</tbody></table></div>
       <p class="muted mt" style="font-size:12px">Un membre désactivé ne peut plus rien consulter. Ses rapports et saisies restent dans l’historique.</p></div>
     <div class="card"><div class="card-title">Invitations en attente</div>
       ${invitations.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Envoyée</th><th></th></tr></thead><tbody>
-      ${invitations.map((i) => `<tr><td><b>${esc(i.nom || '—')}</b></td><td>${esc(i.email)}</td><td>${ROLES[i.role].ico} ${ROLES[i.role].label}</td><td class="muted">${ago(i.created_at)}</td>
+      ${invitations.map((i) => `<tr><td><b>${esc(i.nom || '—')}</b></td><td>${esc(afficherIdentifiant(i.email))}</td><td>${ROLES[i.role].ico} ${ROLES[i.role].label}</td><td class="muted">${ago(i.created_at)}</td>
         <td class="right nowrap"><button class="btn sm" data-partager="${i.id}">📤 Envoyer</button><button class="btn sm" data-annuler="${i.id}">Annuler</button></td></tr>`).join('')}</tbody></table></div>` : empty('✉️', 'Aucune invitation en attente')}
     </div>
     <div class="card"><div class="card-title">Ce que voit chaque rôle</div>
@@ -1937,12 +1965,12 @@ PAGES.equipe = async () => {
     titre: 'Inviter une personne',
     corps: `<div class="form-grid">
       ${F.text('nom', 'Nom complet', '', { required: true })}
-      ${F.text('email', 'Email', '', { type: 'email', required: true })}
+      ${F.text('email', 'Numéro WhatsApp ou email', '', { required: true, placeholder: '07 01 02 03 04', hint: 'Un numéro de téléphone suffit : pas besoin d’adresse email.' })}
       ${F.select('role', 'Rôle', Object.entries(ROLES).map(([k, r]) => [k, `${r.ico} ${r.label}`]), 'technicien', { required: true, full: true })}
-    </div><p class="muted mt" style="font-size:12px">La personne crée ensuite son compte avec cette adresse email et rejoint automatiquement votre entreprise avec ce rôle.</p>`,
+    </div><p class="muted mt" style="font-size:12px">La personne ouvre le lien reçu, crée son compte avec ce numéro (ou cet email) et rejoint automatiquement votre entreprise avec ce rôle.</p>`,
     boutonOk: 'Créer l’invitation',
     onSubmit: async (d) => {
-      const email = d.email.toLowerCase();
+      const email = versIdentifiant(d.email);
       if (S.equipe.some((m) => m.email.toLowerCase() === email)) throw new Error('Cette personne fait déjà partie de l’équipe.');
       const inv = await q(sb.from('invitations').insert({ entreprise_id: S.entreprise.id, email, nom: d.nom, role: d.role }).select().single());
       partagerInvitation(inv);
@@ -1956,6 +1984,33 @@ PAGES.equipe = async () => {
   $$('[data-role]', p).forEach((s) => (s.onchange = async () => {
     try { await q(sb.from('profils').update({ role: s.value }).eq('id', s.dataset.role)); toast('Rôle modifié.'); await chargerEquipe(); } catch (e) { toast(messageErreur(e), 'err'); PAGES.equipe(); }
   }));
+  $$('[data-mdp]', p).forEach((b) => (b.onclick = () => {
+    const m = S.equipe.find((x) => x.id === b.dataset.mdp);
+    ouvrirModale({
+      titre: `Nouveau mot de passe pour ${m.nom}`,
+      corps: `${F.text('mdp', 'Nouveau mot de passe (8 caractères minimum)', '', { required: true, full: true })}
+        <p class="muted mt" style="font-size:12px">Utile quand la personne a oublié son mot de passe, notamment pour un compte créé avec un numéro de téléphone. Communiquez-lui le nouveau mot de passe en privé.</p>`,
+      boutonOk: 'Enregistrer le mot de passe',
+      onSubmit: async (d) => {
+        if (!d.mdp || d.mdp.length < 8) throw new Error('Le mot de passe doit contenir au moins 8 caractères.');
+        const { error } = await sb.rpc('changer_mot_de_passe_membre', { p_profil: m.id, p_mot_de_passe: d.mdp });
+        if (error) {
+          if (/changer_mot_de_passe_membre|function|PGRST202/i.test(error.message || '') || error.code === 'PGRST202') throw new Error('Cette fonction nécessite une petite mise à jour de la base de données (voir le kit d’installation).');
+          throw error;
+        }
+        toast(`Mot de passe de ${m.nom} modifié.`);
+        const numero = numeroWhatsApp(m.email);
+        if (numero) {
+          const texte = `Bonjour ${m.nom}, votre nouveau mot de passe KOORDIN est : ${d.mdp}\nConnexion : ${location.origin + location.pathname}`;
+          setTimeout(() => ouvrirModale({
+            titre: 'Prévenir la personne',
+            corps: `<p style="margin-bottom:12px">Envoyez-lui son nouveau mot de passe sur WhatsApp :</p>
+              <a class="btn primary block" target="_blank" rel="noopener" href="https://wa.me/${numero}?text=${encodeURIComponent(texte)}">💬 Envoyer sur son WhatsApp</a>`,
+          }), 50);
+        }
+      },
+    });
+  }));
   $$('[data-actif]', p).forEach((b) => (b.onclick = async () => {
     const m = S.equipe.find((x) => x.id === b.dataset.actif);
     if (m.actif && !(await confirmer(`Désactiver l’accès de ${m.nom} ?`, 'Désactiver'))) return;
@@ -1967,12 +2022,12 @@ function partagerInvitation(inv) {
   const texte = messageInvitation(inv);
   const m = ouvrirModale({
     titre: 'Envoyer l’invitation',
-    corps: `<p style="margin-bottom:10px">Invitation créée pour <b>${esc(inv.email)}</b>. Envoyez-lui ce message :</p>
+    corps: `<p style="margin-bottom:10px">Invitation créée pour <b>${esc(afficherIdentifiant(inv.email))}</b>. Envoyez-lui ce message :</p>
       <textarea class="input" readonly style="min-height:190px;width:100%">${esc(texte)}</textarea>
       <div class="form-actions" style="flex-wrap:wrap">
-        <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texte)}">💬 WhatsApp</a>
-        <a class="btn" href="mailto:${esc(inv.email)}?subject=${encodeURIComponent(`Invitation KOORDIN — ${S.entreprise.nom}`)}&body=${encodeURIComponent(texte)}">✉️ Email</a>
-        <button class="btn primary" id="copier">📋 Copier le message</button></div>`,
+        <a class="btn ${numeroWhatsApp(inv.email) ? 'primary' : ''}" target="_blank" rel="noopener" href="https://wa.me/${numeroWhatsApp(inv.email) || ''}?text=${encodeURIComponent(texte)}">💬 ${numeroWhatsApp(inv.email) ? 'Envoyer sur son WhatsApp' : 'WhatsApp'}</a>
+        ${estTelephone(inv.email) ? '' : `<a class="btn" href="mailto:${esc(inv.email)}?subject=${encodeURIComponent(`Invitation KOORDIN — ${S.entreprise.nom}`)}&body=${encodeURIComponent(texte)}">✉️ Email</a>`}
+        <button class="btn ${numeroWhatsApp(inv.email) ? '' : 'primary'}" id="copier">📋 Copier le message</button></div>`,
   });
   $('#copier', m.el).onclick = async () => {
     try { await navigator.clipboard.writeText(texte); toast('Message copié.'); } catch { $('textarea', m.el).select(); document.execCommand('copy'); toast('Message copié.'); }

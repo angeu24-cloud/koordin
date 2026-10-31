@@ -869,3 +869,28 @@ end $$;
 
 grant execute on function public.charger_demo() to authenticated;
 grant execute on function public.receptionner_commande(uuid) to authenticated;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 8. MOT DE PASSE D'UN MEMBRE (comptes créés avec un numéro de téléphone)
+-- Un compte sans email ne peut pas recevoir de lien « mot de passe oublié » :
+-- la Direction choisit alors un nouveau mot de passe depuis l'écran Équipe.
+-- ───────────────────────────────────────────────────────────────────
+create or replace function public.changer_mot_de_passe_membre(p_profil uuid, p_mot_de_passe text) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.a_role('direction') then
+    raise exception 'Réservé à la Direction';
+  end if;
+  if length(coalesce(p_mot_de_passe, '')) < 8 then
+    raise exception 'Le mot de passe doit contenir au moins 8 caractères.';
+  end if;
+  if not exists (select 1 from profils where id = p_profil and entreprise_id = public.mon_entreprise()) then
+    raise exception 'Membre introuvable';
+  end if;
+  update auth.users
+     set encrypted_password = extensions.crypt(p_mot_de_passe, extensions.gen_salt('bf')),
+         updated_at = now()
+   where id = p_profil;
+end $$;
+revoke execute on function public.changer_mot_de_passe_membre(uuid, text) from public, anon;
+grant execute on function public.changer_mot_de_passe_membre(uuid, text) to authenticated;
