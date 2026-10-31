@@ -46,7 +46,9 @@ const MENU = [
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'equipe', court: 'Équipe',          label: 'Équipe',          ico: '👥', roles: ['direction'] },
   { r: 'ia', court: 'IA',              label: 'Assistant IA',    ico: '🧠', roles: ROLES_IA },
+  { r: 'abonnement', court: 'Abonnement', label: 'Abonnement', ico: '💳', roles: ['direction'], licence: true },
   { r: 'parametres', court: 'Réglages',      label: 'Paramètres',      ico: '⚙️', roles: ['direction'] },
+  { r: 'console', court: 'Console', label: 'Console KOORDIN', ico: '🛡️', roles: TOUS, admin: true },
 ];
 
 const STATUT_PROJET = {
@@ -160,6 +162,10 @@ async function q(promesse) {
 function messageErreur(e) {
   const m = String(e?.message || e || '');
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Pas de connexion internet. Vérifiez le réseau puis réessayez.';
+  if (/LICENCE_EXPIREE/.test(m)) return role() === 'direction'
+    ? 'Votre licence KOORDIN a expiré : l’application est en lecture seule. Renouvelez-la dans Abonnement.'
+    : 'La licence KOORDIN de votre entreprise a expiré : l’application est en lecture seule. Prévenez votre direction.';
+  if (/LIMITE_PROJETS|LIMITE_UTILISATEURS/.test(m)) return `${e?.hint || 'Limite de votre formule atteinte.'} ${role() === 'direction' ? 'Passez à une formule supérieure dans Abonnement.' : 'Prévenez votre direction.'}`;
   if (/row-level security|permission denied|42501/i.test(m)) return 'Vous n’avez pas l’autorisation pour cette action.';
   if (/factures_numero_unique|duplicate key/i.test(m)) return 'Ce numéro existe déjà pour ce fournisseur (doublon possible).';
   if (/Invalid login credentials/i.test(m)) return 'Email ou mot de passe incorrect.';
@@ -556,6 +562,11 @@ async function ouvrirApplication(session) {
     if (!profil) return ecranSansEntreprise(session.user.email);
     S.profil = profil;
     S.entreprise = profil.entreprises;
+    S.plateformeAdmin = false;
+    if (!DEMO) {
+      const { data: admin } = await sb.rpc('est_admin_plateforme');
+      S.plateformeAdmin = admin === true;
+    }
     await chargerEquipe();
     construireInterface();
     ecouterTempsReel();
@@ -584,7 +595,7 @@ function ecranSansEntreprise(email) {
 // ─────────────────────────────── Interface ───────────────────────────────
 
 function menuVisible() {
-  return MENU.filter((m) => m.roles.includes(role())).map((m) => ({ ...m, label: role() === 'technicien' && m.labelTech ? m.labelTech : m.label }));
+  return MENU.filter((m) => m.roles.includes(role()) && (!m.admin || S.plateformeAdmin) && (!m.licence || !DEMO)).map((m) => ({ ...m, label: role() === 'technicien' && m.labelTech ? m.labelTech : m.label }));
 }
 
 function construireInterface() {
@@ -726,8 +737,29 @@ async function naviguer() {
   }
 }
 
+// ─── Licence ───
+
+function etatLicence() {
+  if (DEMO || !S.entreprise?.licence_fin) return null;
+  const fin = new Date(S.entreprise.licence_fin);
+  const jours = Math.ceil((fin.getTime() - Date.now()) / 86400000);
+  return { fin, jours, expiree: fin.getTime() <= Date.now(), essai: S.entreprise.plan === 'essai', illimitee: jours > 3650 };
+}
+function bandeauLicence() {
+  const l = etatLicence();
+  if (!l || l.illimitee) return '';
+  const dir = role() === 'direction';
+  const lien = dir ? ' <a href="#/abonnement"><b>Choisir une formule →</b></a>' : ' Prévenez votre direction.';
+  if (l.expiree) {
+    return `<div class="notice warn" style="border:1px solid var(--crit)">🔒 <b>${l.essai ? 'Votre essai gratuit est terminé' : 'Votre licence a expiré'}</b> : KOORDIN est en lecture seule. Vos données sont conservées.${dir ? ' <a href="#/abonnement"><b>Renouveler →</b></a>' : ' Prévenez votre direction.'}</div>`;
+  }
+  if (l.essai) return `<div class="notice">🎁 Essai gratuit : <b>${l.jours} jour${l.jours > 1 ? 's' : ''} restant${l.jours > 1 ? 's' : ''}</b>.${dir ? lien : ''}</div>`;
+  if (l.jours <= 7) return `<div class="notice warn">⏳ Votre licence expire dans <b>${l.jours} jour${l.jours > 1 ? 's' : ''}</b> (le ${l.fin.toLocaleDateString('fr-FR')}).${lien}</div>`;
+  return '';
+}
+
 function page(html) {
-  $('#main').innerHTML = `<div class="page">${html}</div>`;
+  $('#main').innerHTML = `<div class="page">${bandeauLicence()}${html}</div>`;
   return $('#main .page');
 }
 const entete = (titre, sousTitre = '', actions = '') => `<div class="page-head"><div><h1 class="page-title">${titre}</h1>${sousTitre ? `<p class="page-sub">${sousTitre}</p>` : ''}</div><div class="page-actions">${actions}</div></div>`;
@@ -2103,6 +2135,11 @@ PAGES.ia = async () => {
 
 PAGES.parametres = async () => {
   const e = S.entreprise;
+  let sansProprietaire = false;
+  if (!DEMO) {
+    const { data } = await sb.rpc('plateforme_a_un_admin');
+    sansProprietaire = data === false;
+  }
   const p = page(`
     ${entete('Paramètres', 'Entreprise et démonstration')}
     <div class="grid c2">
@@ -2119,6 +2156,10 @@ PAGES.parametres = async () => {
         <p style="font-size:13px;margin-bottom:12px">Ajoute 3 chantiers d’exemple (lots, planning, commandes, factures, stock, rapports) pour découvrir KOORDIN ou faire une présentation. Vous pourrez supprimer ces projets ensuite.</p>
         <button class="btn" id="demo">🎬 Charger la démonstration</button></div>`}
     </div>
+    ${sansProprietaire ? `<div class="card section" style="border-color:var(--gold)"><div class="card-title">🛡️ Propriétaire de la plateforme KOORDIN</div>
+      <p style="font-size:13px;margin-bottom:12px">Aucun propriétaire n’est encore déclaré. Si vous êtes l’éditeur de KOORDIN, activez votre console : vous pourrez fixer les prix, valider les paiements et gérer les licences de toutes les entreprises clientes. Votre propre entreprise n’aura pas de date d’expiration.</p>
+      <p class="notice warn" style="margin-bottom:12px">⚠️ À faire une seule fois, par vous seul : le premier compte qui l’active devient propriétaire.</p>
+      <button class="btn primary" id="devenir-admin">Je suis le propriétaire de KOORDIN : activer ma console</button></div>` : ''}
     <div class="card section"><div class="card-title">Installer KOORDIN sur un téléphone</div>
       <p style="font-size:13px;line-height:1.8">• <b>Android (Chrome)</b> : ouvrez l’adresse de l’application → menu ⋮ → « Ajouter à l’écran d’accueil ».<br>
       • <b>iPhone (Safari)</b> : ouvrez l’adresse → bouton Partager → « Sur l’écran d’accueil ».<br>
@@ -2133,6 +2174,14 @@ PAGES.parametres = async () => {
       toast('Paramètres enregistrés.');
     } catch (err) { toast(messageErreur(err), 'err'); }
   };
+  $('#devenir-admin', p)?.addEventListener('click', async () => {
+    if (!(await confirmer('Confirmer que vous êtes l’éditeur de KOORDIN ? Ce compte deviendra le propriétaire de la plateforme.', 'Oui, activer'))) return;
+    try {
+      await q(sb.rpc('devenir_admin_plateforme'));
+      toast('Console KOORDIN activée.');
+      setTimeout(() => location.reload(), 600);
+    } catch (err) { toast(messageErreur(err), 'err'); }
+  });
   $('#raz-demo', p)?.addEventListener('click', async () => {
     if (!(await confirmer('Effacer vos essais et revenir aux données de départ ?', 'Réinitialiser'))) return;
     await q(sb.rpc('reinitialiser_demo'));
@@ -2149,6 +2198,278 @@ PAGES.parametres = async () => {
       allerA('#/dashboard');
     } catch (err) { toast(messageErreur(err), 'err'); }
   };
+};
+
+// ═══════════════════════════════ ABONNEMENT (Direction) ═══════════════════════════════
+
+const PERIODES = { mois: ['Mensuel', 1], trimestre: ['Trimestriel', 3], annee: ['Annuel', 12] };
+const MOYENS = ['Wave', 'Orange Money', 'MTN MoMo', 'Moov Money', 'Virement bancaire', 'Espèces'];
+let periodeChoisie = 'mois';
+
+async function chargerTarifs() {
+  const [plans, params] = await Promise.all([
+    q(sb.from('plans').select('*').order('ordre')),
+    q(sb.from('parametres_plateforme').select('*')),
+  ]);
+  return { plans, params: Object.fromEntries(params.map((x) => [x.cle, x.valeur || ''])) };
+}
+function prixPeriode(plan, periode, params) {
+  const mois = PERIODES[periode][1];
+  const remise = periode === 'trimestre' ? num(params.remise_trimestre_pct) : periode === 'annee' ? num(params.remise_annee_pct) : 0;
+  return Math.round((num(plan.prix_mensuel) * mois * (1 - remise / 100)) / 100) * 100;
+}
+const limite = (v) => (v == null ? 'illimité' : nf.format(v));
+function etiquetteLicence() {
+  const l = etatLicence();
+  if (!l) return badge(['muted', '—']);
+  if (l.illimitee) return badge(['ok', '♾️ Sans expiration']);
+  if (l.expiree) return badge(['crit', '🔒 Expirée']);
+  if (l.essai) return badge(['info', `🎁 Essai : ${l.jours} j restants`]);
+  return badge([l.jours <= 7 ? 'warn' : 'ok', `✅ Active : ${l.jours} j restants`]);
+}
+
+PAGES.abonnement = async () => {
+  const { data: ent } = await sb.from('entreprises').select('*').eq('id', S.entreprise.id).single();
+  if (ent) S.entreprise = ent;
+  const [{ plans, params }, paiements, nbProjets, nbProfils, nbInvit] = await Promise.all([
+    chargerTarifs(),
+    q(sb.from('paiements').select('*').order('created_at', { ascending: false })),
+    sb.from('projets').select('id', { count: 'exact', head: true }).neq('statut', 'termine'),
+    sb.from('profils').select('id', { count: 'exact', head: true }).eq('actif', true),
+    sb.from('invitations').select('id', { count: 'exact', head: true }).is('acceptee_at', null),
+  ]);
+  const actuel = plans.find((x) => x.code === S.entreprise.plan) || {};
+  const l = etatLicence();
+  const utilisateurs = (nbProfils.count || 0) + (nbInvit.count || 0);
+  const barreUsage = (val, max) => (max == null ? `<b>${val}</b> <span class="muted">/ illimité</span>` : progressBar(Math.min(100, pct(val, max)), { cls: val >= max ? 'crit' : val >= max * 0.8 ? 'warn' : 'ok', label: `${val} / ${max}` }).replace(/ %<\/span>/, '</span>'));
+  const enAttente = paiements.find((x) => x.statut === 'declare');
+  const publics = plans.filter((x) => x.public);
+
+  const p = page(`
+    ${entete('Abonnement', 'Votre formule KOORDIN, son échéance et vos paiements')}
+    ${enAttente ? `<div class="notice">⏳ Paiement de <b>${money(enAttente.montant)}</b> déclaré le ${new Date(enAttente.created_at).toLocaleDateString('fr-FR')} : en cours de vérification par KOORDIN. Votre licence sera prolongée dès la validation.</div>` : ''}
+    <div class="grid c2">
+      <div class="card"><div class="card-title">Formule actuelle ${etiquetteLicence()}</div>
+        <div class="kpi-value" style="font-size:24px">${esc(actuel.nom || S.entreprise.plan)}</div>
+        <p class="muted" style="margin:4px 0 14px">${l?.illimitee ? 'Licence sans date d’expiration.' : `${l?.expiree ? 'Expirée depuis le' : 'Valable jusqu’au'} <b>${l?.fin.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</b>`}</p>
+        <div class="detail-block"><h4>Projets actifs</h4>${barreUsage(nbProjets.count || 0, actuel.max_projets)}</div>
+        <div class="detail-block"><h4>Utilisateurs (avec invitations en attente)</h4>${barreUsage(utilisateurs, actuel.max_utilisateurs)}</div>
+      </div>
+      <div class="card"><div class="card-title">Comment ça marche</div>
+        <ol style="padding-left:18px;font-size:13px;line-height:1.8">
+          <li>Choisissez une formule et une durée ci-dessous.</li>
+          <li>Payez par Mobile Money ou virement aux coordonnées indiquées.</li>
+          <li>Déclarez votre paiement avec la référence de la transaction.</li>
+          <li>KOORDIN vérifie et prolonge votre licence, en général dans la journée.</li>
+        </ol>
+        <p class="muted mt" style="font-size:12px">Votre licence est prolongée à partir de sa date de fin actuelle : vous ne perdez aucun jour en payant en avance.</p>
+      </div>
+    </div>
+    <div class="tabs section">${Object.entries(PERIODES).map(([k, [lbl]]) => {
+      const r = k === 'trimestre' ? num(params.remise_trimestre_pct) : k === 'annee' ? num(params.remise_annee_pct) : 0;
+      return `<button class="tab ${k === periodeChoisie ? 'active' : ''}" data-periode="${k}">${lbl}${r ? ` <span class="badge ok">−${r} %</span>` : ''}</button>`;
+    }).join('')}</div>
+    <div class="projects">${publics.map((pl) => {
+      const prix = prixPeriode(pl, periodeChoisie, params);
+      const mois = PERIODES[periodeChoisie][1];
+      const courant = pl.code === S.entreprise.plan;
+      return `<div class="card project-card" style="cursor:default;${courant ? 'border-color:var(--gold)' : ''}">
+        <div class="pc-top"><h3>${esc(pl.nom)}</h3>${courant ? badge(['ok', 'Formule actuelle']) : ''}</div>
+        <div><span class="kpi-value" style="font-size:24px">${money(prix)}</span><span class="muted"> / ${mois === 1 ? 'mois' : mois === 3 ? 'trimestre' : 'an'}</span>
+          ${mois > 1 ? `<div class="muted" style="font-size:12px">soit ${money(prix / mois)} par mois</div>` : ''}</div>
+        <p class="meta">${esc(pl.description || '')}</p>
+        <div class="pc-stats" style="grid-template-columns:1fr 1fr">
+          <div><b>${limite(pl.max_projets)}</b><span>projets actifs</span></div>
+          <div><b>${limite(pl.max_utilisateurs)}</b><span>utilisateurs</span></div>
+        </div>
+        <button class="btn ${courant ? '' : 'primary'} block" data-choisir="${esc(pl.code)}">${courant ? 'Renouveler' : 'Choisir cette formule'}</button>
+      </div>`;
+    }).join('') || `<div class="card">${empty('💳', 'Aucune formule n’est encore proposée.')}</div>`}</div>
+    <div class="card section"><div class="card-title">Historique des paiements</div>
+      ${paiements.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Formule</th><th>Durée</th><th class="num">Montant</th><th>Moyen / référence</th><th>Statut</th></tr></thead><tbody>
+      ${paiements.map((x) => `<tr><td class="nowrap">${new Date(x.created_at).toLocaleDateString('fr-FR')}</td><td>${esc(plans.find((pl) => pl.code === x.plan)?.nom || x.plan)}</td>
+        <td>${PERIODES[x.periode][0]}</td><td class="num">${money(x.montant)}</td><td class="muted">${esc([x.moyen, x.reference].filter(Boolean).join(' · '))}</td>
+        <td>${badge({ declare: ['warn', '⏳ En vérification'], valide: ['ok', '✅ Validé'], refuse: ['crit', '✖️ Refusé'] }[x.statut])}${x.note ? `<div class="muted" style="font-size:12px">${esc(x.note)}</div>` : ''}</td></tr>`).join('')}
+      </tbody></table></div>` : empty('🧾', 'Aucun paiement pour le moment')}</div>`);
+
+  $$('[data-periode]', p).forEach((b) => (b.onclick = () => { periodeChoisie = b.dataset.periode; PAGES.abonnement(); }));
+  $$('[data-choisir]', p).forEach((b) => (b.onclick = () => formulairePaiement(plans.find((x) => x.code === b.dataset.choisir), params)));
+};
+
+function formulairePaiement(plan, params) {
+  const montant = prixPeriode(plan, periodeChoisie, params);
+  const lignes = [['Wave', params.paiement_wave], ['Orange Money', params.paiement_orange_money]].filter(([, v]) => v);
+  const copier = (v) => `<button type="button" class="btn sm" data-copie="${esc(v)}">Copier</button>`;
+  ouvrirModale({
+    titre: `Formule ${plan.nom} · ${PERIODES[periodeChoisie][0]}`,
+    corps: `<div class="kpi" style="margin-bottom:14px"><div class="kpi-label">Montant à payer</div><div class="kpi-value">${money(montant)}</div>
+        <div class="kpi-foot">${PERIODES[periodeChoisie][1]} mois de licence ${esc(plan.nom)}</div></div>
+      ${lignes.length ? `<div class="detail-block"><h4>1. Payez à</h4>
+        ${lignes.map(([moyen, numero]) => `<div class="split" style="padding:6px 0"><span>${moyen} : <b>${esc(numero)}</b></span>${copier(numero)}</div>`).join('')}
+        ${params.paiement_beneficiaire ? `<p class="muted" style="font-size:12px">Bénéficiaire : ${esc(params.paiement_beneficiaire)}</p>` : ''}</div>`
+        : '<div class="notice warn">Les coordonnées de paiement ne sont pas encore renseignées. Contactez KOORDIN avant de payer.</div>'}
+      <div class="detail-block"><h4>2. Déclarez votre paiement</h4></div>
+      <div class="form-grid">
+        ${F.select('moyen', 'Moyen de paiement', MOYENS.map((m) => [m, m]), lignes[0]?.[0] || 'Wave', { required: true })}
+        ${F.text('reference', 'Référence de la transaction', '', { required: true, placeholder: 'Ex. code reçu par SMS', hint: 'Indiquée dans le SMS de confirmation de votre paiement.' })}
+      </div>`,
+    boutonOk: 'J’ai payé : déclarer le paiement',
+    onOpen: (el) => $$('[data-copie]', el).forEach((b) => (b.onclick = async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copie); toast('Numéro copié.'); } catch { toast(b.dataset.copie); }
+    })),
+    onSubmit: async (d) => {
+      await q(sb.from('paiements').insert({ plan: plan.code, periode: periodeChoisie, montant, moyen: d.moyen, reference: d.reference }));
+      toast('Paiement déclaré. KOORDIN va le vérifier et prolonger votre licence.');
+      PAGES.abonnement();
+      const wa = String(params.contact_whatsapp || '').replace(/\D/g, '');
+      if (wa) {
+        const texte = `Bonjour KOORDIN, je viens de payer ${money(montant)} pour la formule ${plan.nom} (${PERIODES[periodeChoisie][0].toLowerCase()}).\nEntreprise : ${S.entreprise.nom}\nMoyen : ${d.moyen}\nRéférence : ${d.reference}`;
+        setTimeout(() => ouvrirModale({
+          titre: 'Accélérer la validation',
+          corps: `<p style="margin-bottom:12px">Vous pouvez prévenir KOORDIN sur WhatsApp pour une validation plus rapide :</p>
+            <a class="btn primary block" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(texte)}">💬 Envoyer la confirmation sur WhatsApp</a>`,
+        }), 50);
+      }
+    },
+  });
+}
+
+// ═══════════════════════════════ CONSOLE DU PROPRIÉTAIRE ═══════════════════════════════
+
+let ongletConsole = 'paiements';
+
+PAGES.console = async () => {
+  if (!S.plateformeAdmin) return PAGES.dashboard();
+  const [entreprises, { plans, params }, paiements] = await Promise.all([
+    q(sb.rpc('console_entreprises')),
+    chargerTarifs(),
+    q(sb.from('paiements').select('*').order('created_at', { ascending: false }).limit(300)),
+  ]);
+  const nomEnt = (id) => entreprises.find((x) => x.id === id)?.nom || '—';
+  const nomPlan = (c) => plans.find((x) => x.code === c)?.nom || c;
+  const attente = paiements.filter((x) => x.statut === 'declare');
+  const maintenant = Date.now();
+  const actives = entreprises.filter((x) => new Date(x.licence_fin).getTime() > maintenant && x.plan !== 'essai');
+  const essais = entreprises.filter((x) => new Date(x.licence_fin).getTime() > maintenant && x.plan === 'essai');
+  const revenusMois = paiements.filter((x) => x.statut === 'valide' && new Date(x.traite_at || x.created_at).getMonth() === new Date().getMonth() && new Date(x.traite_at || x.created_at).getFullYear() === new Date().getFullYear()).reduce((s, x) => s + num(x.montant), 0);
+  const etatEnt = (x) => {
+    const j = Math.ceil((new Date(x.licence_fin).getTime() - maintenant) / 86400000);
+    if (j > 3650) return badge(['ok', '♾️ Sans expiration']);
+    if (j <= 0) return badge(['crit', `🔒 Expirée`]);
+    return badge([x.plan === 'essai' ? 'info' : j <= 7 ? 'warn' : 'ok', `${x.plan === 'essai' ? '🎁 Essai' : '✅'} ${j} j`]);
+  };
+
+  const p = page(`
+    ${entete('🛡️ Console KOORDIN', 'Vos entreprises clientes, leurs licences et vos paiements')}
+    <div class="grid k4">
+      ${kpi('Paiements à valider', attente.length, attente.length ? moneyShort(attente.reduce((s, x) => s + num(x.montant), 0)) : '✅ Rien en attente', attente.length ? 'warn' : '')}
+      ${kpi('Clients payants', actives.length, `${entreprises.length} entreprise(s) au total`)}
+      ${kpi('En essai', essais.length)}
+      ${kpi('Encaissé ce mois-ci', moneyShort(revenusMois))}
+    </div>
+    <div class="tabs section">
+      <button class="tab ${ongletConsole === 'paiements' ? 'active' : ''}" data-o="paiements">Paiements${attente.length ? ` <span class="badge warn">${attente.length}</span>` : ''}</button>
+      <button class="tab ${ongletConsole === 'entreprises' ? 'active' : ''}" data-o="entreprises">Entreprises</button>
+      <button class="tab ${ongletConsole === 'tarifs' ? 'active' : ''}" data-o="tarifs">Tarifs et paiement</button>
+    </div>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  const recharger = () => PAGES.console();
+
+  const rendre = () => {
+    if (ongletConsole === 'paiements') {
+      zone.innerHTML = `<div class="card">${paiements.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Entreprise</th><th>Formule</th><th class="num">Montant</th><th>Moyen / référence</th><th>Statut</th><th></th></tr></thead><tbody>
+        ${paiements.map((x) => `<tr><td class="nowrap">${new Date(x.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+          <td><b>${esc(nomEnt(x.entreprise_id))}</b></td><td>${esc(nomPlan(x.plan))} · ${PERIODES[x.periode][0]}</td><td class="num">${money(x.montant)}</td>
+          <td>${esc(x.moyen)}<div class="muted" style="font-size:12px">${esc(x.reference || '')}</div></td>
+          <td>${badge({ declare: ['warn', '⏳ À vérifier'], valide: ['ok', '✅ Validé'], refuse: ['crit', '✖️ Refusé'] }[x.statut])}</td>
+          <td class="right nowrap">${x.statut === 'declare' ? `<button class="btn sm primary" data-valider="${x.id}">✅ Valider</button><button class="btn sm" data-refuser="${x.id}">Refuser</button>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : empty('🧾', 'Aucun paiement déclaré pour le moment')}
+        <p class="muted mt" style="font-size:12px">Vérifiez la réception de l’argent sur votre compte Wave / Orange Money avant de valider. La validation prolonge automatiquement la licence du client.</p></div>`;
+      $$('[data-valider]', zone).forEach((b) => (b.onclick = async () => {
+        const pa = paiements.find((x) => x.id === b.dataset.valider);
+        if (!(await confirmer(`Confirmer la réception de ${money(pa.montant)} de ${nomEnt(pa.entreprise_id)} (réf. ${pa.reference || '—'}) ?`, 'Valider'))) return;
+        try { await q(sb.rpc('traiter_paiement', { p_paiement: pa.id, p_valider: true, p_note: null })); toast('Paiement validé, licence prolongée.'); recharger(); } catch (e) { toast(messageErreur(e), 'err'); }
+      }));
+      $$('[data-refuser]', zone).forEach((b) => (b.onclick = () => ouvrirModale({
+        titre: 'Refuser le paiement',
+        corps: F.area('note', 'Motif (visible par le client)', '', { required: true, placeholder: 'Ex. Aucun paiement reçu avec cette référence' }),
+        boutonOk: 'Refuser',
+        onSubmit: async (d) => { await q(sb.rpc('traiter_paiement', { p_paiement: b.dataset.refuser, p_valider: false, p_note: d.note })); toast('Paiement refusé.'); recharger(); },
+      })));
+    } else if (ongletConsole === 'entreprises') {
+      zone.innerHTML = `<div class="card">${entreprises.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Entreprise</th><th>Direction</th><th>Formule</th><th>Licence</th><th class="num">Projets</th><th class="num">Utilisateurs</th><th></th></tr></thead><tbody>
+        ${entreprises.map((x) => `<tr><td><b>${esc(x.nom)}</b><div class="muted" style="font-size:12px">depuis le ${new Date(x.created_at).toLocaleDateString('fr-FR')}</div></td>
+          <td>${esc(x.direction || '—')}<div class="muted" style="font-size:12px">${esc(afficherIdentifiant(x.contact))}</div></td>
+          <td>${esc(nomPlan(x.plan))}</td><td>${etatEnt(x)}<div class="muted" style="font-size:12px">${new Date(x.licence_fin).toLocaleDateString('fr-FR')}</div></td>
+          <td class="num">${x.nb_projets}</td><td class="num">${x.nb_utilisateurs}</td>
+          <td class="right"><button class="btn sm" data-prolonger="${x.id}">Gérer la licence</button></td></tr>`).join('')}
+        </tbody></table></div>` : empty('🏢', 'Aucune entreprise inscrite')}</div>`;
+      $$('[data-prolonger]', zone).forEach((b) => (b.onclick = () => {
+        const x = entreprises.find((e) => e.id === b.dataset.prolonger);
+        ouvrirModale({
+          titre: `Licence de ${x.nom}`,
+          corps: `<p class="muted" style="margin-bottom:12px">Fin actuelle : ${new Date(x.licence_fin).toLocaleDateString('fr-FR')}. La durée s’ajoute à partir de cette date (ou d’aujourd’hui si elle est passée).</p>
+            <div class="form-grid">
+              ${F.select('plan', 'Formule', plans.map((pl) => [pl.code, pl.nom]), x.plan, { required: true })}
+              ${F.select('mois', 'Ajouter', [['0', 'Rien (changer seulement la formule)'], ['1', '1 mois'], ['3', '3 mois'], ['6', '6 mois'], ['12', '12 mois'], ['1200', 'Sans expiration (100 ans)']], '1', { required: true })}
+            </div>`,
+          boutonOk: 'Appliquer',
+          onSubmit: async (d) => {
+            const fin = await q(sb.rpc('prolonger_licence', { p_entreprise: x.id, p_plan: d.plan, p_mois: Number(d.mois) }));
+            toast(`Licence de ${x.nom} : jusqu’au ${new Date(fin).toLocaleDateString('fr-FR')}.`);
+            recharger();
+          },
+        });
+      }));
+    } else {
+      zone.innerHTML = `<div class="card"><div class="card-title">Formules et prix <small>Modifiez puis enregistrez chaque ligne</small></div>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Formule</th><th>Prix mensuel (FCFA)</th><th>Projets max</th><th>Utilisateurs max</th><th>Proposée</th><th></th></tr></thead><tbody>
+        ${plans.map((pl) => `<tr data-plan="${esc(pl.code)}">
+          <td><input class="input" name="nom" value="${esc(pl.nom)}" style="min-width:120px"><input class="input mt" name="description" value="${esc(pl.description || '')}" placeholder="Description" style="min-width:180px"></td>
+          <td><input class="input" name="prix_mensuel" type="number" min="0" value="${num(pl.prix_mensuel)}" style="min-width:110px"></td>
+          <td><input class="input" name="max_projets" type="number" min="0" value="${pl.max_projets ?? ''}" placeholder="illimité" style="min-width:90px"></td>
+          <td><input class="input" name="max_utilisateurs" type="number" min="0" value="${pl.max_utilisateurs ?? ''}" placeholder="illimité" style="min-width:90px"></td>
+          <td><input type="checkbox" name="public" ${pl.public ? 'checked' : ''} ${pl.code === 'essai' ? 'disabled' : ''}></td>
+          <td><button class="btn sm primary" data-save-plan="${esc(pl.code)}">Enregistrer</button></td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="muted mt" style="font-size:12px">« Essai gratuit » s’applique automatiquement aux nouvelles entreprises. Laissez une limite vide pour « illimité ».</p></div>
+        <form class="card" id="f-params"><div class="card-title">Essai, remises et coordonnées de paiement</div>
+          <div class="form-grid">
+            ${F.text('duree_essai_jours', 'Durée de l’essai gratuit (jours)', params.duree_essai_jours, { type: 'number', min: 1 })}
+            ${F.text('contact_whatsapp', 'Votre WhatsApp (pour les clients)', params.contact_whatsapp, { placeholder: '+225 07 00 00 00 00' })}
+            ${F.text('remise_trimestre_pct', 'Remise trimestrielle (%)', params.remise_trimestre_pct, { type: 'number', min: 0, max: 90 })}
+            ${F.text('remise_annee_pct', 'Remise annuelle (%)', params.remise_annee_pct, { type: 'number', min: 0, max: 90 })}
+            ${F.text('paiement_wave', 'Numéro Wave', params.paiement_wave, { placeholder: '07 00 00 00 00' })}
+            ${F.text('paiement_orange_money', 'Numéro Orange Money', params.paiement_orange_money, { placeholder: '07 00 00 00 00' })}
+            ${F.text('paiement_beneficiaire', 'Nom du bénéficiaire', params.paiement_beneficiaire, { full: true, placeholder: 'Ex. GECREO SARL' })}
+          </div>
+          <div class="form-actions"><button class="btn primary" type="submit">Enregistrer</button></div></form>`;
+      $$('[data-save-plan]', zone).forEach((b) => (b.onclick = async () => {
+        const tr = b.closest('tr');
+        const v = (n) => tr.querySelector(`[name="${n}"]`);
+        const entier = (n) => (v(n).value === '' ? null : Math.round(num(v(n).value)));
+        try {
+          await q(sb.from('plans').update({
+            nom: v('nom').value.trim() || b.dataset.savePlan, description: v('description').value.trim() || null,
+            prix_mensuel: num(v('prix_mensuel').value), max_projets: entier('max_projets'), max_utilisateurs: entier('max_utilisateurs'),
+            public: b.dataset.savePlan === 'essai' ? false : v('public').checked,
+          }).eq('code', b.dataset.savePlan));
+          toast('Formule enregistrée.');
+        } catch (e) { toast(messageErreur(e), 'err'); }
+      }));
+      $('#f-params', zone).onsubmit = async (ev) => {
+        ev.preventDefault();
+        const d = lireFormulaire(ev.target);
+        try {
+          await q(sb.from('parametres_plateforme').upsert(Object.entries(d).map(([cle, valeur]) => ({ cle, valeur: valeur ?? '' }))));
+          toast('Paramètres enregistrés.');
+        } catch (e) { toast(messageErreur(e), 'err'); }
+      };
+    }
+  };
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletConsole = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
+  rendre();
 };
 
 // ═══════════════════════════════ Clics globaux ═══════════════════════════════

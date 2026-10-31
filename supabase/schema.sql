@@ -910,3 +910,260 @@ create policy projets_lecture on public.projets for select
   using (entreprise_id = public.mon_entreprise()
          and (public.mon_role() <> 'technicien'
               or exists (select 1 from public.affectations a where a.projet_id = projets.id and a.profil_id = auth.uid())));
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 10. LICENCES ET ABONNEMENTS
+-- • Chaque entreprise a une formule (plan) et une date de fin de licence.
+-- • Nouvelle entreprise : essai gratuit (14 jours par défaut).
+-- • Licence expirée : lecture seule (aucune création ni modification).
+-- • Paiement manuel : la Direction déclare son paiement Mobile Money,
+--   le propriétaire de KOORDIN le valide depuis la console, la licence
+--   est prolongée automatiquement.
+-- Bloc ré-exécutable sans risque (sert aussi de mise à jour).
+-- ═══════════════════════════════════════════════════════════════════
+
+create table if not exists public.plans (
+  code             text primary key,
+  nom              text not null,
+  description      text,
+  prix_mensuel     numeric(14,2) not null default 0,
+  max_projets      integer,          -- vide = illimité
+  max_utilisateurs integer,          -- vide = illimité
+  ordre            integer not null default 0,
+  public           boolean not null default true   -- proposé aux clients
+);
+
+insert into public.plans (code, nom, description, prix_mensuel, max_projets, max_utilisateurs, ordre, public) values
+  ('essai',    'Essai gratuit', 'Toutes les fonctions pour découvrir KOORDIN', 0, 5, 15, 0, false),
+  ('starter',  'Starter',  'Pour une petite entreprise ou un premier chantier', 98000, 3, 10, 1, true),
+  ('pro',      'Pro',      'Pour une entreprise avec plusieurs chantiers en parallèle', 229000, 15, 50, 2, true),
+  ('business', 'Business', 'Pour les grandes entreprises multi-sites', 459000, 30, 150, 3, true)
+on conflict (code) do nothing;
+
+create table if not exists public.parametres_plateforme (
+  cle    text primary key,
+  valeur text
+);
+insert into public.parametres_plateforme (cle, valeur) values
+  ('duree_essai_jours', '14'),
+  ('remise_trimestre_pct', '10'),
+  ('remise_annee_pct', '20'),
+  ('paiement_wave', ''),
+  ('paiement_orange_money', ''),
+  ('paiement_beneficiaire', ''),
+  ('contact_whatsapp', '')
+on conflict (cle) do nothing;
+
+create table if not exists public.admins_plateforme (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table public.entreprises add column if not exists plan text not null default 'essai' references public.plans(code);
+alter table public.entreprises add column if not exists licence_fin timestamptz;
+update public.entreprises set licence_fin = now() + interval '14 days' where licence_fin is null;
+alter table public.entreprises alter column licence_fin set not null;
+alter table public.entreprises alter column licence_fin set default now() + interval '14 days';
+
+create table if not exists public.paiements (
+  id            uuid primary key default gen_random_uuid(),
+  entreprise_id uuid not null default public.mon_entreprise() references public.entreprises(id) on delete cascade,
+  plan          text not null references public.plans(code),
+  periode       text not null check (periode in ('mois','trimestre','annee')),
+  montant       numeric(14,2) not null check (montant >= 0),
+  moyen         text not null default 'mobile_money',
+  reference     text,
+  statut        text not null default 'declare' check (statut in ('declare','valide','refuse')),
+  note          text,
+  created_by    uuid default auth.uid() references auth.users(id) on delete set null,
+  created_at    timestamptz not null default now(),
+  traite_par    uuid references auth.users(id) on delete set null,
+  traite_at     timestamptz
+);
+create index if not exists paiements_entreprise_idx on public.paiements (entreprise_id, created_at desc);
+
+-- ─── Fonctions ───
+
+create or replace function public.est_admin_plateforme() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from admins_plateforme where user_id = auth.uid())
+$$;
+
+create or replace function public.licence_active(p_entreprise uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select licence_fin > now() from entreprises where id = p_entreprise), false)
+$$;
+
+create or replace function public.duree_essai() returns interval
+language sql stable security definer set search_path = public as $$
+  select make_interval(days => coalesce((select nullif(valeur, '')::int from parametres_plateforme where cle = 'duree_essai_jours'), 14))
+$$;
+alter table public.entreprises alter column licence_fin set default now() + public.duree_essai();
+
+-- Devenir propriétaire de la plateforme : possible une seule fois, quand personne ne l'est encore.
+create or replace function public.devenir_admin_plateforme() returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Non connecté'; end if;
+  if exists (select 1 from admins_plateforme) then return public.est_admin_plateforme(); end if;
+  insert into admins_plateforme (user_id) values (auth.uid());
+  -- l'entreprise du propriétaire n'expire pas
+  update entreprises set plan = 'business', licence_fin = now() + interval '100 years' where id = public.mon_entreprise();
+  return true;
+end $$;
+create or replace function public.plateforme_a_un_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from admins_plateforme)
+$$;
+
+-- ─── Lecture seule si la licence est expirée ───
+
+create or replace function public.verifier_licence() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare ent uuid;
+begin
+  if auth.uid() is null or public.est_admin_plateforme() then
+    return coalesce(new, old);
+  end if;
+  ent := case when tg_op = 'DELETE' then old.entreprise_id else new.entreprise_id end;
+  if not public.licence_active(ent) then
+    raise exception 'LICENCE_EXPIREE' using hint = 'KOORDIN est en lecture seule : la licence de l''entreprise a expiré.';
+  end if;
+  return coalesce(new, old);
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['projets','affectations','lots','taches','rapports','rapport_photos','fournisseurs',
+                           'commandes','factures','articles','mouvements_stock','invitations']
+  loop
+    execute format('drop trigger if exists licence_%1$s on public.%1$I', t);
+    execute format('create trigger licence_%1$s before insert or update or delete on public.%1$I for each row execute function public.verifier_licence()', t);
+  end loop;
+end $$;
+
+-- ─── Limites de la formule ───
+
+create or replace function public.verifier_limites() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare pl plans; n int;
+begin
+  select p.* into pl from plans p join entreprises e on e.plan = p.code where e.id = new.entreprise_id;
+  if tg_table_name = 'projets' and pl.max_projets is not null then
+    select count(*) into n from projets where entreprise_id = new.entreprise_id and statut <> 'termine';
+    if n >= pl.max_projets then
+      raise exception 'LIMITE_PROJETS' using hint = format('La formule %s permet %s projet(s) actif(s).', pl.nom, pl.max_projets);
+    end if;
+  elsif tg_table_name = 'invitations' and pl.max_utilisateurs is not null then
+    select (select count(*) from profils where entreprise_id = new.entreprise_id and actif)
+         + (select count(*) from invitations where entreprise_id = new.entreprise_id and acceptee_at is null)
+      into n;
+    if n >= pl.max_utilisateurs then
+      raise exception 'LIMITE_UTILISATEURS' using hint = format('La formule %s permet %s utilisateur(s).', pl.nom, pl.max_utilisateurs);
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists limite_projets on public.projets;
+create trigger limite_projets before insert on public.projets for each row execute function public.verifier_limites();
+drop trigger if exists limite_invitations on public.invitations;
+create trigger limite_invitations before insert on public.invitations for each row execute function public.verifier_limites();
+
+-- ─── Règles d'accès ───
+
+alter table public.plans enable row level security;
+alter table public.parametres_plateforme enable row level security;
+alter table public.admins_plateforme enable row level security;
+alter table public.paiements enable row level security;
+
+drop policy if exists plans_lecture on public.plans;
+create policy plans_lecture on public.plans for select using (auth.uid() is not null);
+drop policy if exists plans_admin on public.plans;
+create policy plans_admin on public.plans for all using (public.est_admin_plateforme()) with check (public.est_admin_plateforme());
+
+drop policy if exists parametres_lecture on public.parametres_plateforme;
+create policy parametres_lecture on public.parametres_plateforme for select using (auth.uid() is not null);
+drop policy if exists parametres_admin on public.parametres_plateforme;
+create policy parametres_admin on public.parametres_plateforme for all using (public.est_admin_plateforme()) with check (public.est_admin_plateforme());
+
+drop policy if exists admins_lecture on public.admins_plateforme;
+create policy admins_lecture on public.admins_plateforme for select using (user_id = auth.uid());
+
+drop policy if exists paiements_lecture on public.paiements;
+create policy paiements_lecture on public.paiements for select
+  using ((entreprise_id = public.mon_entreprise() and public.a_role('direction')) or public.est_admin_plateforme());
+drop policy if exists paiements_declaration on public.paiements;
+create policy paiements_declaration on public.paiements for insert
+  with check (entreprise_id = public.mon_entreprise() and public.a_role('direction') and statut = 'declare');
+
+-- La Direction ne peut plus changer elle-même sa formule ni sa date de licence
+create or replace function public.proteger_licence() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and not public.est_admin_plateforme()
+     and (new.plan is distinct from old.plan or new.licence_fin is distinct from old.licence_fin) then
+    raise exception 'Seul le propriétaire de KOORDIN peut modifier la licence.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists proteger_licence on public.entreprises;
+create trigger proteger_licence before update on public.entreprises for each row execute function public.proteger_licence();
+
+-- ─── Console du propriétaire ───
+
+create or replace function public.console_entreprises()
+returns table (id uuid, nom text, pays text, plan text, licence_fin timestamptz, created_at timestamptz,
+               nb_projets bigint, nb_utilisateurs bigint, direction text, contact text, paiements_en_attente bigint)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.est_admin_plateforme() then raise exception 'Réservé au propriétaire de KOORDIN'; end if;
+  return query
+  select e.id, e.nom, e.pays, e.plan, e.licence_fin, e.created_at,
+         (select count(*) from projets p where p.entreprise_id = e.id and p.statut <> 'termine'),
+         (select count(*) from profils pr where pr.entreprise_id = e.id and pr.actif),
+         (select pr.nom from profils pr where pr.entreprise_id = e.id and pr.role = 'direction' order by pr.created_at limit 1),
+         (select pr.email from profils pr where pr.entreprise_id = e.id and pr.role = 'direction' order by pr.created_at limit 1),
+         (select count(*) from paiements pa where pa.entreprise_id = e.id and pa.statut = 'declare')
+  from entreprises e
+  order by e.created_at desc;
+end $$;
+
+create or replace function public.prolonger_licence(p_entreprise uuid, p_plan text, p_mois integer) returns timestamptz
+language plpgsql security definer set search_path = public as $$
+declare fin timestamptz;
+begin
+  if not public.est_admin_plateforme() then raise exception 'Réservé au propriétaire de KOORDIN'; end if;
+  update entreprises
+     set plan = coalesce(p_plan, plan),
+         licence_fin = greatest(licence_fin, now()) + make_interval(months => p_mois)
+   where id = p_entreprise
+  returning licence_fin into fin;
+  return fin;
+end $$;
+
+create or replace function public.traiter_paiement(p_paiement uuid, p_valider boolean, p_note text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare pa paiements;
+begin
+  if not public.est_admin_plateforme() then raise exception 'Réservé au propriétaire de KOORDIN'; end if;
+  select * into pa from paiements where id = p_paiement and statut = 'declare' for update;
+  if not found then raise exception 'Paiement introuvable ou déjà traité'; end if;
+  update paiements set statut = case when p_valider then 'valide' else 'refuse' end,
+                       note = coalesce(p_note, note), traite_par = auth.uid(), traite_at = now()
+   where id = p_paiement;
+  if p_valider then
+    perform public.prolonger_licence(pa.entreprise_id, pa.plan,
+      case pa.periode when 'mois' then 1 when 'trimestre' then 3 else 12 end);
+    insert into activites (entreprise_id, type, niveau, message, roles, acteur_id)
+    values (pa.entreprise_id, 'equipe', 'info', 'Paiement validé : votre licence KOORDIN est prolongée.', array['direction'], auth.uid());
+  else
+    insert into activites (entreprise_id, type, niveau, message, roles, acteur_id)
+    values (pa.entreprise_id, 'alerte', 'attention', 'Paiement non validé' || coalesce(' : ' || p_note, '') || '. Contactez KOORDIN.', array['direction'], auth.uid());
+  end if;
+end $$;
+
+grant select on public.plans, public.parametres_plateforme to authenticated;
+grant execute on function public.est_admin_plateforme(), public.licence_active(uuid), public.devenir_admin_plateforme(),
+  public.plateforme_a_un_admin(), public.console_entreprises(), public.prolonger_licence(uuid, text, integer),
+  public.traiter_paiement(uuid, boolean, text) to authenticated;
