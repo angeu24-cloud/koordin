@@ -1,13 +1,11 @@
 // ═══════════════════════════════════════════════════════════════
 //  KOORDIN — Configuration
-//  Remplacez les deux valeurs ci-dessous par celles de VOTRE projet
-//  Supabase : Supabase > Project Settings > API
-//    • Project URL         → SUPABASE_URL
-//    • anon / public key   → SUPABASE_ANON_KEY
-//  (La clé « anon » est faite pour être publique : la sécurité est
-//   assurée par les règles de la base de données.)
+//  Adresse et clé publique du projet Supabase (Project Settings > API Keys).
+//  La clé « publishable » est faite pour être publique : la sécurité est
+//  assurée par les règles de la base de données (supabase/schema.sql).
+//  Ne mettez jamais ici une clé « secret » ou « service_role ».
 // ═══════════════════════════════════════════════════════════════
 window.KOORDIN_CONFIG = {
-  SUPABASE_URL: "https://VOTRE-PROJET.supabase.co",
-  SUPABASE_ANON_KEY: "VOTRE-CLE-ANON",
+  SUPABASE_URL: "https://pxjedurctpeanmayzkqv.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_tL9eNXVfo4KRpxO2ruT4Nw_46JHkbpi",
 };
