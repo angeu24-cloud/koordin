@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.0';
+const VERSION = '2.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -520,11 +520,12 @@ async function demarrer() {
     if (evt === 'PASSWORD_RECOVERY') setTimeout(ecranNouveauMotDePasse, 0);
     if (evt === 'SIGNED_OUT') { S.profil = null; ecranConnexion(); }
   });
+  capterParrainage();
   const suivi = location.hash.match(/^#\/suivi\/([A-Za-z0-9]{32,})/);
   if (suivi) return ecranSuiviClient(suivi[1]);
   const { data: { session } } = await sb.auth.getSession();
   if (location.hash.includes('type=recovery')) return;
-  if (!session) return ecranConnexion();
+  if (!session) return ecranConnexion(parrainEnAttente() ? 'creer' : 'connexion');
   await ouvrirApplication(session);
 }
 
@@ -573,6 +574,16 @@ function ecranDemo() {
   }));
 }
 
+// ─── Parrainage : code reçu par lien (?parrain=CODE) ───
+function parrainEnAttente() { try { return localStorage.getItem('koordin-parrain') || ''; } catch { return ''; } }
+function capterParrainage() {
+  const code = new URLSearchParams(location.search).get('parrain');
+  if (!code) return;
+  try { localStorage.setItem('koordin-parrain', code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)); } catch { /* rien */ }
+  history.replaceState(null, '', location.pathname + location.hash);
+}
+const lienParrainage = (code) => `${location.origin}${location.pathname}?parrain=${code}`;
+
 function ecranConnexion(onglet = 'connexion', message = null) {
   if (DEMO) return ecranDemo();
   const onglets = { connexion: 'Se connecter', creer: 'Créer mon entreprise', invite: 'J’ai une invitation' };
@@ -587,6 +598,8 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       ${F.text('nom', 'Votre nom complet', '', { required: true, autocomplete: 'name' })}
       ${F.text('email', 'Email professionnel', '', { type: 'email', required: true, autocomplete: 'email' })}
       ${F.text('password', 'Mot de passe (8 caractères minimum)', '', { type: 'password', required: true, autocomplete: 'new-password' })}
+      ${F.text('parrain', 'Code de parrainage (facultatif)', parrainEnAttente(), { placeholder: 'Ex. GEC4K9', autocomplete: 'off' })}
+      <div class="auth-parrain hidden" id="auth-parrain"></div>
       <button class="btn primary block" type="submit">Créer mon espace KOORDIN</button>
       <p class="muted" style="font-size:12px">Vous serez l’administrateur (rôle Direction) et pourrez inviter votre équipe.</p>`,
     invite: `
@@ -617,6 +630,21 @@ function ecranConnexion(onglet = 'connexion', message = null) {
   </div></div>`;
 
   $$('[data-tab]').forEach((b) => (b.onclick = () => ecranConnexion(b.dataset.tab)));
+  const champParrain = $('[name="parrain"]');
+  if (champParrain) {
+    let minuterie;
+    const verifier = async () => {
+      const code = champParrain.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const zone = $('#auth-parrain');
+      if (code.length < 4) { zone.classList.add('hidden'); return; }
+      const { data } = await sb.rpc('verifier_code_parrainage', { p_code: code });
+      zone.classList.remove('hidden');
+      zone.className = `auth-parrain ${data ? 'ok' : 'err'}`;
+      zone.textContent = data ? `🎁 Invité par ${data} : votre essai gratuit dure 30 jours au lieu de 14.` : 'Code de parrainage inconnu : vérifiez-le ou laissez la case vide.';
+    };
+    champParrain.addEventListener('input', () => { clearTimeout(minuterie); minuterie = setTimeout(verifier, 400); });
+    if (champParrain.value) verifier();
+  }
   $('[data-oubli]')?.addEventListener('click', ecranMotDePasseOublie);
   const form = $('#auth-form');
   form.addEventListener('submit', async (e) => {
@@ -635,11 +663,13 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       }
       if (v.password.length < 8) throw new Error('Le mot de passe doit contenir au moins 8 caractères.');
       const meta = onglet === 'creer' ? { nom: v.nom, entreprise: v.entreprise } : { nom: v.nom };
+      if (onglet === 'creer' && v.parrain) meta.parrain = v.parrain.toUpperCase().replace(/[^A-Z0-9]/g, '');
       const { data, error } = await sb.auth.signUp({
         email: v.email, password: v.password,
         options: { data: meta, emailRedirectTo: location.origin + location.pathname },
       });
       if (error) throw error;
+      if (meta.parrain) { try { localStorage.removeItem('koordin-parrain'); } catch { /* rien */ } }
       if (data.session) {
         await ouvrirApplication(data.session);
       } else {
@@ -3482,6 +3512,7 @@ PAGES.abonnement = async () => {
         <p class="muted mt" style="font-size:12px">Votre licence est prolongée à partir de sa date de fin actuelle : vous ne perdez aucun jour en payant en avance.</p>
       </div>
     </div>
+    <div id="parrainage"></div>
     <div class="tabs section">${Object.entries(PERIODES).map(([k, [lbl]]) => {
       const r = k === 'trimestre' ? num(params.remise_trimestre_pct) : k === 'annee' ? num(params.remise_annee_pct) : 0;
       return `<button class="tab ${k === periodeChoisie ? 'active' : ''}" data-periode="${k}">${lbl}${r ? ` <span class="badge ok">−${r} %</span>` : ''}</button>`;
@@ -3510,8 +3541,36 @@ PAGES.abonnement = async () => {
       </tbody></table></div>` : empty('🧾', 'Aucun paiement pour le moment')}</div>`);
 
   $$('[data-periode]', p).forEach((b) => (b.onclick = () => { periodeChoisie = b.dataset.periode; PAGES.abonnement(); }));
+  carteParrainage($('#parrainage', p));
   $$('[data-choisir]', p).forEach((b) => (b.onclick = () => formulairePaiement(plans.find((x) => x.code === b.dataset.choisir), params)));
 };
+
+async function carteParrainage(zone) {
+  if (DEMO || !zone) return;
+  const { data, error } = await sb.rpc('mon_parrainage');
+  if (error || !data?.code) { zone.innerHTML = ''; return; }
+  const lien = lienParrainage(data.code);
+  const gagnes = data.filleules.filter((f) => f.abonnee).length * data.mois_offerts;
+  const message = `Bonjour, j’utilise KOORDIN pour piloter mes chantiers : rapports du terrain avec photos, pointage des ouvriers, budget, achats et stock, tout sur le téléphone. Essayez-le gratuitement pendant ${data.essai_jours} jours avec mon lien : ${lien}`;
+  zone.innerHTML = `<div class="card section parrainage">
+    <div class="card-title">🎁 Parrainez une entreprise ${gagnes ? badge(['ok', `${gagnes} mois gagné${gagnes > 1 ? 's' : ''}`]) : ''}</div>
+    <div class="parrainage-grille">
+      <div class="parrainage-regle"><b>${data.mois_offerts} mois offert${data.mois_offerts > 1 ? 's' : ''}</b><span>pour vous, dès que l’entreprise invitée paie son premier abonnement</span></div>
+      <div class="parrainage-regle"><b>${data.essai_jours} jours d’essai</b><span>pour elle, au lieu de 14</span></div>
+    </div>
+    <div class="parrainage-code"><span>Votre code</span><b>${esc(data.code)}</b></div>
+    <div class="rc-boutons">
+      <a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(message)}" target="_blank" rel="noopener">📲 Inviter par WhatsApp</a>
+      <button type="button" class="btn" id="pa-copier">📋 Copier le lien</button>
+    </div>
+    ${data.filleules.length ? `<div class="paie-liste">${data.filleules.map((f) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(f.nom)}</b><span>Inscrite le ${new Date(f.inscrite_le).toLocaleDateString('fr-FR')}</span></div>
+      <div class="paie-montant">${f.abonnee ? badge(['ok', `✅ Abonnée · +${data.mois_offerts} mois`]) : badge(['warn', '⏳ En essai'])}</div></div>`).join('')}</div>`
+      : '<p class="hint mt">Aucune entreprise parrainée pour l’instant. Pensez à vos partenaires, sous-traitants et confrères du BTP.</p>'}
+  </div>`;
+  $('#pa-copier', zone).onclick = async () => {
+    try { await navigator.clipboard.writeText(lien); toast('Lien de parrainage copié ✅'); } catch { toast(lien, 'warn', 8000); }
+  };
+}
 
 function formulairePaiement(plan, params) {
   const montant = prixPeriode(plan, periodeChoisie, params);

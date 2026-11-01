@@ -1,9 +1,9 @@
 {
-  "version": "2.0",
-  "date": "2026-11-06",
+  "version": "2.1",
+  "date": "2026-11-07",
   "nouveautes": [
-    "Accès client : dans la page d'un chantier, touchez « 👁️ Accès client » pour créer un lien de suivi et l'envoyer à votre client par WhatsApp.",
-    "Votre client suit son chantier sur son téléphone, sans compte : avancement, planning, comptes rendus validés et photos.",
-    "Il ne voit jamais vos montants, vos commandes, vos factures ni vos incidents internes. Vous pouvez couper le lien à tout moment et voir combien de fois il l'a ouvert."
+    "Parrainage : dans « Abonnement », retrouvez votre code et invitez d'autres entreprises du BTP par WhatsApp en un geste.",
+    "L'entreprise invitée profite de 30 jours d'essai gratuit au lieu de 14.",
+    "Vous gagnez 1 mois offert sur votre licence dès qu'elle paie son premier abonnement. Suivez vos filleules et vos mois gagnés au même endroit."
   ]
 }

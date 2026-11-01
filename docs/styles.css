@@ -890,3 +890,17 @@ body {
   .suivi-lot { grid-template-columns: minmax(0, 1fr) 1fr 40px; }
 }
 .suivi-hero-txt .badge { background: rgba(5, 7, 12, .72); backdrop-filter: blur(4px); font-size: 12px; padding: 4px 10px; }
+
+/* 2.1 : parrainage */
+.auth-parrain { font-size: 12.5px; padding: 9px 12px; border-radius: 10px; margin: -4px 0 12px; }
+.auth-parrain.ok { background: var(--ok-dim); color: var(--ok); }
+.auth-parrain.err { background: var(--warn-dim); color: var(--warn); }
+.parrainage { border-color: var(--gold); background: linear-gradient(135deg, var(--gold-dim), transparent 60%), var(--surface); }
+.parrainage-grille { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.parrainage-regle { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.parrainage-regle b { font-size: 17px; color: var(--gold); }
+.parrainage-regle span { font-size: 12px; color: var(--text-2); }
+.parrainage-code { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border: 1px dashed var(--gold); border-radius: 10px; }
+.parrainage-code span { font-size: 12px; color: var(--text-2); }
+.parrainage-code b { font-size: 22px; letter-spacing: 3px; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .parrainage-grille { grid-template-columns: 1fr; } }
