@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.8';
+const VERSION = '1.9';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -44,6 +44,7 @@ const MENU = [
   { r: 'communiques', court: 'Infos',       label: 'Communiqués',     ico: '📢', roles: TOUS },
   { r: 'nouveau-rapport', court: 'Rapport', label: 'Nouveau rapport', ico: '➕', roles: ['technicien'] },
   { r: 'rapports', court: 'Rapports',        label: 'Rapports',        ico: '📋', roles: ROLES_RAPPORT, labelTech: 'Mes rapports' },
+  { r: 'pointage', court: 'Pointage', label: 'Pointage', ico: '👷', roles: ['direction', 'coordinateur', 'technicien', 'comptable'] },
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
@@ -2663,6 +2664,286 @@ function tableauMouvements(mouvements) {
       <td><b>${esc(m.articles?.nom)}</b></td>
       <td>${m.type === 'entree' ? badge(['ok', `⬇️ +${nf.format(num(m.quantite))} ${m.articles?.unite || ''}`]) : badge(['info', `⬆️ −${nf.format(num(m.quantite))} ${m.articles?.unite || ''}`])}</td>
       <td>${esc(m.projets?.nom || '—')}</td><td>${esc(nomMembre(m.created_by))}</td><td class="muted">${esc(m.commentaire || '')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ─────────────────────────────── Pointage et paie des journaliers ───────────────────────────────
+// Le chef de chantier fait l'appel chaque jour ; la paie se fait chaque semaine.
+
+let ongletPointage = null;
+const METIERS = ['Maçon', 'Ferrailleur', 'Coffreur', 'Manœuvre', 'Électricien', 'Plombier', 'Menuisier', 'Carreleur', 'Peintre', 'Soudeur', 'Chauffeur', 'Gardien', 'Autre'];
+const decalerJour = (iso, j) => { const d = parseDay(iso); d.setDate(d.getDate() + j); return d.toLocaleDateString('sv-SE'); };
+const lundiDe = (iso) => decalerJour(iso, -((parseDay(iso).getDay() + 6) % 7));
+const erreurPointage = (e) => {
+  const m = String(e?.message || '');
+  if (/pointages_ouvrier_id_date_pointage_key|duplicate key/.test(m)) return 'Un de ces ouvriers est déjà pointé ce jour-là sur un autre chantier.';
+  if (/POINTAGE_|tarif d'un ouvrier|marquer la paie/.test(m)) return e.hint || m;
+  if (/relation .*(ouvriers|pointages)|pointages_du_jour/.test(m)) return 'Le pointage nécessite la mise à jour 1.9 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-1.9.sql.';
+  return messageErreur(e);
+};
+
+PAGES.pointage = async () => {
+  const onglets = [
+    ...(can('direction', 'coordinateur', 'technicien') ? [['appel', '📋 Appel du jour']] : []),
+    ['paie', '💵 Paie de la semaine'],
+    ...(can('direction', 'coordinateur', 'technicien') ? [['ouvriers', '👷 Ouvriers']] : []),
+  ];
+  if (!onglets.some(([k]) => k === ongletPointage)) ongletPointage = onglets[0][0];
+  const p = page(`
+    ${entete('Pointage', 'Présence des ouvriers journaliers et paie de la semaine')}
+    <div class="tabs">${onglets.map(([k, l]) => `<button class="tab ${k === ongletPointage ? 'active' : ''}" data-o="${k}">${l}</button>`).join('')}</div>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('👷', 'Le pointage des ouvriers fonctionne dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try {
+      if (ongletPointage === 'appel') await ongletAppel(zone);
+      else if (ongletPointage === 'paie') await ongletPaie(zone);
+      else await ongletOuvriers(zone);
+    } catch (e) { zone.innerHTML = `<div class="card">${empty('👷', erreurPointage(e))}</div>`; }
+  };
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletPointage = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
+  await rendre();
+};
+
+async function ongletAppel(zone) {
+  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  if (!projets.length) { zone.innerHTML = `<div class="card">${empty('🏗️', 'Aucun chantier en cours. Le pointage se fait sur un chantier.')}</div>`; return; }
+  const tech = role() === 'technicien';
+  const auj = todayISO();
+  let projetId = memo.get('koordin-pointage-projet');
+  if (!projets.some((x) => x.id === projetId)) projetId = projets[0].id;
+  let date = auj;
+  let ouvriers = [], deja = new Map(), ailleurs = new Map(), choix = new Map(), filtre = '';
+
+  zone.innerHTML = `<div class="card">
+      <div class="form-grid">
+        ${F.select('projet', 'Chantier', projets.map((x) => [x.id, x.nom]), projetId)}
+        ${F.text('date', 'Jour', date, { type: 'date', max: auj, min: tech ? decalerJour(auj, -2) : null })}
+      </div>
+    </div>
+    <div id="appel"></div>`;
+  const zAppel = $('#appel', zone);
+
+  const charger = async () => {
+    zAppel.innerHTML = loading();
+    const [o, pt, ail] = await Promise.all([
+      q(sb.from('ouvriers').select('id, nom, metier, telephone, tarif_jour, actif').eq('actif', true).order('nom')),
+      q(sb.from('pointages').select('id, ouvrier_id, presence, tarif_jour, paye').eq('projet_id', projetId).eq('date_pointage', date)),
+      sb.rpc('pointages_du_jour', { p_date: date }),
+    ]);
+    if (ail.error) throw ail.error;
+    ouvriers = o;
+    deja = new Map(pt.map((x) => [x.ouvrier_id, x]));
+    ailleurs = new Map((ail.data || []).filter((x) => x.projet_id !== projetId).map((x) => [x.ouvrier_id, x.projet]));
+    choix = new Map(pt.map((x) => [x.ouvrier_id, Number(x.presence)]));
+    dessiner();
+  };
+
+  const resume = () => {
+    let jours = 0, cout = 0, presents = 0, demis = 0;
+    choix.forEach((v, id) => {
+      if (!v) return;
+      const ouv = ouvriers.find((x) => x.id === id);
+      const tarif = deja.get(id)?.tarif_jour ?? ouv?.tarif_jour ?? 0;
+      jours += v; cout += v * num(tarif);
+      if (v === 1) presents++; else demis++;
+    });
+    return { jours, cout, presents, demis };
+  };
+  const majResume = () => {
+    const r = resume();
+    $('#ap-resume', zAppel).innerHTML = `<b>${r.presents}</b> présent${r.presents > 1 ? 's' : ''}${r.demis ? ` · <b>${r.demis}</b> demi-journée${r.demis > 1 ? 's' : ''}` : ''} · Coût du jour : <b>${money(r.cout)}</b>`;
+  };
+
+  const dessiner = () => {
+    const liste = ouvriers.filter((x) => !filtre || `${x.nom} ${x.metier || ''}`.toLowerCase().includes(filtre));
+    zAppel.innerHTML = `<div class="card">
+      <div class="appel-tete">
+        <div id="ap-resume" class="appel-resume"></div>
+        <div class="appel-actions"><button type="button" class="btn sm" id="ap-tous">✅ Tous présents</button><button type="button" class="btn sm" id="ap-nouv">＋ Nouvel ouvrier</button></div>
+      </div>
+      ${ouvriers.length > 10 ? '<input class="input mt" id="ap-q" placeholder="🔍 Rechercher un ouvrier…" style="width:100%">' : ''}
+      ${ouvriers.length ? `<div class="appel-liste">${liste.map((x) => {
+        const bloque = ailleurs.get(x.id) || (deja.get(x.id)?.paye ? 'paye' : null);
+        const v = choix.get(x.id) || 0;
+        return `<div class="appel-ligne ${v ? 'present' : ''}">
+          <div class="appel-nom"><b>${esc(x.nom)}</b><span>${esc([x.metier, money(deja.get(x.id)?.tarif_jour ?? x.tarif_jour) + '/jour'].filter(Boolean).join(' · '))}</span>
+            ${bloque === 'paye' ? '<span class="badge muted">💵 Déjà payé</span>' : bloque ? `<span class="badge warn">📍 Sur ${esc(bloque)}</span>` : ''}</div>
+          <div class="segment" role="group" aria-label="Présence de ${esc(x.nom)}">${[[0, 'Absent'], [0.5, '½ j.'], [1, 'Présent']].map(([val, lib]) => `<button type="button" data-ouv="${x.id}" data-v="${val}" class="${v === val ? 'actif' : ''}" ${bloque ? 'disabled' : ''}>${lib}</button>`).join('')}</div>
+        </div>`;
+      }).join('')}</div>` : empty('👷', 'Aucun ouvrier enregistré. Ajoutez vos journaliers une seule fois avec « ＋ Nouvel ouvrier », puis faites l’appel chaque jour en un geste.')}
+      ${ouvriers.length ? '<div class="form-actions"><button type="button" class="btn primary" id="ap-ok">💾 Enregistrer l’appel</button></div>' : ''}
+    </div>`;
+    majResume();
+    $('#ap-q', zAppel)?.addEventListener('input', (e) => { filtre = e.target.value.toLowerCase(); const pos = e.target.selectionStart; dessiner(); const i = $('#ap-q', zAppel); i.focus(); i.setSelectionRange(pos, pos); });
+    if ($('#ap-q', zAppel) && filtre) $('#ap-q', zAppel).value = filtre;
+    $$('[data-ouv]', zAppel).forEach((b) => (b.onclick = () => {
+      choix.set(b.dataset.ouv, Number(b.dataset.v));
+      const ligne = b.closest('.appel-ligne');
+      $$('button', ligne).forEach((x) => x.classList.toggle('actif', x === b));
+      ligne.classList.toggle('present', Number(b.dataset.v) > 0);
+      majResume();
+    }));
+    $('#ap-tous', zAppel).onclick = () => {
+      ouvriers.forEach((x) => { if (!ailleurs.has(x.id) && !deja.get(x.id)?.paye) choix.set(x.id, 1); });
+      dessiner();
+    };
+    $('#ap-nouv', zAppel).onclick = () => formulaireOuvrier(null, () => charger());
+    $('#ap-ok', zAppel)?.addEventListener('click', enregistrer);
+  };
+
+  const enregistrer = async () => {
+    const btn = $('#ap-ok', zAppel);
+    btn.disabled = true; btn.textContent = 'Enregistrement…';
+    try {
+      const ajouts = [], modifs = [], suppr = [];
+      choix.forEach((v, id) => {
+        const ex = deja.get(id);
+        if (ex?.paye || ailleurs.has(id)) return;
+        if (!ex && v) ajouts.push({ projet_id: projetId, ouvrier_id: id, date_pointage: date, presence: v });
+        else if (ex && !v) suppr.push(ex.id);
+        else if (ex && v && Number(ex.presence) !== v) modifs.push([ex.id, v]);
+      });
+      if (ajouts.length) await q(sb.from('pointages').insert(ajouts));
+      for (const [id, v] of modifs) await q(sb.from('pointages').update({ presence: v }).eq('id', id));
+      if (suppr.length) await q(sb.from('pointages').delete().in('id', suppr));
+      const r = resume();
+      toast(`Appel enregistré ✅ ${r.presents + r.demis} ouvrier(s) pointé(s) le ${fdate(date)}.`);
+      await charger();
+    } catch (e) {
+      toast(erreurPointage(e), 'err', 7000);
+      btn.disabled = false; btn.textContent = '💾 Enregistrer l’appel';
+    }
+  };
+
+  $('[name="projet"]', zone).onchange = (e) => { projetId = e.target.value; memo.set('koordin-pointage-projet', projetId); charger(); };
+  $('[name="date"]', zone).onchange = (e) => { if (e.target.value) { date = e.target.value > auj ? auj : e.target.value; charger(); } };
+  await charger();
+}
+
+async function ongletPaie(zone) {
+  const auj = todayISO();
+  const lundi = lundiDe(auj);
+  const semaines = [0, 1, 2, 3].map((k) => {
+    const du = decalerJour(lundi, -7 * k), au = decalerJour(du, 6);
+    const lib = k === 0 ? 'Cette semaine' : k === 1 ? 'La semaine dernière' : `Semaine du ${parseDay(du).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+    return [du, `${lib} (${parseDay(du).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${parseDay(au).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })})`];
+  });
+  const projets = await q(sb.from('projets').select('id, nom').order('nom'));
+  let du = memo.get('koordin-paie-semaine') || lundi;
+  if (!semaines.some(([d]) => d === du)) du = lundi;
+  let projetId = '';
+  const payeur = can('direction', 'comptable');
+
+  zone.innerHTML = `<div class="card"><div class="form-grid">
+      ${F.select('semaine', 'Semaine', semaines, du)}
+      ${F.select('projet', 'Chantier', [['', 'Tous les chantiers'], ...projets.map((x) => [x.id, x.nom])], projetId)}
+    </div></div><div id="paie"></div>`;
+  const zPaie = $('#paie', zone);
+
+  const charger = async () => {
+    zPaie.innerHTML = loading();
+    const au = decalerJour(du, 6);
+    let req = sb.from('pointages').select('id, ouvrier_id, projet_id, date_pointage, presence, tarif_jour, paye, ouvriers(nom, metier, telephone), projets(nom)')
+      .gte('date_pointage', du).lte('date_pointage', au).order('date_pointage');
+    if (projetId) req = req.eq('projet_id', projetId);
+    const pts = await q(req);
+    const parOuvrier = new Map();
+    pts.forEach((x) => {
+      const o = parOuvrier.get(x.ouvrier_id) || { id: x.ouvrier_id, nom: x.ouvriers?.nom || '?', metier: x.ouvriers?.metier, tel: x.ouvriers?.telephone, jours: 0, montant: 0, apayer: 0, nonPayes: [], chantiers: new Set(), detail: [] };
+      const m = num(x.presence) * num(x.tarif_jour);
+      o.jours += num(x.presence); o.montant += m;
+      if (!x.paye) { o.apayer += m; o.nonPayes.push(x.id); }
+      o.chantiers.add(x.projets?.nom || '');
+      o.detail.push(x);
+      parOuvrier.set(x.ouvrier_id, o);
+    });
+    const lignes = [...parOuvrier.values()].sort((a, b) => a.nom.localeCompare(b.nom));
+    const total = lignes.reduce((s, o) => s + o.montant, 0);
+    const apayer = lignes.reduce((s, o) => s + o.apayer, 0);
+    const jours = lignes.reduce((s, o) => s + o.jours, 0);
+    const jourCourt = (iso) => parseDay(iso).toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
+    zPaie.innerHTML = `
+      <div class="grid k4 paie-kpis">
+        <div class="kpi"><div class="kpi-label">Reste à payer</div><div class="kpi-value" style="color:var(--gold)">${moneyShort(apayer)}</div></div>
+        <div class="kpi"><div class="kpi-label">Total de la semaine</div><div class="kpi-value">${moneyShort(total)}</div></div>
+        <div class="kpi"><div class="kpi-label">Ouvriers</div><div class="kpi-value">${lignes.length}</div></div>
+        <div class="kpi"><div class="kpi-label">Jours travaillés</div><div class="kpi-value">${String(jours).replace('.', ',')}</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Liste de paie <span class="paie-boutons">${lignes.length ? '<button type="button" class="btn sm" id="pa-csv">⬇️ Excel</button>' : ''}${payeur && apayer > 0 ? '<button type="button" class="btn sm primary" id="pa-tout">✅ Tout marquer payé</button>' : ''}</span></div>
+        ${lignes.length ? `<div class="paie-liste">${lignes.map((o) => `<div class="paie-ligne">
+            <div class="paie-nom"><b>${esc(o.nom)}</b><span>${esc([o.metier, [...o.chantiers].join(', ')].filter(Boolean).join(' · '))}</span>
+              <span class="paie-jours">${o.detail.map((x) => `<i class="${x.paye ? 'ok' : ''}" title="${fdate(x.date_pointage)}">${jourCourt(x.date_pointage)}${num(x.presence) < 1 ? '½' : ''}</i>`).join('')}</span></div>
+            <div class="paie-montant"><b>${money(o.montant)}</b><span>${String(o.jours).replace('.', ',')} j.</span>
+              ${o.apayer > 0 ? (payeur ? `<button type="button" class="btn sm" data-payer="${o.id}">Payer ${money(o.apayer)}</button>` : `<span class="badge warn">À payer</span>`) : '<span class="badge ok">✅ Payé</span>'}</div>
+          </div>`).join('')}</div>` : empty('💵', 'Aucun pointage sur cette période.')}
+      </div>`;
+    const payer = async (ids, texte) => {
+      if (!(await confirmer(texte, 'Marquer payé'))) return;
+      try {
+        await q(sb.from('pointages').update({ paye: true }).in('id', ids));
+        toast('Paie enregistrée ✅');
+        await charger();
+      } catch (e) { toast(erreurPointage(e), 'err', 7000); }
+    };
+    $$('[data-payer]', zPaie).forEach((b) => (b.onclick = () => {
+      const o = parOuvrier.get(b.dataset.payer);
+      payer(o.nonPayes, `Confirmer le paiement de ${money(o.apayer)} à ${o.nom} ?`);
+    }));
+    $('#pa-tout', zPaie)?.addEventListener('click', () => payer(lignes.flatMap((o) => o.nonPayes), `Confirmer le paiement de ${money(apayer)} à ${lignes.filter((o) => o.apayer > 0).length} ouvrier(s) ?`));
+    $('#pa-csv', zPaie)?.addEventListener('click', () => exporterCSV(`koordin-paie-${du}.csv`,
+      ['Ouvrier', 'Métier', 'Téléphone', 'Chantier(s)', 'Jours', `Montant (${devise()})`, `Reste à payer (${devise()})`],
+      lignes.map((o) => [o.nom, o.metier || '', o.tel || '', [...o.chantiers].join(', '), String(o.jours).replace('.', ','), Math.round(o.montant), Math.round(o.apayer)])));
+  };
+  $('[name="semaine"]', zone).onchange = (e) => { du = e.target.value; memo.set('koordin-paie-semaine', du); charger(); };
+  $('[name="projet"]', zone).onchange = (e) => { projetId = e.target.value; charger(); };
+  await charger();
+}
+
+async function ongletOuvriers(zone) {
+  const ouvriers = await q(sb.from('ouvriers').select('*').order('actif', { ascending: false }).order('nom'));
+  const gerer = can('direction', 'coordinateur');
+  zone.innerHTML = `<div class="card">
+    <div class="card-title">${ouvriers.filter((x) => x.actif).length} ouvrier(s) actif(s) <button type="button" class="btn sm primary" id="ou-nouv">＋ Nouvel ouvrier</button></div>
+    ${ouvriers.length ? `<div class="paie-liste">${ouvriers.map((x) => `<div class="paie-ligne ${x.actif ? '' : 'inactif'}">
+        <div class="paie-nom"><b>${esc(x.nom)}</b><span>${esc([x.metier, x.telephone].filter(Boolean).join(' · '))}</span></div>
+        <div class="paie-montant"><b>${money(x.tarif_jour)}</b><span>par jour</span>
+          ${x.actif ? '' : '<span class="badge muted">Inactif</span>'}<button type="button" class="btn sm" data-edit="${x.id}">✏️ Modifier</button></div>
+      </div>`).join('')}</div>` : empty('👷', 'Aucun ouvrier pour l’instant. Ajoutez vos journaliers une seule fois : nom, métier, tarif par jour.')}
+    ${gerer ? '' : '<p class="hint mt">Le tarif d’un ouvrier existant ne peut être changé que par la Direction ou la Coordination.</p>'}
+  </div>`;
+  const rafraichir = () => ongletOuvriers(zone);
+  $('#ou-nouv', zone).onclick = () => formulaireOuvrier(null, rafraichir);
+  $$('[data-edit]', zone).forEach((b) => (b.onclick = () => formulaireOuvrier(ouvriers.find((x) => x.id === b.dataset.edit), rafraichir)));
+}
+
+function formulaireOuvrier(o, apres) {
+  const tarifBloque = o && role() === 'technicien';
+  ouvrirModale({
+    titre: o ? `Modifier « ${o.nom} »` : 'Nouvel ouvrier',
+    corps: `<div class="form-grid">
+      ${F.text('nom', 'Nom et prénom', o?.nom, { required: true, full: true, placeholder: 'Ex. Konan Yao' })}
+      ${F.select('metier', 'Métier', METIERS.map((m) => [m, m]), o?.metier || 'Manœuvre')}
+      ${F.text('telephone', 'Téléphone (facultatif)', o?.telephone, { type: 'tel', inputmode: 'tel', placeholder: '07 01 02 03 04' })}
+      ${F.text('tarif_jour', `Tarif par jour (${devise()})`, o?.tarif_jour ?? '', { type: 'number', min: 0, step: '1', required: true, inputmode: 'numeric', placeholder: 'Ex. 5000', hint: tarifBloque ? 'Seules la Direction et la Coordination peuvent changer ce tarif.' : 'Le tarif est figé au jour du pointage : le changer ne modifie pas les jours déjà pointés.' })}
+      ${o ? `<label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="actif" ${o.actif ? 'checked' : ''} style="width:auto"> Actif (apparaît dans l’appel du jour)</label>` : ''}
+    </div>`,
+    onOpen: (ov) => { if (tarifBloque) $('[name="tarif_jour"]', ov).disabled = true; },
+    onSubmit: async (d) => {
+      const data = { nom: d.nom.trim(), metier: d.metier, telephone: d.telephone || null };
+      if (!tarifBloque) data.tarif_jour = num(d.tarif_jour);
+      if (o) data.actif = !!d.actif;
+      try {
+        let cree = null;
+        if (o) await q(sb.from('ouvriers').update(data).eq('id', o.id));
+        else cree = await q(sb.from('ouvriers').insert(data).select('id').single());
+        toast(o ? 'Ouvrier mis à jour.' : `${data.nom} ajouté ✅`);
+        apres?.(cree);
+      } catch (e) { throw new Error(erreurPointage(e)); }
+    },
+  });
 }
 
 PAGES.stock = async () => {

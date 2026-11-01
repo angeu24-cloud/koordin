@@ -809,3 +809,37 @@ body {
 .notice.ok { background: var(--ok-dim); }
 .rc-boutons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 @media (max-width: 520px) { .rc-boutons .btn { flex: 1 1 100%; justify-content: center; text-align: center; } }
+
+/* 1.9 : pointage et paie des journaliers */
+.appel-tete { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.appel-resume { font-size: 13px; color: var(--text-2); }
+.appel-resume b { color: var(--text); }
+.appel-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.appel-liste, .paie-liste { display: grid; gap: 8px; margin-top: 12px; }
+.appel-ligne, .paie-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.appel-ligne.present { border-color: var(--ok); box-shadow: inset 3px 0 0 var(--ok); }
+.appel-nom, .paie-nom { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.appel-nom span:not(.badge), .paie-nom > span { font-size: 12px; color: var(--text-2); }
+.appel-nom .badge { align-self: flex-start; }
+.segment { display: inline-flex; border: 1px solid var(--border-2); border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+.segment button { border: 0; background: var(--surface); color: var(--text-2); font: 600 12px var(--font); padding: 9px 10px; cursor: pointer; min-width: 46px; }
+.segment button + button { border-left: 1px solid var(--border-2); }
+.segment button.actif[data-v="0"] { background: var(--surface-3); color: var(--text); }
+.segment button.actif[data-v="0.5"] { background: var(--warn-dim); color: var(--warn); }
+.segment button.actif[data-v="1"] { background: var(--ok-dim); color: var(--ok); }
+.segment button:disabled { opacity: .45; cursor: not-allowed; }
+.paie-kpis { margin-bottom: 16px; }
+.paie-kpis .kpi-value { font-size: 20px; }
+.paie-boutons { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.paie-montant { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; flex-shrink: 0; }
+.paie-montant span { font-size: 12px; color: var(--text-2); }
+.paie-jours { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+.paie-jours i { font-style: normal; font-size: 10.5px; padding: 1px 5px; border-radius: 5px; background: var(--surface-3); color: var(--text-2); text-transform: capitalize; }
+.paie-jours i.ok { background: var(--ok-dim); color: var(--ok); }
+.paie-ligne.inactif { opacity: .6; }
+@media (max-width: 520px) {
+  .grid.k4.paie-kpis { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .appel-ligne { flex-direction: column; align-items: stretch; }
+  .segment { width: 100%; }
+  .segment button { flex: 1; padding: 11px 6px; font-size: 13px; }
+}

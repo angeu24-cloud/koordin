@@ -1,9 +1,9 @@
 {
-  "version": "1.8",
-  "date": "2026-11-04",
+  "version": "1.9",
+  "date": "2026-11-05",
   "nouveautes": [
-    "Rapport pour le client : dans la page d'un chantier, touchez « 📄 Rapport client ». KOORDIN prépare un PDF professionnel de la semaine (avancement, travaux réalisés, points d'attention, prochaines étapes, photos).",
-    "Envoyez-le à votre client par WhatsApp en un geste, ou téléchargez-le.",
-    "Aucune information financière n'apparaît dans ce rapport."
+    "Nouveau menu « 👷 Pointage » : le chef de chantier fait l'appel des ouvriers journaliers chaque jour (présent, demi-journée ou absent) en quelques secondes.",
+    "Paie de la semaine calculée automatiquement, ouvrier par ouvrier, avec export Excel. La Direction ou la Comptabilité marque la paie comme réglée.",
+    "Contrôles anti-fraude : un ouvrier ne peut pas être pointé sur deux chantiers le même jour, le tarif est figé au jour du pointage et une journée payée ne peut plus être modifiée."
   ]
 }
