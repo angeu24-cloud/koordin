@@ -843,3 +843,50 @@ body {
   .segment { width: 100%; }
   .segment button { flex: 1; padding: 11px 6px; font-size: 13px; }
 }
+
+/* 2.0 : accès client (suivi en lecture seule) */
+.suivi { min-height: 100vh; min-height: 100dvh; background: var(--bg); padding: 16px 16px 40px; }
+.suivi-page { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.suivi-page > .card { margin: 0; }
+.suivi-entete { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; }
+.suivi-ent { font-weight: 800; font-size: 16px; }
+.suivi-sous { font-size: 12px; color: var(--text-2); }
+.suivi-hero { position: relative; border-radius: 16px; overflow: hidden; aspect-ratio: 16 / 9; background: var(--surface-3); border: 1px solid var(--border); }
+.suivi-hero > img, .suivi-hero > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.suivi-hero .cover-voile { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(5,7,12,.85) 100%); }
+.suivi-hero-txt { position: absolute; left: 16px; right: 16px; bottom: 14px; color: #fff; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.suivi-hero-txt h1 { font-size: 22px; font-weight: 800; line-height: 1.2; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
+.suivi-hero-txt p { font-size: 13px; color: #d5d9e5; }
+.suivi-chiffres { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.suivi-anneau { display: flex; align-items: center; gap: 12px; }
+.suivi-lot { display: grid; grid-template-columns: minmax(0, 1fr) 1.4fr 44px; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+.suivi-lot b, .suivi-mini b { text-align: right; font-size: 13px; }
+.suivi-barre { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.suivi-barre i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-2)); border-radius: 4px; }
+.suivi-h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-3); margin: 6px 0 4px; }
+.suivi-tache { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.suivi-tache:last-child { border-bottom: 0; }
+.suivi-tache > div:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
+.suivi-tache span { font-size: 12px; color: var(--text-2); }
+.suivi-mini { display: grid; grid-template-columns: 70px 40px; gap: 6px; align-items: center; flex-shrink: 0; }
+.suivi-rapport { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.suivi-rapport:last-child { border-bottom: 0; }
+.suivi-rapport-tete { font-size: 12px; font-weight: 700; color: var(--gold); margin-bottom: 4px; }
+.suivi-rapport p { font-size: 14px; line-height: 1.55; }
+.suivi-vignettes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.suivi-vignettes button, .suivi-galerie button { padding: 0; border: 0; background: var(--surface-3); border-radius: 8px; overflow: hidden; cursor: zoom-in; }
+.suivi-vignettes img { width: 84px; height: 84px; object-fit: cover; display: block; }
+.suivi-galerie { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.suivi-galerie img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.suivi-zoom { position: fixed; inset: 0; z-index: 100; background: rgba(5,7,12,.95); display: grid; place-items: center; padding: 16px; }
+.suivi-zoom img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+.suivi-zoom button { position: absolute; top: 10px; right: 14px; background: none; border: 0; color: #fff; font-size: 36px; cursor: pointer; }
+.suivi-pied { text-align: center; font-size: 12px; color: var(--text-3); display: flex; flex-direction: column; gap: 8px; padding: 8px 4px; }
+.suivi-marque b { color: var(--gold); }
+.ac-liste { list-style: none; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+@media (max-width: 520px) {
+  .suivi-chiffres { grid-template-columns: 1fr; }
+  .suivi-hero { aspect-ratio: 4 / 3; }
+  .suivi-lot { grid-template-columns: minmax(0, 1fr) 1fr 40px; }
+}
+.suivi-hero-txt .badge { background: rgba(5, 7, 12, .72); backdrop-filter: blur(4px); font-size: 12px; padding: 4px 10px; }

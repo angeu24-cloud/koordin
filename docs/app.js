@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.9';
+const VERSION = '2.0';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -520,6 +520,8 @@ async function demarrer() {
     if (evt === 'PASSWORD_RECOVERY') setTimeout(ecranNouveauMotDePasse, 0);
     if (evt === 'SIGNED_OUT') { S.profil = null; ecranConnexion(); }
   });
+  const suivi = location.hash.match(/^#\/suivi\/([A-Za-z0-9]{32,})/);
+  if (suivi) return ecranSuiviClient(suivi[1]);
   const { data: { session } } = await sb.auth.getSession();
   if (location.hash.includes('type=recovery')) return;
   if (!session) return ecranConnexion();
@@ -1579,6 +1581,146 @@ function rapportClient(projet) {
   };
 }
 
+// ─────────────────────────────── Accès client (suivi en lecture seule) ───────────────────────────────
+// Le client ouvre un lien secret (#/suivi/<jeton>) sans compte : avancement, planning,
+// rapports validés et photos. Aucun montant, aucun incident interne, aucun nom d'ouvrier.
+
+const lienSuivi = (jeton) => `${location.origin}${location.pathname}#/suivi/${jeton}`;
+
+async function ecranSuiviClient(jeton) {
+  document.title = 'Suivi de chantier — KOORDIN';
+  const racine = $('#root');
+  racine.innerHTML = `<div class="suivi"><div class="suivi-page">${loading()}</div></div>`;
+  const client = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'koordin-suivi' },
+  });
+  let d = null, erreur = null;
+  try {
+    const { data, error } = await client.rpc('suivi_client', { p_jeton: jeton });
+    if (error) throw error;
+    d = data;
+  } catch (e) { erreur = e; }
+  const zone = $('.suivi-page', racine);
+  if (!d) {
+    zone.innerHTML = `<div class="suivi-entete"><div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div></div>
+      <div class="card">${empty('🔒', erreur ? messageErreur(erreur) : 'Ce lien de suivi n’est plus valide. Demandez un nouveau lien à l’entreprise qui réalise votre chantier.')}</div>`;
+    return;
+  }
+  const pr = d.projet;
+  document.title = `${pr.nom} — Suivi de chantier`;
+  const chemins = [pr.photo, ...d.rapports.flatMap((r) => r.photos || []), ...d.galerie.map((g) => g.chemin)].filter(Boolean);
+  const urls = new Map();
+  if (chemins.length) {
+    const { data } = await client.storage.from('photos-chantier').createSignedUrls([...new Set(chemins)], 3600);
+    (data || []).forEach((x) => { if (x.signedUrl) urls.set(x.path, x.signedUrl); });
+  }
+  const u = (c) => urls.get(c);
+  const retard = num(pr.jours_de_retard);
+  const ecart = pr.avancement_attendu != null ? pr.avancement_attendu - pr.avancement : 0;
+  const etat = pr.statut === 'termine' ? ['muted', '🏁 Chantier terminé']
+    : pr.statut === 'suspendu' ? ['warn', '⏸️ Chantier suspendu']
+      : retard > 0 ? ['crit', `⏰ Fin prévue dépassée de ${retard} jour${retard > 1 ? 's' : ''}`]
+        : ecart > 15 ? ['warn', '⚠️ En retard sur le planning'] : ecart > 5 ? ['warn', '⚠️ Léger retard'] : ['ok', '✅ Dans les temps'];
+  const auj = todayISO();
+  const encours = d.taches.filter((t) => t.avancement < 100 && t.date_debut <= auj);
+  const avenir = d.taches.filter((t) => t.avancement < 100 && t.date_debut > auj).slice(0, 6);
+  const finies = d.taches.filter((t) => t.avancement >= 100).length;
+  const ligneTache = (t) => `<div class="suivi-tache"><div><b>${esc(t.nom)}</b><span>${esc([t.lot, `${fdate(t.date_debut)} → ${fdate(t.date_fin)}`].filter(Boolean).join(' · '))}</span></div>
+    <div class="suivi-mini"><div class="suivi-barre"><i style="width:${num(t.avancement)}%"></i></div><b>${num(t.avancement)} %</b></div></div>`;
+
+  zone.innerHTML = `
+    <div class="suivi-entete">
+      <div class="brand"><div class="hex"></div><div><div class="suivi-ent">${esc(d.entreprise)}</div><div class="suivi-sous">Suivi de votre chantier</div></div></div>
+    </div>
+    <section class="suivi-hero">
+      ${pr.photo && u(pr.photo) ? `<img src="${esc(u(pr.photo))}" alt="">` : sceneChantier(empreinte(pr.nom))}
+      <div class="cover-voile"></div>
+      <div class="suivi-hero-txt">
+        <span class="badge ${etat[0]}">${esc(etat[1])}</span>
+        <h1>${esc(pr.nom)}</h1>
+        <p>${esc([pr.client, pr.localisation].filter(Boolean).join(' · '))}</p>
+      </div>
+    </section>
+    <div class="suivi-chiffres">
+      <div class="kpi suivi-anneau">${anneau(pr.avancement, pr.avancement_attendu, 76)}<div><div class="kpi-label">Avancement réel</div><div class="kpi-foot">${pr.avancement_attendu != null ? `Prévu à ce jour : ${pr.avancement_attendu} %` : ''}</div></div></div>
+      <div class="kpi"><div class="kpi-label">${pr.statut === 'termine' ? 'Terminé le' : 'Fin prévue'}</div><div class="kpi-value">${fdate(pr.statut === 'termine' ? pr.date_fin_reelle || pr.date_fin_prevue : pr.date_fin_prevue)}</div><div class="kpi-foot">Début : ${fdate(pr.date_debut)}</div></div>
+    </div>
+    ${d.lots.length ? `<section class="card"><div class="card-title">Avancement par lot</div>
+      ${d.lots.map((l) => `<div class="suivi-lot"><span>${esc(l.nom)}</span><div class="suivi-barre"><i style="width:${num(l.avancement)}%"></i></div><b>${num(l.avancement)} %</b></div>`).join('')}</section>` : ''}
+    ${encours.length || avenir.length ? `<section class="card"><div class="card-title">Planning <small>${finies} étape${finies > 1 ? 's' : ''} terminée${finies > 1 ? 's' : ''}</small></div>
+      ${encours.length ? `<h4 class="suivi-h4">En cours</h4>${encours.map(ligneTache).join('')}` : ''}
+      ${avenir.length ? `<h4 class="suivi-h4">À venir</h4>${avenir.map(ligneTache).join('')}` : ''}</section>` : ''}
+    <section class="card"><div class="card-title">Journal du chantier</div>
+      ${d.rapports.length ? d.rapports.slice(0, 15).map((r) => `<article class="suivi-rapport">
+        <div class="suivi-rapport-tete">${esc(((j) => j.charAt(0).toUpperCase() + j.slice(1))(parseDay(r.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })))}${r.lot ? ` · ${esc(r.lot)}` : ''}${r.meteo ? ` · ${esc(r.meteo)}` : ''}</div>
+        <p>${esc(r.travaux)}</p>
+        ${(r.photos || []).filter(u).length ? `<div class="suivi-vignettes">${r.photos.filter(u).map((c) => `<button type="button" data-zoom="${esc(u(c))}"><img src="${esc(u(c))}" alt="Photo du ${fdate(r.date)}" loading="lazy"></button>`).join('')}</div>` : ''}
+      </article>`).join('') : empty('📋', 'Les comptes rendus du chantier apparaîtront ici dès qu’ils auront été validés par l’entreprise.')}
+    </section>
+    ${d.galerie.filter((g) => u(g.chemin)).length ? `<section class="card"><div class="card-title">Photos</div><div class="suivi-galerie">
+      ${d.galerie.filter((g) => u(g.chemin)).map((g) => `<button type="button" data-zoom="${esc(u(g.chemin))}"><img src="${esc(u(g.chemin))}" alt="${esc(g.legende || 'Photo du chantier')}" loading="lazy"></button>`).join('')}</div></section>` : ''}
+    <footer class="suivi-pied">
+      <p>Mis à jour le ${new Date(d.maj).toLocaleString('fr-FR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}. Ce lien est personnel : ne le partagez qu’avec les personnes concernées par ce chantier.</p>
+      <p class="suivi-marque">Suivi de chantier propulsé par <b>KOORDIN</b></p>
+    </footer>`;
+  $$('[data-zoom]', zone).forEach((b) => (b.onclick = () => {
+    const ov = document.createElement('div');
+    ov.className = 'suivi-zoom';
+    ov.innerHTML = `<img src="${esc(b.dataset.zoom)}" alt=""><button type="button" aria-label="Fermer">×</button>`;
+    ov.onclick = () => ov.remove();
+    document.body.appendChild(ov);
+  }));
+}
+
+async function accesClient(projet) {
+  const m = ouvrirModale({ titre: '👁️ Accès client', corps: `<div id="ac-zone">${loading()}</div>` });
+  const zone = $('#ac-zone', m.el);
+  const rendre = async () => {
+    let liens;
+    try {
+      liens = await q(sb.from('liens_clients').select('*').eq('projet_id', projet.id).order('created_at', { ascending: false }));
+    } catch (e) {
+      zone.innerHTML = empty('👁️', /liens_clients/.test(String(e?.message)) ? 'Cette fonction nécessite la mise à jour 2.0 de la base de données : dans Supabase → SQL Editor, exécutez le fichier supabase/mise-a-jour-2.0.sql.' : messageErreur(e));
+      return;
+    }
+    const lien = liens.find((l) => l.actif);
+    if (!lien) {
+      zone.innerHTML = `<p style="margin-bottom:12px">Donnez à votre client un lien pour suivre <b>${esc(projet.nom)}</b> depuis son téléphone, <b>sans compte et sans mot de passe</b>.</p>
+        <ul class="ac-liste">
+          <li>✅ Il voit : l’avancement, le planning, les comptes rendus <b>validés</b> et les photos.</li>
+          <li>🔒 Il ne voit jamais : les montants, les commandes, les factures, les incidents internes ni les ouvriers.</li>
+          <li>↩️ Vous pouvez couper le lien à tout moment.</li>
+        </ul>
+        ${liens.length ? '<p class="hint mt">L’ancien lien a été désactivé : il ne fonctionne plus.</p>' : ''}
+        <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" id="ac-creer">🔗 Créer le lien client</button></div>`;
+      $('#ac-creer', zone).onclick = async (e) => {
+        e.target.disabled = true;
+        try { await q(sb.from('liens_clients').insert({ projet_id: projet.id })); toast('Lien client créé ✅'); await rendre(); } catch (err) { toast(messageErreur(err), 'err'); e.target.disabled = false; }
+      };
+      return;
+    }
+    const url = lienSuivi(lien.jeton);
+    const message = `Bonjour${projet.client ? ` ${projet.client}` : ''}, vous pouvez suivre l’avancement de votre chantier « ${projet.nom} » à tout moment (photos, planning, comptes rendus) sur ce lien : ${url}\n\n${S.entreprise?.nom || ''}`;
+    zone.innerHTML = `<div class="notice ok">🔗 Le lien client est <b>actif</b>.${lien.visites ? ` Ouvert <b>${lien.visites} fois</b>, dernière visite ${ago(lien.derniere_visite)}.` : ' Pas encore ouvert par le client.'}</div>
+      <label class="field full">Lien à envoyer<input class="input" id="ac-url" value="${esc(url)}" readonly></label>
+      <div class="rc-boutons">
+        <a class="btn primary" href="https://wa.me/?text=${encodeURIComponent(message)}" target="_blank" rel="noopener">📲 Envoyer par WhatsApp</a>
+        <button type="button" class="btn" id="ac-copier">📋 Copier le lien</button>
+        <a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener">👁️ Voir comme le client</a>
+      </div>
+      <p class="hint mt">Seuls les rapports <b>validés</b> sont visibles par le client : pensez à valider les rapports du terrain.</p>
+      <div class="form-actions"><button type="button" class="btn danger" id="ac-couper">⛔ Couper ce lien</button><button type="button" class="btn ghost" data-close>Fermer</button></div>`;
+    $('#ac-copier', zone).onclick = async () => {
+      try { await navigator.clipboard.writeText(url); toast('Lien copié ✅'); } catch { $('#ac-url', zone).select(); toast('Sélectionnez le lien puis copiez-le.', 'warn'); }
+    };
+    $('#ac-couper', zone).onclick = async () => {
+      if (!(await confirmer('Couper ce lien ? Le client ne pourra plus voir le chantier. Vous pourrez créer un nouveau lien ensuite.', 'Couper le lien'))) return;
+      try { await q(sb.from('liens_clients').update({ actif: false }).eq('id', lien.id)); toast('Lien coupé.'); await rendre(); } catch (err) { toast(messageErreur(err), 'err'); }
+    };
+  };
+  await rendre();
+}
+
 // ─── Détail d'un projet ───
 
 let ongletProjet = 'apercu';
@@ -1615,6 +1757,7 @@ PAGES.projet = async (id) => {
     <div class="page-actions dc-actions">
       ${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="rc-p">📄 Rapport client</button>' : ''}
+      ${can('direction', 'coordinateur') && !DEMO ? '<button class="btn" id="ac-p">👁️ Accès client</button>' : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
       ${can('direction') ? '<button class="btn danger" id="del-p">Supprimer</button>' : ''}
     </div>
@@ -1623,6 +1766,7 @@ PAGES.projet = async (id) => {
 
   $('#edit-p', p)?.addEventListener('click', () => formulaireProjet(projet));
   $('#rc-p', p)?.addEventListener('click', () => rapportClient(projet));
+  $('#ac-p', p)?.addEventListener('click', () => accesClient(projet));
   $('#photo-p', p)?.addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
