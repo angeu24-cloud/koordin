@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '1.7';
+const VERSION = '1.8';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1302,6 +1302,282 @@ function formulaireProjet(projet = null) {
   });
 }
 
+// ─── Rapport hebdomadaire pour le client (PDF) ───
+// Fabriqué sur le téléphone, sans serveur : avancement, travaux de la semaine,
+// points d'attention, prochaines étapes et photos. Aucune donnée financière.
+
+let jsPDFCharge = null;
+function chargerJsPDF() {
+  if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  jsPDFCharge ||= new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'jspdf.umd.min.js';
+    s.onload = () => ok(window.jspdf.jsPDF);
+    s.onerror = () => { jsPDFCharge = null; ko(new Error('Impossible de charger l’outil PDF. Vérifiez votre connexion internet.')); };
+    document.head.appendChild(s);
+  });
+  return jsPDFCharge;
+}
+
+function periodeRapport(choix) {
+  const auj = parseDay(todayISO());
+  const iso = (d) => d.toLocaleDateString('sv-SE');
+  const decale = (d, j) => { const x = new Date(d); x.setDate(x.getDate() + j); return x; };
+  const lundi = decale(auj, -((auj.getDay() + 6) % 7));
+  if (choix === 'semaine') return { du: iso(lundi), au: iso(auj) };
+  if (choix === 'precedente') return { du: iso(decale(lundi, -7)), au: iso(decale(lundi, -1)) };
+  return { du: iso(decale(auj, -6)), au: iso(auj) };
+}
+
+// Les polices intégrées du PDF ne connaissent que l'alphabet latin : on remplace le reste.
+const textePDF = (v) => String(v ?? '')
+  .replace(/[‘’ʼ]/g, "'").replace(/[“”«»]/g, '"')
+  .replace(/[–—]/g, '-').replace(/…/g, '...').replace(/œ/g, 'oe').replace(/Œ/g, 'OE')
+  .replace(/[   ]/g, ' ').replace(/→/g, '->')
+  .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ]/g, '').replace(/[ \t]+\n/g, '\n').trim();
+
+// Recadre la photo au format de la vignette (sans bandes vides) et l'allège.
+async function imagePourPDF(url, ratio = 4 / 3, max = 1000) {
+  try {
+    const rep = await fetch(url);
+    if (!rep.ok) return null;
+    const bmp = await createImageBitmap(await rep.blob());
+    let sw = bmp.width, sh = bmp.height;
+    if (sw / sh > ratio) sw = sh * ratio; else sh = sw / ratio;
+    const k = Math.min(1, max / sw);
+    const c = document.createElement('canvas');
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext('2d').drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+    return { data: c.toDataURL('image/jpeg', 0.72), l: c.width, h: c.height };
+  } catch { return null; }
+}
+
+async function donneesRapportClient(projet, { du, au, valides }) {
+  const [lots, rapports, taches] = await Promise.all([
+    q(sb.from('lots').select('id, nom, avancement, ordre').eq('projet_id', projet.id).order('ordre')),
+    q(sb.from('rapports').select('id, lot_id, date_rapport, meteo, effectif, travaux, incidents, statut')
+      .eq('projet_id', projet.id).gte('date_rapport', du).lte('date_rapport', au).order('date_rapport').order('created_at')),
+    q(sb.from('taches').select('nom, lot_id, date_debut, date_fin, avancement').eq('projet_id', projet.id).order('date_debut')),
+  ]);
+  const retenus = rapports.filter((r) => (valides ? r.statut === 'valide' : r.statut !== 'rejete'));
+  // Photos de la période : galerie du projet (version 1.6) sinon photos des rapports
+  let photos = [];
+  const { data: galerie, error } = await sb.rpc('galerie_projet', { p_projet: projet.id });
+  if (!error && galerie) {
+    const ids = new Set(retenus.map((r) => r.id));
+    photos = galerie.filter((x) => {
+      const jour = new Date(x.date_photo).toLocaleDateString('sv-SE');
+      return jour >= du && jour <= au && (x.source !== 'rapport' || ids.has(x.rapport_id));
+    }).map((x) => ({ chemin: x.chemin, date: x.date_photo, legende: x.legende }));
+  } else if (retenus.length) {
+    const { data } = await sb.from('rapport_photos').select('chemin, created_at, rapport_id').in('rapport_id', retenus.map((r) => r.id));
+    photos = (data || []).map((x) => ({ chemin: x.chemin, date: x.created_at, legende: retenus.find((r) => r.id === x.rapport_id)?.travaux }));
+  }
+  photos.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const auj = todayISO();
+  const dans15 = parseDay(auj); dans15.setDate(dans15.getDate() + 15);
+  const prochaines = taches.filter((t) => t.avancement < 100 && t.date_fin >= auj && t.date_debut <= dans15.toLocaleDateString('sv-SE')).slice(0, 6);
+  return { lots, rapports: retenus, prochaines, photos: photos.slice(0, 6) };
+}
+
+async function fabriquerPDFClient(projet, d, { du, au, message }) {
+  const JsPDF = await chargerJsPDF();
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const L = 210, H = 297, M = 16, LU = L - 2 * M;
+  const OR = [232, 160, 32], NUIT = [17, 21, 33], GRIS = [100, 108, 128], CLAIR = [244, 245, 249], TRAIT = [226, 229, 238];
+  const nomLot = (id) => d.lots.find((l) => l.id === id)?.nom || '';
+  const jourLong = (s) => parseDay(s).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  const periode = `Du ${parseDay(du).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au ${parseDay(au).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  let y = 0;
+
+  const police = (taille, gras = false, couleur = NUIT) => { doc.setFont('helvetica', gras ? 'bold' : 'normal'); doc.setFontSize(taille); doc.setTextColor(...couleur); };
+  const place = (h) => { if (y + h > H - 20) { doc.addPage(); y = M + 4; } };
+  const titre = (t) => {
+    place(16);
+    y += 4;
+    doc.setFillColor(...OR); doc.rect(M, y - 4, 1.6, 6, 'F');
+    police(12.5, true); doc.text(textePDF(t), M + 4.5, y + 0.6);
+    y += 8;
+  };
+  const paragraphe = (t, { taille = 10, couleur = NUIT, retrait = 0, gras = false, interligne = 4.6 } = {}) => {
+    police(taille, gras, couleur);
+    for (const ligne of doc.splitTextToSize(textePDF(t), LU - retrait)) { place(interligne); doc.text(ligne, M + retrait, y); y += interligne; }
+  };
+
+  // En-tête
+  doc.setFillColor(...NUIT); doc.rect(0, 0, L, 40, 'F');
+  doc.setFillColor(...OR); doc.rect(0, 40, L, 1.4, 'F');
+  police(19, true, [255, 255, 255]); doc.text(textePDF(S.entreprise?.nom || ''), M, 17);
+  police(10.5, false, [200, 205, 220]); doc.text('Rapport hebdomadaire de chantier', M, 25);
+  police(10.5, true, OR); doc.text(textePDF(periode), M, 32);
+  y = 54;
+  police(17, true); doc.text(doc.splitTextToSize(textePDF(projet.nom), LU)[0], M, y); y += 6.5;
+  const infos = [projet.client && `Client : ${projet.client}`, projet.localisation, projet.reference && `Réf. ${projet.reference}`].filter(Boolean).join('   ·   ');
+  if (infos) { police(10, false, GRIS); doc.text(doc.splitTextToSize(textePDF(infos), LU)[0], M, y); y += 5; }
+  y += 4;
+
+  // Chiffres clés
+  const retard = num(projet.jours_de_retard);
+  const etat = projet.statut === 'termine' ? 'Chantier terminé'
+    : retard > 0 ? `${retard} jour${retard > 1 ? 's' : ''} de retard`
+      : projet.sante === 'critique' ? 'En retard sur le planning' : projet.sante === 'attention' ? 'À surveiller' : 'Dans les temps';
+  const couleurEtat = projet.sante === 'critique' || retard > 0 ? [214, 69, 69] : projet.sante === 'attention' ? [196, 128, 10] : [25, 150, 100];
+  const effectifs = d.rapports.map((r) => r.effectif).filter((x) => x != null);
+  const cases = [
+    ['Avancement', `${num(projet.avancement)} %`, `Prévu à date : ${num(projet.avancement_attendu)} %`, NUIT],
+    ['État du planning', etat, `Fin prévue : ${fdate(projet.date_fin_prevue)}`, couleurEtat],
+    ['Cette semaine', `${d.rapports.length} rapport${d.rapports.length > 1 ? 's' : ''}`, effectifs.length ? `Effectif moyen : ${Math.round(effectifs.reduce((a, b) => a + b, 0) / effectifs.length)} pers.` : 'Effectif non renseigné', NUIT],
+  ];
+  const lc = (LU - 8) / 3;
+  cases.forEach(([lib, val, sous, coul], i) => {
+    const x = M + i * (lc + 4);
+    doc.setFillColor(...CLAIR); doc.roundedRect(x, y, lc, 25, 2.5, 2.5, 'F');
+    police(8.5, false, GRIS); doc.text(textePDF(lib).toUpperCase(), x + 4, y + 6.5);
+    police(val.length > 14 ? 11 : 15, true, coul); doc.text(doc.splitTextToSize(textePDF(val), lc - 8)[0], x + 4, y + 14.5);
+    police(8.5, false, GRIS); doc.text(doc.splitTextToSize(textePDF(sous), lc - 8)[0], x + 4, y + 20.5);
+  });
+  y += 31;
+
+  // Barre d'avancement global avec repère du prévu
+  const barre = (x, yy, l, h, v, prevu = null) => {
+    doc.setFillColor(...TRAIT); doc.roundedRect(x, yy, l, h, h / 2, h / 2, 'F');
+    if (v > 0) { doc.setFillColor(...OR); doc.roundedRect(x, yy, Math.max(h, l * Math.min(v, 100) / 100), h, h / 2, h / 2, 'F'); }
+    if (prevu != null) { doc.setFillColor(...NUIT); doc.rect(x + l * Math.min(prevu, 100) / 100 - 0.4, yy - 1.2, 0.8, h + 2.4, 'F'); }
+  };
+  barre(M, y, LU, 3.2, num(projet.avancement), num(projet.avancement_attendu));
+  y += 7.5;
+  police(8, false, GRIS); doc.text('Barre orange : avancement réel   |   Repère noir : avancement prévu à date', M, y); y += 4;
+
+  if (message?.trim()) {
+    titre('Le mot de l’entreprise');
+    paragraphe(message, { taille: 10.5 });
+  }
+
+  if (d.lots.length) {
+    titre('Avancement par lot');
+    d.lots.forEach((l) => {
+      place(8);
+      police(10); doc.text(doc.splitTextToSize(textePDF(l.nom), 62)[0], M, y + 2.6);
+      barre(M + 66, y, LU - 84, 3.2, num(l.avancement));
+      police(10, true); doc.text(`${num(l.avancement)} %`, M + LU, y + 2.6, { align: 'right' });
+      y += 7.5;
+    });
+  }
+
+  titre('Travaux réalisés');
+  if (!d.rapports.length) paragraphe('Aucun rapport de chantier sur cette période.', { couleur: GRIS });
+  d.rapports.forEach((r) => {
+    place(10);
+    const lot = nomLot(r.lot_id);
+    police(9.5, true, OR); doc.text(textePDF(`${jourLong(r.date_rapport)}${lot ? `  ·  ${lot}` : ''}${r.meteo ? `  ·  ${r.meteo}` : ''}`), M, y); y += 4.8;
+    paragraphe(r.travaux, { retrait: 0 });
+    y += 2;
+  });
+
+  const incidents = d.rapports.filter((r) => r.incidents?.trim());
+  titre('Points d’attention');
+  if (!incidents.length) paragraphe('Aucun incident signalé sur cette période.', { couleur: GRIS });
+  incidents.forEach((r) => { paragraphe(`${jourLong(r.date_rapport)} : ${r.incidents}`); y += 1.5; });
+
+  if (d.prochaines.length) {
+    titre('En cours et à venir (15 prochains jours)');
+    d.prochaines.forEach((t) => {
+      const lot = nomLot(t.lot_id);
+      paragraphe(`-  ${t.nom}${lot ? ` (${lot})` : ''} : du ${fdate(t.date_debut)} au ${fdate(t.date_fin)}`);
+      y += 0.8;
+    });
+  }
+
+  // Photos
+  const url = await urlsPhotos(d.photos.map((p) => p.chemin));
+  const images = (await Promise.all(d.photos.map(async (p) => {
+    const u = url(p.chemin);
+    const img = u ? await imagePourPDF(u, 1 / 0.72) : null;
+    return img ? { ...img, date: p.date, legende: p.legende } : null;
+  }))).filter(Boolean);
+  if (images.length) {
+    titre('Photos du chantier');
+    const lp = (LU - 6) / 2, hp = lp * 0.72;
+    for (let i = 0; i < images.length; i += 2) {
+      place(hp + 13);
+      images.slice(i, i + 2).forEach((im, j) => {
+        const x = M + j * (lp + 6);
+        doc.addImage(im.data, 'JPEG', x, y, lp, hp);
+        police(8, false, GRIS);
+        const leg = `${new Date(im.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}${im.legende ? ` - ${im.legende}` : ''}`;
+        const lignes = doc.splitTextToSize(textePDF(leg), lp);
+        doc.text(lignes.length > 1 ? `${lignes[0].replace(/\s+\S*$/, '')}...` : lignes[0], x, y + hp + 4.5);
+      });
+      y += hp + 10;
+    }
+  }
+
+  // Pied de page
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...TRAIT); doc.setLineWidth(0.3); doc.line(M, H - 13, L - M, H - 13);
+    police(8, false, GRIS);
+    doc.text(textePDF(`${S.entreprise?.nom || ''}  ·  ${projet.nom}  ·  page ${i}/${n}`), M, H - 8);
+    police(8, true, OR); doc.text('Rapport généré avec KOORDIN', L - M, H - 8, { align: 'right' });
+  }
+  return doc.output('blob');
+}
+
+function rapportClient(projet) {
+  const m = ouvrirModale({
+    titre: '📄 Rapport pour le client',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:12px">Un PDF clair et professionnel pour votre client : avancement, travaux, points d’attention, prochaines étapes et photos. <b>Aucune information financière</b> n’y figure.</p>
+      <form id="f-rc" class="form-grid" novalidate>
+        ${F.select('periode', 'Période', [['7j', 'Les 7 derniers jours'], ['semaine', 'Cette semaine (depuis lundi)'], ['precedente', 'La semaine dernière']], '7j', { full: true })}
+        ${F.area('message', 'Message au client (facultatif)', '', { placeholder: 'Ex. Le coulage de la dalle du R+3 est prévu lundi. Merci pour votre confiance.' })}
+        <label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="valides" style="width:auto"> N’inclure que les rapports validés</label>
+      </form>
+      <div class="rc-resultat hidden"></div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" id="rc-creer">📄 Créer le rapport</button></div>`,
+  });
+  const btn = $('#rc-creer', m.el);
+  const zone = $('.rc-resultat', m.el);
+  let lienPDF = null;
+  m.el.addEventListener('click', (e) => { if ((e.target === m.el || e.target.closest('[data-close]')) && lienPDF) URL.revokeObjectURL(lienPDF); });
+  btn.onclick = async () => {
+    const d = lireFormulaire($('#f-rc', m.el));
+    const { du, au } = periodeRapport(d.periode);
+    btn.disabled = true; btn.textContent = 'Préparation…';
+    try {
+      const donnees = await donneesRapportClient(projet, { du, au, valides: !!d.valides });
+      btn.textContent = donnees.photos.length ? 'Mise en page des photos…' : 'Mise en page…';
+      const blob = await fabriquerPDFClient(projet, donnees, { du, au, message: d.message });
+      const nom = `Rapport-${projet.nom}-${parseDay(au).toLocaleDateString('fr-FR')}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '.pdf';
+      const fichier = new File([blob], nom, { type: 'application/pdf' });
+      if (lienPDF) URL.revokeObjectURL(lienPDF);
+      lienPDF = URL.createObjectURL(blob);
+      const partage = navigator.canShare?.({ files: [fichier] });
+      zone.innerHTML = `<div class="notice ok" style="margin:6px 0 4px">✅ Rapport prêt : ${donnees.rapports.length} rapport(s) de chantier, ${donnees.photos.length} photo(s).</div>
+        <div class="rc-boutons">
+          ${partage ? '<button type="button" class="btn primary" id="rc-partager">📤 Envoyer (WhatsApp…)</button>' : ''}
+          <a class="btn ${partage ? '' : 'primary'}" href="${lienPDF}" download="${esc(nom)}">⬇️ Télécharger le PDF</a>
+          <a class="btn ghost" href="${lienPDF}" target="_blank" rel="noopener">👁️ Voir</a>
+        </div>`;
+      zone.classList.remove('hidden');
+      $('#rc-partager', zone)?.addEventListener('click', async () => {
+        try {
+          await navigator.share({ files: [fichier], title: nom, text: `Bonjour, voici le rapport d’avancement du chantier « ${projet.nom} ». Cordialement, ${S.entreprise?.nom || ''}` });
+        } catch (err) { if (err?.name !== 'AbortError') toast('Le partage n’a pas fonctionné : téléchargez le PDF puis envoyez-le depuis WhatsApp.', 'warn', 6000); }
+      });
+      btn.textContent = '↻ Refaire le rapport';
+      btn.classList.remove('primary');
+    } catch (err) {
+      console.error(err);
+      toast(messageErreur(err), 'err', 6000);
+      btn.textContent = '📄 Créer le rapport';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 // ─── Détail d'un projet ───
 
 let ongletProjet = 'apercu';
@@ -1337,6 +1613,7 @@ PAGES.projet = async (id) => {
     </section>
     <div class="page-actions dc-actions">
       ${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
+      ${can('direction', 'coordinateur') ? '<button class="btn" id="rc-p">📄 Rapport client</button>' : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
       ${can('direction') ? '<button class="btn danger" id="del-p">Supprimer</button>' : ''}
     </div>
@@ -1344,6 +1621,7 @@ PAGES.projet = async (id) => {
     <div id="onglet"></div>`);
 
   $('#edit-p', p)?.addEventListener('click', () => formulaireProjet(projet));
+  $('#rc-p', p)?.addEventListener('click', () => rapportClient(projet));
   $('#photo-p', p)?.addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;

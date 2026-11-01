@@ -1,8 +1,9 @@
 {
-  "version": "1.7",
-  "date": "2026-11-03",
+  "version": "1.8",
+  "date": "2026-11-04",
   "nouveautes": [
-    "Guide vidéo de prise en main : à la première connexion, chaque personne voit une courte vidéo adaptée à son rôle (direction, technicien, achats, comptabilité, magasin).",
-    "Revoir le guide à tout moment : avatar en haut à droite → 🎓 Guide vidéo."
+    "Rapport pour le client : dans la page d'un chantier, touchez « 📄 Rapport client ». KOORDIN prépare un PDF professionnel de la semaine (avancement, travaux réalisés, points d'attention, prochaines étapes, photos).",
+    "Envoyez-le à votre client par WhatsApp en un geste, ou téléchargez-le.",
+    "Aucune information financière n'apparaît dans ce rapport."
   ]
 }

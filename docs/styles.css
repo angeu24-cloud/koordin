@@ -804,3 +804,8 @@ body {
 .guide-video { border-radius: 14px; overflow: hidden; background: #000; border: 1px solid var(--border); }
 .guide-video video { display: block; width: 100%; max-height: 62vh; background: #000; }
 .guide-erreur { padding: 18px; color: var(--text-2); background: var(--surface-2); font-size: 13px; }
+
+/* Rapport client (PDF) */
+.notice.ok { background: var(--ok-dim); }
+.rc-boutons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+@media (max-width: 520px) { .rc-boutons .btn { flex: 1 1 100%; justify-content: center; text-align: center; } }
