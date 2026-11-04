@@ -909,3 +909,39 @@ body {
 .scan-attente { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px 8px; text-align: center; color: var(--text-2); }
 .justif-ligne { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .btn-justif { border: 0; background: var(--gold-dim); border-radius: 6px; padding: 1px 6px; cursor: pointer; font-size: 13px; }
+
+/* 2.3 : facturation client */
+.vente-ligne { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.vente-ligne:hover { border-color: var(--gold); }
+.vente-barre { display: block; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 4px; max-width: 220px; }
+.vente-barre i { display: block; height: 100%; background: var(--gold); }
+.dv-lignes { display: grid; gap: 8px; margin: 10px 0; }
+.dv-ligne { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--surface-2); display: grid; gap: 8px; }
+.dv-haut { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.dv-haut .input { flex: 1; min-width: 0; }
+.dv-bas { display: grid; grid-template-columns: 70px 1fr 1.4fr 1.4fr; gap: 8px; align-items: end; }
+.dv-bas label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-2); min-width: 0; }
+.dv-bas .input { width: 100%; min-width: 0; }
+.dv-total { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 11px; color: var(--text-2); }
+.dv-total b { font-size: 13px; color: var(--text); white-space: nowrap; }
+.dv-totaux { display: grid; gap: 4px; margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.dv-totaux > div { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.dv-totaux > div b { white-space: nowrap; }
+.dv-totaux > .fort { font-size: 15px; padding-top: 6px; border-top: 1px solid var(--border-2); color: var(--gold); }
+.st-bas { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
+.st-pct { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.st-pct .input { width: 80px; text-align: right; }
+.treso { display: grid; gap: 10px; }
+.treso-mois { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+.treso-lib { color: var(--text-2); text-transform: capitalize; }
+.treso-barres { display: grid; gap: 3px; }
+.treso-barres div { height: 9px; border-radius: 4px; min-width: 2px; }
+.treso-in { background: var(--ok); }
+.treso-out { background: var(--crit); }
+.treso-val { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.treso-val .ok { color: var(--ok); }
+.treso-val .out { color: var(--crit); }
+@media (max-width: 520px) {
+  .dv-bas { grid-template-columns: 1fr 1fr; }
+  .dv-total { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
+}

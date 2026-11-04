@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.2';
+const VERSION = '2.3';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -47,6 +47,7 @@ const MENU = [
   { r: 'pointage', court: 'Pointage', label: 'Pointage', ico: '👷', roles: ['direction', 'coordinateur', 'technicien', 'comptable'] },
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
+  { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'equipe', court: 'Équipe',          label: 'Équipe',          ico: '👥', roles: ['direction'] },
   { r: 'ia', court: 'IA',              label: 'Assistant IA',    ico: '🧠', roles: ROLES_IA },
@@ -181,6 +182,7 @@ function messageErreur(e) {
   if (/User already registered/i.test(m)) return 'Un compte existe déjà avec cet email. Connectez-vous.';
   if (/Password should be/i.test(m)) return 'Le mot de passe doit contenir au moins 6 caractères.';
   if (/rate limit/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes.';
+  if (/^[A-Z][A-Z_]{5,}$/.test(m) && e?.hint) return e.hint;
   return m || 'Une erreur est survenue.';
 }
 
@@ -3168,6 +3170,573 @@ function exporterCSV(nom, entetes, lignes) {
   a.download = nom;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ═══════════════════════════════ FACTURATION CLIENT (2.3) ═══════════════════════════════
+// Devis poste par poste, situations de travaux (montants figés par la base à l'émission),
+// encaissements du client et trésorerie.
+
+let ongletVentes = 'devis';
+const STATUT_DEVIS = {
+  brouillon: ['muted', '📝 Brouillon'],
+  envoye: ['info', '📤 Envoyé'],
+  accepte: ['ok', '✅ Accepté'],
+  refuse: ['crit', '✖️ Refusé'],
+};
+const MOYENS_ENCAISSEMENT = ['Virement', 'Wave', 'Orange Money', 'MTN MoMo', 'Moov Money', 'Chèque', 'Espèces'];
+const montantLigne = (l, pct = 100) => Math.round(num(l.quantite) * num(l.prix_unitaire) * num(pct) / 100);
+const totalDevis = (lignes) => lignes.reduce((s, l) => s + montantLigne(l), 0);
+const erreurVentes = (e) => {
+  const m = String(e?.message || '');
+  if (/^(DEVIS_|SITUATION_)/.test(m) && e?.hint) return e.hint;
+  if (/relation .*(devis|situations|encaissements)|emettre_situation/i.test(m) && /does not exist|schema cache|could not find/i.test(m))
+    return 'La facturation client nécessite la mise à jour 2.3 de la base de données (kit d’installation).';
+  return messageErreur(e);
+};
+
+PAGES.ventes = async () => {
+  const onglets = [['devis', '📄 Devis'], ['situations', '📊 Situations'], ['encaissements', '💵 Encaissements'], ['tresorerie', '🏦 Trésorerie']];
+  const p = page(`
+    ${entete('Facturation client', 'Devis, situations de travaux, paiements du client et trésorerie')}
+    <div class="tabs">${onglets.map(([k, l]) => `<button class="tab ${k === ongletVentes ? 'active' : ''}" data-o="${k}">${l}</button>`).join('')}</div>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('💼', 'La facturation client fonctionne dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try {
+      if (ongletVentes === 'devis') await ongletDevis(zone, rendre);
+      else if (ongletVentes === 'situations') await ongletSituations(zone, rendre);
+      else if (ongletVentes === 'encaissements') await ongletEncaissements(zone, rendre);
+      else await ongletTresorerie(zone);
+    } catch (e) { console.error(e); zone.innerHTML = `<div class="card">${empty('💼', erreurVentes(e))}</div>`; }
+  };
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletVentes = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
+  await rendre();
+};
+
+async function chargerVentes() {
+  const [devis, lignes, situations, encaissements] = await Promise.all([
+    q(sb.from('devis').select('*, projets(nom, client, localisation)').order('date_devis', { ascending: false }).order('created_at', { ascending: false })),
+    q(sb.from('devis_lignes').select('devis_id, quantite, prix_unitaire')),
+    q(sb.from('situations').select('*, devis(numero, objet), projets(nom)').order('created_at', { ascending: false })),
+    q(sb.from('encaissements').select('*, projets(nom), situations(numero, devis(numero))').order('date_encaissement', { ascending: false })),
+  ]);
+  devis.forEach((d) => {
+    d.total_ht = totalDevis(lignes.filter((l) => l.devis_id === d.id));
+    const emises = situations.filter((s) => s.devis_id === d.id && s.statut === 'emise');
+    d.facture_ht = emises.length ? Math.max(...emises.map((s) => num(s.cumul_ht))) : 0;
+  });
+  situations.forEach((s) => { s.encaisse = encaissements.filter((e) => e.situation_id === s.id).reduce((t, e) => t + num(e.montant), 0); });
+  return { devis, situations, encaissements };
+}
+
+// ─── Devis ───
+
+async function ongletDevis(zone, rendre) {
+  const { devis } = await chargerVentes();
+  zone.innerHTML = `<div class="card"><div class="card-title">${devis.length} devis <button type="button" class="btn sm primary" id="nd">＋ Nouveau devis</button></div>
+    ${devis.length ? `<div class="paie-liste">${devis.map((d) => `<button type="button" class="paie-ligne vente-ligne" data-devis="${d.id}">
+      <div class="paie-nom"><b>${esc(d.numero)} · ${esc(d.objet)}</b><span>${esc([d.projets?.nom, d.client].filter(Boolean).join(' · '))}</span>
+        ${d.facture_ht ? `<span class="vente-barre"><i style="width:${Math.min(100, pct(d.facture_ht, d.total_ht))}%"></i></span><span>Facturé : ${pct(d.facture_ht, d.total_ht)} %</span>` : ''}</div>
+      <div class="paie-montant"><b>${money(d.total_ht)}</b><span>HT</span>${badge(STATUT_DEVIS[d.statut])}</div></button>`).join('')}</div>`
+      : empty('📄', 'Aucun devis. Créez votre premier devis : vous pouvez reprendre les lots et budgets du chantier en un geste, puis ajuster les postes.')}
+  </div>`;
+  $('#nd', zone).onclick = () => nouveauDevis(rendre);
+  $$('[data-devis]', zone).forEach((b) => (b.onclick = () => editeurDevis(b.dataset.devis, rendre)));
+}
+
+async function nouveauDevis(rendre) {
+  const projets = await q(sb.from('projets').select('id, nom, client').neq('statut', 'termine').order('nom'));
+  ouvrirModale({
+    titre: 'Nouveau devis',
+    boutonOk: 'Créer et ajouter les postes',
+    corps: `<div class="form-grid">
+      ${F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), '', { required: true, vide: '— Choisir —', full: true })}
+      ${F.text('objet', 'Objet du devis', '', { required: true, full: true, placeholder: 'Ex. Construction d’une villa duplex R+1' })}
+      ${F.text('client', 'Client', '', { placeholder: 'Nom du client ou maître d’ouvrage' })}
+      ${F.text('date_devis', 'Date', todayISO(), { type: 'date', required: true })}
+      ${F.text('tva_pct', 'TVA (%)', 18, { type: 'number', min: 0, max: 100, step: 'any', required: true })}
+      ${F.text('retenue_pct', 'Retenue de garantie (%)', 5, { type: 'number', min: 0, max: 100, step: 'any', required: true })}
+      <label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="lots" checked style="width:auto"> Reprendre les lots du chantier comme postes (avec leur budget)</label>
+    </div>`,
+    onOpen: (el) => { $('[name="projet_id"]', el).onchange = (e) => { const pr = projets.find((x) => x.id === e.target.value); if (pr?.client && !$('[name="client"]', el).value) $('[name="client"]', el).value = pr.client; }; },
+    onSubmit: async (d) => {
+      const cree = await q(sb.from('devis').insert({ projet_id: d.projet_id, objet: d.objet, client: d.client || null, date_devis: d.date_devis, tva_pct: num(d.tva_pct), retenue_pct: num(d.retenue_pct) }).select('id').single());
+      if (d.lots) {
+        const lots = await q(sb.from('lots').select('id, nom, budget, ordre').eq('projet_id', d.projet_id).order('ordre'));
+        if (lots.length) await q(sb.from('devis_lignes').insert(lots.map((l, i) => ({ devis_id: cree.id, ordre: i + 1, section: l.nom, designation: l.nom, unite: 'ens', quantite: 1, prix_unitaire: num(l.budget), lot_id: l.id }))));
+      }
+      setTimeout(() => editeurDevis(cree.id, rendre), 50);
+    },
+  });
+}
+
+async function editeurDevis(id, rendre) {
+  const [d, lignesInit, situations] = await Promise.all([
+    q(sb.from('devis').select('*, projets(nom, localisation)').eq('id', id).single()),
+    q(sb.from('devis_lignes').select('*').eq('devis_id', id).order('ordre')),
+    q(sb.from('situations').select('id, statut').eq('devis_id', id)),
+  ]);
+  const verrou = situations.some((s) => s.statut === 'emise');
+  let lignes = lignesInit.map((l) => ({ ...l }));
+  const supprimees = [];
+  const m = ouvrirModale({ titre: `${d.numero} · ${d.objet}`, large: true, corps: '<div id="dv"></div>' });
+  const zone = $('#dv', m.el);
+  const dessiner = () => {
+    const ht = totalDevis(lignes);
+    const tva = Math.round(ht * num(d.tva_pct) / 100);
+    zone.innerHTML = `
+      <p class="muted" style="font-size:13px;margin-bottom:10px">${esc([d.projets?.nom, d.client, `Devis du ${fdate(d.date_devis)}`].filter(Boolean).join(' · '))} · TVA ${num(d.tva_pct)} % · Retenue ${num(d.retenue_pct)} %</p>
+      ${verrou ? '<div class="notice">🔒 Une situation a été émise sur ce devis : ses postes sont figés. Pour des travaux en plus, créez un devis complémentaire (avenant).</div>' : ''}
+      <div class="dv-lignes">${lignes.map((l, i) => `<div class="dv-ligne">
+        <div class="dv-haut">
+          <input class="input" data-i="${i}" data-k="designation" value="${esc(l.designation)}" placeholder="Désignation du poste" ${verrou ? 'disabled' : ''}>
+          ${verrou ? '' : `<button type="button" class="btn sm ghost" data-suppr="${i}" aria-label="Supprimer le poste">✕</button>`}
+        </div>
+        <div class="dv-bas">
+          <label>Unité<input class="input" data-i="${i}" data-k="unite" value="${esc(l.unite)}" ${verrou ? 'disabled' : ''}></label>
+          <label>Quantité<input class="input" type="number" min="0" step="any" inputmode="decimal" data-i="${i}" data-k="quantite" value="${esc(l.quantite)}" ${verrou ? 'disabled' : ''}></label>
+          <label>Prix unitaire<input class="input" type="number" min="0" step="any" inputmode="numeric" data-i="${i}" data-k="prix_unitaire" value="${esc(l.prix_unitaire)}" ${verrou ? 'disabled' : ''}></label>
+          <div class="dv-total"><span>Total</span><b data-total="${i}">${money(montantLigne(l))}</b></div>
+        </div></div>`).join('') || empty('📄', 'Aucun poste. Ajoutez le premier poste ci-dessous.')}</div>
+      ${verrou ? '' : '<button type="button" class="btn block" id="dv-ajout">＋ Ajouter un poste</button>'}
+      <div class="dv-totaux">
+        <div><span>Total HT</span><b id="dv-ht">${money(ht)}</b></div>
+        <div><span>TVA ${num(d.tva_pct)} %</span><b id="dv-tva">${money(tva)}</b></div>
+        <div class="fort"><span>Total TTC</span><b id="dv-ttc">${money(ht + tva)}</b></div>
+      </div>
+      <div class="form-grid mt">${F.select('statut', 'Statut du devis', Object.entries(STATUT_DEVIS).map(([k, [, l]]) => [k, l]), d.statut)}</div>
+      <div class="rc-boutons mt">
+        <button type="button" class="btn primary" id="dv-ok">💾 Enregistrer</button>
+        <button type="button" class="btn" id="dv-pdf">📄 Devis en PDF</button>
+        ${situations.length ? '' : '<button type="button" class="btn danger" id="dv-suppr">Supprimer le devis</button>'}
+      </div>`;
+    $$('[data-k]', zone).forEach((inp) => (inp.oninput = () => {
+      const l = lignes[inp.dataset.i];
+      l[inp.dataset.k] = inp.type === 'number' ? inp.value : inp.value;
+      $(`[data-total="${inp.dataset.i}"]`, zone).textContent = money(montantLigne(l));
+      const h = totalDevis(lignes), t = Math.round(h * num(d.tva_pct) / 100);
+      $('#dv-ht', zone).textContent = money(h); $('#dv-tva', zone).textContent = money(t); $('#dv-ttc', zone).textContent = money(h + t);
+    }));
+    $$('[data-suppr]', zone).forEach((b) => (b.onclick = () => { const [x] = lignes.splice(Number(b.dataset.suppr), 1); if (x.id) supprimees.push(x.id); dessiner(); }));
+    $('#dv-ajout', zone)?.addEventListener('click', () => { lignes.push({ designation: '', unite: 'u', quantite: 1, prix_unitaire: 0 }); dessiner(); $$('[data-k="designation"]', zone).at(-1)?.focus(); });
+    $('#dv-ok', zone).onclick = enregistrer;
+    $('#dv-pdf', zone).onclick = async () => { if (await enregistrer(false)) pdfDevis(id); };
+    $('#dv-suppr', zone)?.addEventListener('click', async () => {
+      if (!(await confirmer(`Supprimer le devis ${d.numero} et tous ses postes ?`, 'Supprimer'))) return;
+      try { await q(sb.from('devis').delete().eq('id', id)); toast('Devis supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurVentes(e), 'err', 6000); }
+    });
+  };
+  const enregistrer = async (fermer = true) => {
+    try {
+      const statut = $('[name="statut"]', zone).value;
+      if (statut !== d.statut) { await q(sb.from('devis').update({ statut }).eq('id', id)); d.statut = statut; }
+      if (!verrou) {
+        const vides = lignes.filter((l) => !String(l.designation || '').trim());
+        if (vides.length) { toast('Chaque poste doit avoir une désignation.', 'warn'); return false; }
+        if (supprimees.length) await q(sb.from('devis_lignes').delete().in('id', supprimees.splice(0)));
+        const donnees = lignes.map((l, i) => ({ ...(l.id ? { id: l.id } : {}), devis_id: id, ordre: i + 1, section: l.section || null, designation: String(l.designation).trim(), unite: String(l.unite || 'u').trim() || 'u', quantite: num(l.quantite), prix_unitaire: num(l.prix_unitaire), lot_id: l.lot_id || null }));
+        const anciens = donnees.filter((x) => x.id), nouveaux = donnees.filter((x) => !x.id);
+        if (anciens.length) await q(sb.from('devis_lignes').upsert(anciens));
+        if (nouveaux.length) {
+          const crees = await q(sb.from('devis_lignes').insert(nouveaux).select('id, ordre'));
+          crees.forEach((c) => { lignes[c.ordre - 1].id = c.id; });
+        }
+      }
+      toast('Devis enregistré ✅');
+      if (fermer) { m.fermer(); rendre(); }
+      return true;
+    } catch (e) { toast(erreurVentes(e), 'err', 6000); return false; }
+  };
+  dessiner();
+}
+
+// ─── Situations ───
+
+async function ongletSituations(zone, rendre) {
+  const { devis, situations } = await chargerVentes();
+  const ouverts = devis.filter((d) => d.statut !== 'refuse');
+  zone.innerHTML = `<div class="card"><div class="card-title">Situations de travaux ${ouverts.length ? '<button type="button" class="btn sm primary" id="ns">＋ Nouvelle situation</button>' : ''}</div>
+    <p class="hint" style="margin:-6px 0 12px">Chaque mois, indiquez le % réalisé de chaque poste : KOORDIN calcule les travaux du mois, la TVA, la retenue de garantie et le net à payer.</p>
+    ${situations.length ? `<div class="paie-liste">${situations.map((s) => `<button type="button" class="paie-ligne vente-ligne" data-sit="${s.id}">
+      <div class="paie-nom"><b>Situation n° ${s.numero} · ${esc(s.devis?.numero || '')}</b><span>${esc([s.projets?.nom, fdate(s.date_situation)].filter(Boolean).join(' · '))}</span></div>
+      <div class="paie-montant">${s.statut === 'emise' ? `<b>${money(s.net_a_payer)}</b><span>net à payer</span>${badge(s.encaisse >= num(s.net_a_payer) ? ['ok', '✅ Payée'] : s.encaisse > 0 ? ['warn', `⏳ Reste ${moneyShort(num(s.net_a_payer) - s.encaisse)}`] : ['info', '📤 Émise'])}` : badge(['muted', '📝 En préparation'])}</div></button>`).join('')}</div>`
+      : empty('📊', ouverts.length ? 'Aucune situation. Créez la première quand des travaux ont été réalisés.' : 'Créez d’abord un devis dans l’onglet « Devis ».')}
+  </div>`;
+  $('#ns', zone)?.addEventListener('click', () => ouvrirModale({
+    titre: 'Nouvelle situation de travaux',
+    boutonOk: 'Préparer la situation',
+    corps: `<div class="form-grid">${F.select('devis_id', 'Devis', ouverts.map((d) => [d.id, `${d.numero} · ${d.objet} (${d.projets?.nom || ''})`]), ouverts[0]?.id, { required: true, full: true })}
+      ${F.text('date_situation', 'Date de la situation', todayISO(), { type: 'date', required: true })}</div>`,
+    onSubmit: async (v) => {
+      try {
+        const s = await q(sb.from('situations').insert({ devis_id: v.devis_id, projet_id: devis.find((d) => d.id === v.devis_id).projet_id, date_situation: v.date_situation }).select('id').single());
+        setTimeout(() => editeurSituation(s.id, rendre), 50);
+      } catch (e) { throw new Error(erreurVentes(e)); }
+    },
+  }));
+  $$('[data-sit]', zone).forEach((b) => (b.onclick = () => editeurSituation(b.dataset.sit, rendre)));
+}
+
+async function editeurSituation(id, rendre) {
+  const s = await q(sb.from('situations').select('*, devis(*), projets(nom)').eq('id', id).single());
+  const [lignes, mesLignes, precedentes, lots] = await Promise.all([
+    q(sb.from('devis_lignes').select('*').eq('devis_id', s.devis_id).order('ordre')),
+    q(sb.from('situation_lignes').select('*').eq('situation_id', id)),
+    q(sb.from('situations').select('id, numero, cumul_ht').eq('devis_id', s.devis_id).eq('statut', 'emise').lt('numero', s.numero).order('numero', { ascending: false }).limit(1)),
+    q(sb.from('lots').select('id, avancement').eq('projet_id', s.projet_id)),
+  ]);
+  const prec = precedentes[0];
+  const precLignes = prec ? await q(sb.from('situation_lignes').select('*').eq('situation_id', prec.id)) : [];
+  const pctPrec = (l) => num(precLignes.find((x) => x.devis_ligne_id === l.id)?.pourcentage);
+  const pct0 = new Map(lignes.map((l) => [l.id, mesLignes.find((x) => x.devis_ligne_id === l.id)?.pourcentage ?? pctPrec(l)]));
+  const emise = s.statut === 'emise';
+  const d = s.devis;
+  const payeur = can('direction', 'comptable');
+  const m = ouvrirModale({ titre: `Situation n° ${s.numero} · ${d.numero}`, large: true, corps: '<div id="st"></div>' });
+  const zone = $('#st', m.el);
+  const calcul = () => {
+    const cumul = lignes.reduce((t, l) => t + montantLigne(l, pct0.get(l.id)), 0);
+    const precedent = num(prec?.cumul_ht);
+    const mois = cumul - precedent;
+    const tva = Math.round(mois * num(d.tva_pct) / 100);
+    const ttc = mois + tva;
+    const retenue = Math.round(ttc * num(d.retenue_pct) / 100);
+    return emise
+      ? { cumul: num(s.cumul_ht), precedent: num(s.precedent_ht), mois: num(s.travaux_ht), tva: num(s.tva), ttc: num(s.ttc), retenue: num(s.retenue), net: num(s.net_a_payer) }
+      : { cumul, precedent, mois, tva, ttc, retenue, net: ttc - retenue };
+  };
+  const totaux = () => {
+    const c = calcul();
+    return `<div><span>Cumul des travaux réalisés HT</span><b>${money(c.cumul)}</b></div>
+      <div><span>Moins situations précédentes</span><b>− ${money(c.precedent)}</b></div>
+      <div><span>Travaux de la période HT</span><b>${money(c.mois)}</b></div>
+      <div><span>TVA ${num(d.tva_pct)} %</span><b>${money(c.tva)}</b></div>
+      <div><span>Montant TTC</span><b>${money(c.ttc)}</b></div>
+      <div><span>Retenue de garantie ${num(d.retenue_pct)} %</span><b>− ${money(c.retenue)}</b></div>
+      <div class="fort"><span>Net à payer</span><b>${money(c.net)}</b></div>`;
+  };
+  zone.innerHTML = `
+    <p class="muted" style="font-size:13px;margin-bottom:10px">${esc([s.projets?.nom, d.objet, fdate(s.date_situation)].filter(Boolean).join(' · '))}</p>
+    ${emise ? `<div class="notice ok">✅ Situation émise le ${new Date(s.emise_le).toLocaleDateString('fr-FR')} : les montants sont figés.</div>` : `<div class="notice">Indiquez pour chaque poste le <b>% réalisé depuis le début</b> (cumulé). ${lots.length ? 'Le bouton ci-dessous reprend l’avancement des lots déclaré par le terrain.' : ''}</div>`}
+    ${!emise && lignes.some((l) => l.lot_id) ? '<button type="button" class="btn sm" id="st-lots">↻ Reprendre l’avancement des lots</button>' : ''}
+    <div class="dv-lignes">${lignes.map((l) => `<div class="dv-ligne">
+      <div class="dv-haut"><b>${esc(l.designation)}</b><span class="muted" style="font-size:12px;white-space:nowrap">${money(montantLigne(l))}</span></div>
+      <div class="st-bas">
+        <span class="muted" style="font-size:12px">Précédent : ${pctPrec(l)} %</span>
+        <label class="st-pct"><input class="input" type="number" min="${pctPrec(l)}" max="100" step="any" inputmode="decimal" data-l="${l.id}" value="${num(pct0.get(l.id))}" ${emise ? 'disabled' : ''}> %</label>
+        <b data-mt="${l.id}">${money(montantLigne(l, pct0.get(l.id)))}</b>
+      </div></div>`).join('')}</div>
+    <div class="dv-totaux" id="st-tot">${totaux()}</div>
+    <div class="rc-boutons mt">
+      ${emise ? '' : '<button type="button" class="btn" id="st-ok">💾 Enregistrer le brouillon</button>'}
+      ${!emise && payeur ? '<button type="button" class="btn primary" id="st-emettre">✅ Émettre la situation</button>' : ''}
+      ${emise ? '<button type="button" class="btn primary" id="st-pdf">📄 Situation en PDF</button>' : ''}
+      ${emise && payeur ? '<button type="button" class="btn" id="st-enc">💵 Enregistrer un paiement</button>' : ''}
+      ${!emise ? '<button type="button" class="btn danger" id="st-suppr">Supprimer</button>' : ''}
+    </div>
+    ${!emise && !payeur ? '<p class="hint mt">L’émission est faite par la Direction ou la Comptabilité.</p>' : ''}`;
+  const maj = () => $('#st-tot', zone).innerHTML = totaux();
+  $$('[data-l]', zone).forEach((inp) => (inp.oninput = () => {
+    const v = Math.max(0, Math.min(100, num(inp.value)));
+    pct0.set(inp.dataset.l, v);
+    $(`[data-mt="${inp.dataset.l}"]`, zone).textContent = money(montantLigne(lignes.find((x) => x.id === inp.dataset.l), v));
+    maj();
+  }));
+  $('#st-lots', zone)?.addEventListener('click', () => {
+    lignes.forEach((l) => {
+      const lot = lots.find((x) => x.id === l.lot_id);
+      if (lot && num(lot.avancement) > num(pct0.get(l.id))) { pct0.set(l.id, num(lot.avancement)); const inp = $(`[data-l="${l.id}"]`, zone); inp.value = num(lot.avancement); inp.dispatchEvent(new Event('input')); }
+    });
+    toast('Avancement des lots repris ✅ Vérifiez avant d’émettre.');
+  });
+  const enregistrer = async () => {
+    const recul = lignes.find((l) => num(pct0.get(l.id)) < pctPrec(l));
+    if (recul) { toast(`« ${recul.designation} » ne peut pas descendre sous ${pctPrec(recul)} %.`, 'warn', 6000); return false; }
+    await q(sb.from('situation_lignes').upsert(lignes.map((l) => ({ situation_id: id, devis_ligne_id: l.id, pourcentage: num(pct0.get(l.id)) }))));
+    return true;
+  };
+  $('#st-ok', zone)?.addEventListener('click', async () => { try { if (await enregistrer()) { toast('Brouillon enregistré ✅'); m.fermer(); rendre(); } } catch (e) { toast(erreurVentes(e), 'err', 6000); } });
+  $('#st-emettre', zone)?.addEventListener('click', async () => {
+    const c = calcul();
+    if (c.mois <= 0) { toast('Aucun travail nouveau depuis la situation précédente.', 'warn'); return; }
+    if (!(await confirmer(`Émettre la situation n° ${s.numero} ? Net à payer : ${money(c.net)}. Les montants seront figés.`, 'Émettre'))) return;
+    try {
+      if (!(await enregistrer())) return;
+      const { error } = await sb.rpc('emettre_situation', { p_situation: id });
+      if (error) throw error;
+      toast('Situation émise ✅');
+      m.fermer(); rendre();
+      pdfSituation(id);
+    } catch (e) { toast(erreurVentes(e), 'err', 7000); }
+  });
+  $('#st-pdf', zone)?.addEventListener('click', () => pdfSituation(id));
+  $('#st-enc', zone)?.addEventListener('click', () => { m.fermer(); formulaireEncaissement(rendre, s); });
+  $('#st-suppr', zone)?.addEventListener('click', async () => {
+    if (!(await confirmer(`Supprimer le brouillon de la situation n° ${s.numero} ?`, 'Supprimer'))) return;
+    try { await q(sb.from('situations').delete().eq('id', id)); toast('Brouillon supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurVentes(e), 'err'); }
+  });
+}
+
+// ─── Encaissements ───
+
+async function ongletEncaissements(zone, rendre) {
+  const { situations, encaissements } = await chargerVentes();
+  const emises = situations.filter((s) => s.statut === 'emise');
+  const facture = emises.reduce((t, s) => t + num(s.net_a_payer), 0);
+  const encaisse = encaissements.reduce((t, e) => t + num(e.montant), 0);
+  const retenues = emises.reduce((t, s) => t + num(s.retenue), 0);
+  const payeur = can('direction', 'comptable');
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi('Facturé au client (net)', moneyShort(facture))}
+      ${kpi('Encaissé', moneyShort(encaisse), `${pct(encaisse, facture)} %`)}
+      ${kpi('Reste à encaisser', moneyShort(Math.max(0, facture - encaisse)), '', facture - encaisse > 0 ? 'warn' : '')}
+      ${kpi('Retenues de garantie', moneyShort(retenues), 'à récupérer en fin de garantie')}
+    </div>
+    <div class="card"><div class="card-title">Paiements reçus ${payeur ? '<button type="button" class="btn sm primary" id="ne">＋ Paiement reçu</button>' : ''}</div>
+    ${encaissements.length ? `<div class="paie-liste">${encaissements.map((e) => `<div class="paie-ligne">
+      <div class="paie-nom"><b>${esc(e.projets?.nom || '')}</b><span>${esc([fdate(e.date_encaissement), e.moyen, e.reference, e.situations ? `Situation n° ${e.situations.numero} (${e.situations.devis?.numero || ''})` : null].filter(Boolean).join(' · '))}</span></div>
+      <div class="paie-montant"><b>${money(e.montant)}</b>${payeur ? `<button type="button" class="btn sm ghost" data-suppr-enc="${e.id}">Supprimer</button>` : ''}</div></div>`).join('')}</div>`
+      : empty('💵', 'Aucun paiement enregistré. Ajoutez chaque paiement du client (Wave, Orange Money, virement…) pour suivre ce qui reste à encaisser.')}
+  </div>`;
+  $('#ne', zone)?.addEventListener('click', () => formulaireEncaissement(rendre));
+  $$('[data-suppr-enc]', zone).forEach((b) => (b.onclick = async () => {
+    if (!(await confirmer('Supprimer ce paiement ?', 'Supprimer'))) return;
+    try { await q(sb.from('encaissements').delete().eq('id', b.dataset.supprEnc)); toast('Paiement supprimé.'); rendre(); } catch (e) { toast(erreurVentes(e), 'err'); }
+  }));
+}
+
+async function formulaireEncaissement(rendre, situation = null) {
+  const { situations } = await chargerVentes();
+  const emises = situations.filter((s) => s.statut === 'emise');
+  const projets = await listeProjets();
+  const reste = (s) => Math.max(0, num(s.net_a_payer) - s.encaisse);
+  const s0 = situation ? emises.find((x) => x.id === situation.id) : null;
+  ouvrirModale({
+    titre: 'Paiement reçu du client',
+    corps: `<div class="form-grid">
+      ${F.select('situation_id', 'Pour la situation', [['', '— Avance ou autre paiement —'], ...emises.map((s) => [s.id, `N° ${s.numero} · ${s.devis?.numero} · ${s.projets?.nom} (reste ${moneyShort(reste(s))})`])], s0?.id || '', { full: true })}
+      ${F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), s0?.projet_id || '', { required: true, vide: '— Choisir —' })}
+      ${F.text('montant', `Montant reçu (${devise()})`, s0 ? reste(s0) : '', { type: 'number', min: 1, required: true, inputmode: 'numeric' })}
+      ${F.text('date_encaissement', 'Date', todayISO(), { type: 'date', required: true })}
+      ${F.select('moyen', 'Moyen de paiement', MOYENS_ENCAISSEMENT.map((x) => [x, x]), 'Virement')}
+      ${F.text('reference', 'Référence (n° de transaction, chèque…)', '')}
+    </div>`,
+    onOpen: (el) => {
+      $('[name="situation_id"]', el).onchange = (e) => {
+        const s = emises.find((x) => x.id === e.target.value);
+        if (s) { $('[name="projet_id"]', el).value = s.projet_id; $('[name="montant"]', el).value = reste(s); }
+      };
+    },
+    onSubmit: async (v) => {
+      try {
+        await q(sb.from('encaissements').insert({ situation_id: v.situation_id || null, projet_id: v.projet_id, montant: num(v.montant), date_encaissement: v.date_encaissement, moyen: v.moyen, reference: v.reference || null }));
+      } catch (e) { throw new Error(erreurVentes(e)); }
+      toast('Paiement enregistré ✅');
+      ongletVentes = 'encaissements';
+      rendre();
+    },
+  });
+}
+
+// ─── Trésorerie ───
+
+async function ongletTresorerie(zone) {
+  const debut = (() => { const x = parseDay(todayISO()); x.setDate(1); x.setMonth(x.getMonth() - 5); return x.toLocaleDateString('sv-SE'); })();
+  const [enc, factPayees, factAPayer, paie, { situations, encaissements }] = await Promise.all([
+    q(sb.from('encaissements').select('montant, date_encaissement').gte('date_encaissement', debut)),
+    q(sb.from('factures').select('montant, date_paiement').eq('statut', 'payee').gte('date_paiement', debut)),
+    q(sb.from('factures').select('montant').eq('statut', 'a_payer')),
+    sb.from('pointages').select('presence, tarif_jour, paye_le').eq('paye', true).gte('paye_le', debut).then((r) => r.data || []),
+    chargerVentes(),
+  ]);
+  const mois = [...Array(6)].map((_, i) => { const x = parseDay(debut); x.setMonth(x.getMonth() + i); return x.toLocaleDateString('sv-SE').slice(0, 7); });
+  const lignes = mois.map((mo) => {
+    const entree = enc.filter((e) => String(e.date_encaissement).startsWith(mo)).reduce((t, e) => t + num(e.montant), 0);
+    const fournisseurs = factPayees.filter((f) => String(f.date_paiement).startsWith(mo)).reduce((t, f) => t + num(f.montant), 0);
+    const mainOeuvre = paie.filter((p) => String(p.paye_le).startsWith(mo)).reduce((t, p) => t + num(p.presence) * num(p.tarif_jour), 0);
+    return { mo, entree, sortie: fournisseurs + mainOeuvre, fournisseurs, mainOeuvre };
+  });
+  const max = Math.max(1, ...lignes.flatMap((l) => [l.entree, l.sortie]));
+  const creances = Math.max(0, situations.filter((s) => s.statut === 'emise').reduce((t, s) => t + num(s.net_a_payer), 0) - encaissements.filter((e) => e.situation_id).reduce((t, e) => t + num(e.montant), 0));
+  const dettes = factAPayer.reduce((t, f) => t + num(f.montant), 0);
+  const solde6 = lignes.reduce((t, l) => t + l.entree - l.sortie, 0);
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi('Le client vous doit', moneyShort(creances), 'situations non encaissées', creances > 0 ? 'warn' : '')}
+      ${kpi('Vous devez aux fournisseurs', moneyShort(dettes), 'factures à payer', dettes > 0 ? 'alert' : '')}
+      ${kpi('Position nette', moneyShort(creances - dettes), creances - dettes >= 0 ? 'créances > dettes' : 'dettes > créances', creances - dettes < 0 ? 'alert' : '')}
+      ${kpi('Solde des 6 derniers mois', moneyShort(solde6), 'entrées − sorties', solde6 < 0 ? 'alert' : '')}
+    </div>
+    <div class="card"><div class="card-title">Entrées et sorties d’argent, mois par mois</div>
+      <div class="treso">${lignes.map((l) => {
+        const lib = parseDay(`${l.mo}-01`).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+        return `<div class="treso-mois"><span class="treso-lib">${esc(lib)}</span>
+          <div class="treso-barres"><div class="treso-in" style="width:${(l.entree / max) * 100}%"></div><div class="treso-out" style="width:${(l.sortie / max) * 100}%"></div></div>
+          <span class="treso-val"><b class="ok">${l.entree ? `+${moneyShort(l.entree)}` : '—'}</b><b class="out">${l.sortie ? `−${moneyShort(l.sortie)}` : '—'}</b></span></div>`;
+      }).join('')}</div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Encaissé (clients)</span><span><i style="background:var(--crit)"></i>Payé (fournisseurs + main-d’œuvre)</span></div>
+    </div>`;
+}
+
+// ─── PDF devis et situation ───
+
+function presenterPDF(blob, nom, message) {
+  const fichier = new File([blob], nom, { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const partage = navigator.canShare?.({ files: [fichier] });
+  const m = ouvrirModale({
+    titre: '📄 PDF prêt',
+    corps: `<p style="margin-bottom:10px">${esc(nom)}</p><div class="rc-boutons">
+      ${partage ? '<button type="button" class="btn primary" id="pp-partager">📤 Envoyer (WhatsApp…)</button>' : ''}
+      <a class="btn ${partage ? '' : 'primary'}" href="${url}" download="${esc(nom)}">⬇️ Télécharger</a>
+      <a class="btn ghost" href="${url}" target="_blank" rel="noopener">👁️ Voir</a></div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button></div>`,
+  });
+  $('#pp-partager', m.el)?.addEventListener('click', async () => {
+    try { await navigator.share({ files: [fichier], title: nom, text: message }); } catch (e) { if (e?.name !== 'AbortError') toast('Le partage n’a pas fonctionné : téléchargez le PDF.', 'warn'); }
+  });
+  attendreFermeture(m.el).then(() => setTimeout(() => URL.revokeObjectURL(url), 60000));
+}
+
+async function enteteDocumentPDF(doc, titre, sousTitre, droite) {
+  const L = 210, M = 16;
+  doc.setFillColor(17, 21, 33); doc.rect(0, 0, L, 34, 'F');
+  doc.setFillColor(232, 160, 32); doc.rect(0, 34, L, 1.2, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.setTextColor(255, 255, 255);
+  doc.text(textePDF(S.entreprise?.nom || ''), M, 15);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(200, 205, 220);
+  doc.text(textePDF(S.entreprise?.pays || ''), M, 22);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(232, 160, 32);
+  doc.text(textePDF(titre), L - M, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(220, 224, 235);
+  doc.text(textePDF(sousTitre), L - M, 22, { align: 'right' });
+  if (droite) doc.text(textePDF(droite), L - M, 28, { align: 'right' });
+}
+
+function piedPDF(doc, libelle) {
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 229, 238); doc.setLineWidth(0.3); doc.line(16, 284, 194, 284);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 108, 128);
+    doc.text(textePDF(`${libelle}  ·  page ${i}/${n}`), 16, 289);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(232, 160, 32); doc.text('Document généré avec KOORDIN', 194, 289, { align: 'right' });
+  }
+}
+
+function tableauPDF(doc, y, colonnes, lignes, { pied = [] } = {}) {
+  const M = 16, LU = 178, H = 297;
+  const ent = () => {
+    doc.setFillColor(244, 245, 249); doc.rect(M, y - 4.5, LU, 7, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(60, 66, 84);
+    colonnes.forEach((c) => doc.text(textePDF(c.titre), c.align === 'right' ? c.x + c.l : c.x, y, { align: c.align || 'left' }));
+    y += 6;
+  };
+  ent();
+  lignes.forEach((l) => {
+    doc.setFont('helvetica', l.gras ? 'bold' : 'normal'); doc.setFontSize(9); doc.setTextColor(17, 21, 33);
+    const des = doc.splitTextToSize(textePDF(l.cells[0]), colonnes[0].l);
+    const h = Math.max(5, des.length * 4.2);
+    if (y + h > H - 22) { doc.addPage(); y = 20; ent(); }
+    doc.text(des, colonnes[0].x, y);
+    l.cells.slice(1).forEach((v, i) => { const c = colonnes[i + 1]; doc.text(textePDF(v), c.align === 'right' ? c.x + c.l : c.x, y, { align: c.align || 'left' }); });
+    y += h;
+    doc.setDrawColor(235, 237, 243); doc.setLineWidth(0.2); doc.line(M, y - 3, M + LU, y - 3);
+  });
+  y += 3;
+  pied.forEach(([lib, val, fort]) => {
+    if (y > H - 30) { doc.addPage(); y = 20; }
+    if (fort) { doc.setFillColor(17, 21, 33); doc.rect(M + LU - 92, y - 4.6, 92, 7.4, 'F'); doc.setTextColor(255, 255, 255); } else doc.setTextColor(17, 21, 33);
+    doc.setFont('helvetica', fort ? 'bold' : 'normal'); doc.setFontSize(fort ? 10.5 : 9.5);
+    doc.text(textePDF(lib), M + LU - 88, y);
+    doc.text(textePDF(val), M + LU - 3, y, { align: 'right' });
+    y += fort ? 8.5 : 6;
+  });
+  return y;
+}
+
+async function pdfDevis(id) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const [d, lignes] = await Promise.all([
+      q(sb.from('devis').select('*, projets(nom, localisation)').eq('id', id).single()),
+      q(sb.from('devis_lignes').select('*').eq('devis_id', id).order('ordre')),
+    ]);
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    const fin = parseDay(d.date_devis); fin.setDate(fin.getDate() + num(d.validite_jours));
+    await enteteDocumentPDF(doc, 'DEVIS', `N° ${d.numero}`, `du ${fdate(d.date_devis)}`);
+    let y = 46;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(100, 108, 128); doc.text('CLIENT', 16, y);
+    doc.text('CHANTIER', 110, y); y += 5.5;
+    doc.setFontSize(11); doc.setTextColor(17, 21, 33);
+    doc.text(doc.splitTextToSize(textePDF(d.client || '—'), 88), 16, y);
+    doc.text(doc.splitTextToSize(textePDF([d.projets?.nom, d.projets?.localisation].filter(Boolean).join(' - ')), 84), 110, y);
+    y += 13;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(doc.splitTextToSize(textePDF(`Objet : ${d.objet}`), 178), 16, y); y += 9;
+    const ht = totalDevis(lignes), tva = Math.round(ht * num(d.tva_pct) / 100);
+    y = tableauPDF(doc, y, [
+      { titre: 'Désignation', x: 16, l: 80 }, { titre: 'Unité', x: 98, l: 14 }, { titre: 'Qté', x: 112, l: 16, align: 'right' },
+      { titre: 'Prix unitaire', x: 130, l: 28, align: 'right' }, { titre: 'Montant', x: 160, l: 34, align: 'right' },
+    ], lignes.map((l) => ({ cells: [l.designation, l.unite, nf.format(num(l.quantite)), nf.format(num(l.prix_unitaire)), nf.format(montantLigne(l))] })), {
+      pied: [['Total HT', money(ht)], [`TVA ${num(d.tva_pct)} %`, money(tva)], ['Total TTC', money(ht + tva), true]],
+    });
+    y += 6;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80, 86, 104);
+    const conditions = [`Devis valable jusqu'au ${fin.toLocaleDateString('fr-FR')}.`, `Paiement par situations de travaux mensuelles. Retenue de garantie : ${num(d.retenue_pct)} %.`, d.notes].filter(Boolean);
+    conditions.forEach((c) => { doc.text(doc.splitTextToSize(textePDF(c), 178), 16, y); y += 5; });
+    y += 8;
+    if (y > 255) { doc.addPage(); y = 30; }
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(17, 21, 33);
+    doc.text('Bon pour accord (date, signature et cachet du client)', 16, y);
+    doc.text(textePDF(`Pour ${S.entreprise?.nom || ''}`), 120, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 88, 26); doc.rect(120, y + 3, 74, 26);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Devis ${d.numero}`);
+    presenterPDF(doc.output('blob'), `Devis-${d.numero}.pdf`, `Bonjour, veuillez trouver ci-joint notre devis ${d.numero} : ${d.objet}. Cordialement, ${S.entreprise?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurVentes(e), 'err', 6000); }
+}
+
+async function pdfSituation(id) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const s = await q(sb.from('situations').select('*, devis(*), projets(nom, localisation)').eq('id', id).single());
+    const [lignes, mes, precs] = await Promise.all([
+      q(sb.from('devis_lignes').select('*').eq('devis_id', s.devis_id).order('ordre')),
+      q(sb.from('situation_lignes').select('*').eq('situation_id', id)),
+      q(sb.from('situations').select('id').eq('devis_id', s.devis_id).eq('statut', 'emise').lt('numero', s.numero).order('numero', { ascending: false }).limit(1)),
+    ]);
+    const precL = precs[0] ? await q(sb.from('situation_lignes').select('*').eq('situation_id', precs[0].id)) : [];
+    const pct = (arr, l) => num(arr.find((x) => x.devis_ligne_id === l.id)?.pourcentage);
+    const d = s.devis;
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, `SITUATION N° ${s.numero}`, `Marché ${d.numero}`, `au ${fdate(s.date_situation)}`);
+    let y = 46;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(100, 108, 128); doc.text('CLIENT', 16, y); doc.text('CHANTIER', 110, y); y += 5.5;
+    doc.setFontSize(11); doc.setTextColor(17, 21, 33);
+    doc.text(doc.splitTextToSize(textePDF(d.client || '—'), 88), 16, y);
+    doc.text(doc.splitTextToSize(textePDF([s.projets?.nom, s.projets?.localisation].filter(Boolean).join(' - ')), 84), 110, y);
+    y += 13;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(doc.splitTextToSize(textePDF(`Objet : ${d.objet}`), 178), 16, y); y += 9;
+    const total = totalDevis(lignes);
+    y = tableauPDF(doc, y, [
+      { titre: 'Poste', x: 16, l: 66 }, { titre: 'Montant marché', x: 84, l: 28, align: 'right' },
+      { titre: '% préc.', x: 114, l: 16, align: 'right' }, { titre: '% cumulé', x: 132, l: 18, align: 'right' }, { titre: 'Réalisé cumulé', x: 152, l: 42, align: 'right' },
+    ], [...lignes.map((l) => ({ cells: [l.designation, nf.format(montantLigne(l)), `${pct(precL, l)} %`, `${pct(mes, l)} %`, nf.format(montantLigne(l, pct(mes, l)))] })),
+      { gras: true, cells: ['TOTAL', nf.format(total), '', `${total ? Math.round((num(s.cumul_ht) / total) * 100) : 0} %`, nf.format(num(s.cumul_ht))] }], {
+      pied: [
+        ['Cumul des travaux réalisés HT', money(s.cumul_ht)], ['Moins situations précédentes', `- ${money(s.precedent_ht)}`],
+        ['Travaux de la période HT', money(s.travaux_ht)], [`TVA ${num(d.tva_pct)} %`, money(s.tva)], ['Montant TTC', money(s.ttc)],
+        [`Retenue de garantie ${num(d.retenue_pct)} %`, `- ${money(s.retenue)}`], ['NET À PAYER', money(s.net_a_payer), true],
+      ],
+    });
+    y += 8;
+    if (y > 255) { doc.addPage(); y = 30; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(17, 21, 33);
+    doc.text('Visa du client / maître d\'oeuvre', 16, y); doc.text(textePDF(`Pour ${S.entreprise?.nom || ''}`), 120, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 88, 26); doc.rect(120, y + 3, 74, 26);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Situation n° ${s.numero} - ${d.numero}`);
+    presenterPDF(doc.output('blob'), `Situation-${s.numero}-${d.numero}.pdf`, `Bonjour, veuillez trouver ci-joint la situation de travaux n° ${s.numero} (${d.objet}). Net à payer : ${money(s.net_a_payer)}. Cordialement, ${S.entreprise?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurVentes(e), 'err', 6000); }
 }
 
 // ═══════════════════════════════ STOCK ═══════════════════════════════

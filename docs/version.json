@@ -1,10 +1,10 @@
 {
-  "version": "2.2",
-  "date": "2026-11-08",
+  "version": "2.3",
+  "date": "2026-11-10",
   "nouveautes": [
-    "Comptabilité : « 📷 Scanner des factures ». Prenez une facture en photo ou choisissez un PDF : KOORDIN la lit et pré-remplit fournisseur, numéro, dates, montants HT, TVA et TTC. Vous vérifiez, puis vous enregistrez.",
-    "Plusieurs factures d'un coup : sélectionnez jusqu'à 20 photos ou PDF, elles s'enchaînent une par une.",
-    "Chaque facture garde son justificatif (photo ou PDF), consultable avec le trombone 📎.",
-    "Nouvel export Excel (.xlsx) : 5 onglets (Factures avec filtres et totaux, Par chantier, Par fournisseur, Échéancier, Par mois), prêts pour le comptable."
+    "Nouveau menu « 💼 Clients » (Facturation client) pour la Direction, la Comptabilité et la Coordination.",
+    "Devis poste par poste, en PDF prêt à envoyer par WhatsApp. Les lots et budgets du chantier peuvent être repris en un geste.",
+    "Situations de travaux : indiquez le % réalisé de chaque poste, KOORDIN calcule les travaux du mois, la TVA, la retenue de garantie et le net à payer, puis prépare le PDF.",
+    "Encaissements (Wave, Orange Money, virement…) et onglet Trésorerie : ce que le client vous doit, ce que vous devez aux fournisseurs, entrées et sorties mois par mois."
   ]
 }
