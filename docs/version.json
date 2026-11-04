@@ -1,10 +1,9 @@
 {
-  "version": "2.3",
-  "date": "2026-11-10",
+  "version": "2.4",
+  "date": "2026-11-12",
   "nouveautes": [
-    "Nouveau menu « 💼 Clients » (Facturation client) pour la Direction, la Comptabilité et la Coordination.",
-    "Devis poste par poste, en PDF prêt à envoyer par WhatsApp. Les lots et budgets du chantier peuvent être repris en un geste.",
-    "Situations de travaux : indiquez le % réalisé de chaque poste, KOORDIN calcule les travaux du mois, la TVA, la retenue de garantie et le net à payer, puis prépare le PDF.",
-    "Encaissements (Wave, Orange Money, virement…) et onglet Trésorerie : ce que le client vous doit, ce que vous devez aux fournisseurs, entrées et sorties mois par mois."
+    "Nouveau look « sombre et doré » : cartes en relief, boutons dorés, onglets en pastilles, apparition douce des pages.",
+    "Icônes dessinées à la place des emojis dans les menus et les indicateurs.",
+    "Menu du bas simplifié : vos 4 rubriques principales + « Plus » qui ouvre toutes les autres en grandes tuiles."
   ]
 }

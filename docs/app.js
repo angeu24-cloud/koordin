@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.3';
+const VERSION = '2.4';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -853,13 +853,71 @@ function ecranSansEntreprise(email) {
 
 // ─────────────────────────────── Interface ───────────────────────────────
 
+// ─── Icônes dessinées (remplacent les emojis de navigation) ───
+const TRACES = {
+  dashboard: '<rect x="3" y="3" width="7.5" height="9" rx="2"/><rect x="13.5" y="3" width="7.5" height="5.5" rx="2"/><rect x="13.5" y="11.5" width="7.5" height="9.5" rx="2"/><rect x="3" y="15" width="7.5" height="6" rx="2"/>',
+  projets: '<path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9.5 21v-6h5v6"/><path d="M9 11h.01M15 11h.01"/>',
+  communiques: '<path d="M3 10.5v3a1.5 1.5 0 0 0 1.5 1.5H7l6 4V5L7 9H4.5A1.5 1.5 0 0 0 3 10.5Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/>',
+  'nouveau-rapport': '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  rapports: '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5V3h6v1.5"/><path d="M9 10h6M9 14h6M9 18h3"/>',
+  pointage: '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 7V4"/><path d="M9 7.5 8 5M15 7.5l1-2.5"/><path d="M3 15h18v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2Z"/>',
+  achats: '<path d="M3 4h2.2l2.3 11.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.1L21 8H6.3"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
+  compta: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><path d="M16 14.5h2"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>',
+  ventes: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7"/><path d="M3 12.5h18"/><path d="M11 12.5v2h2v-2"/>',
+  stock: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+  equipe: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16 14.2a4.5 4.5 0 0 1 5 4.3"/>',
+  ia: '<path d="M12 3.5 13.8 9 19.5 11l-5.7 2-1.8 5.5-1.8-5.5L4.5 11l5.7-2L12 3.5Z"/><path d="M19 3v3M17.5 4.5h3M5 17.5v3M3.5 19h3"/>',
+  abonnement: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M7 15h4"/>',
+  parametres: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.4 4.4l1.7 1.7M17.9 17.9l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.4 19.6l1.7-1.7M17.9 6.1l1.7-1.7"/>',
+  console: '<path d="M12 3 19.5 6v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/>',
+  plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
+  cloche: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
+  tendance: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
+  oeil: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
+};
+const icone = (nom, taille = 22) => TRACES[nom]
+  ? `<svg class="ic" width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACES[nom]}</svg>`
+  : '';
+const ICONE_EMOJI = { '🏗️': 'projets', '📈': 'tendance', '💰': 'compta', '📋': 'rapports', '📣': 'communiques', '👁️': 'oeil' };
+
+// Menu du bas : 4 raccourcis par métier + « Plus »
+const NAV_PRIORITE = {
+  direction: ['dashboard', 'projets', 'rapports', 'compta'],
+  coordinateur: ['dashboard', 'projets', 'rapports', 'pointage'],
+  technicien: ['dashboard', 'nouveau-rapport', 'rapports', 'pointage'],
+  achats: ['dashboard', 'achats', 'stock', 'projets'],
+  comptable: ['dashboard', 'compta', 'ventes', 'pointage'],
+  magasinier: ['dashboard', 'stock', 'achats', 'projets'],
+};
+function separerNavigation(items) {
+  if (items.length <= 5) return { principaux: items, autres: [] };
+  const voulus = (NAV_PRIORITE[role()] || []).filter((r) => items.some((m) => m.r === r));
+  const principaux = [...voulus, ...items.map((m) => m.r).filter((r) => !voulus.includes(r))].slice(0, 4).map((r) => items.find((m) => m.r === r));
+  return { principaux, autres: items.filter((m) => !principaux.includes(m)) };
+}
+function ouvrirFeuilleMenu() {
+  const { autres } = separerNavigation(menuVisible());
+  const actif = hashCourant().replace(/^#\//, '').split('/')[0];
+  const ov = document.createElement('div');
+  ov.className = 'feuille-fond';
+  ov.innerHTML = `<div class="feuille" role="dialog" aria-modal="true" aria-label="Toutes les rubriques">
+    <div class="feuille-poignee"></div>
+    <div class="feuille-titre">Toutes les rubriques</div>
+    <div class="feuille-grille">${autres.map((m) => `<a class="feuille-item ${m.r === actif ? 'active' : ''}" href="#/${m.r}"><span class="feuille-ic">${icone(m.r, 24)}</span><span>${esc(m.court)}</span></a>`).join('')}</div>
+  </div>`;
+  const fermer = () => { ov.classList.add('sortie'); setTimeout(() => ov.remove(), 180); };
+  ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.feuille-item')) fermer(); });
+  document.body.appendChild(ov);
+}
+
 function menuVisible() {
   return MENU.filter((m) => m.roles.includes(role()) && (!m.admin || S.plateformeAdmin) && (!m.licence || !DEMO)).map((m) => ({ ...m, label: role() === 'technicien' && m.labelTech ? m.labelTech : m.label }));
 }
 
 function construireInterface() {
   const items = menuVisible();
-  const lien = (m) => `<a class="nav-item" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${m.ico}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
+  const lien = (m) => `<a class="nav-item" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${icone(m.r) || m.ico}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
+  const { principaux, autres } = separerNavigation(items);
   const p = S.profil;
   $('#root').innerHTML = `<div class="app">
     <header class="topbar">
@@ -867,7 +925,7 @@ function construireInterface() {
       <div class="sep"></div>
       <div class="company">${esc(S.entreprise?.nom)}</div>
       <div class="topbar-right">
-        <button class="icon-btn" id="btn-notif" title="Activité et alertes" aria-label="Activité et alertes">🔔<span class="count hidden" id="notif-count"></span></button>
+        <button class="icon-btn" id="btn-notif" title="Activité et alertes" aria-label="Activité et alertes">${icone('cloche', 20)}<span class="count hidden" id="notif-count"></span></button>
         <button class="user-chip" id="btn-user">
           <div class="avatar">${esc(initiales(p.nom))}</div>
           <div class="who"><b>${esc(p.nom)}</b><span>${ROLES[p.role].ico} ${esc(ROLES[p.role].label)}</span></div>
@@ -876,8 +934,9 @@ function construireInterface() {
     </header>
     <nav class="sidebar">${items.map(lien).join('')}</nav>
     <main class="main" id="main"></main>
-    <nav class="bottom-nav">${items.map(lien).join('')}</nav>
+    <nav class="bottom-nav">${principaux.map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icone('plus')}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
   </div>`;
+  $('#nav-plus')?.addEventListener('click', ouvrirFeuilleMenu);
   $('#btn-user').onclick = ouvrirMenuUtilisateur;
   $('#btn-notif').onclick = ouvrirNotifications;
   majCompteurNotifications();
@@ -987,6 +1046,8 @@ async function naviguer() {
   const autorise = page === 'projet' || (page === 'nouveau-rapport' && can(...ROLES_RAPPORT)) || menuVisible().some((m) => m.r === page);
   const cible = PAGES[page] && autorise ? page : 'dashboard';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (cible === 'projet' ? 'projets' : cible)));
+  const plus = $('#nav-plus');
+  if (plus) plus.classList.toggle('active', !$$('.bottom-nav [data-nav]').some((a) => a.classList.contains('active')));
   fermerPanneaux();
   detruireGraphiques();
   const main = $('#main');
@@ -1026,7 +1087,7 @@ function page(html) {
   return $('#main .page');
 }
 const entete = (titre, sousTitre = '', actions = '') => `<div class="page-head"><div><h1 class="page-title">${titre}</h1>${sousTitre ? `<p class="page-sub">${sousTitre}</p>` : ''}</div><div class="page-actions">${actions}</div></div>`;
-const kpi = (label, valeur, pied = '', cls = '', ico = '') => `<div class="kpi ${cls}">${ico ? `<div class="kpi-ico" aria-hidden="true">${ico}</div>` : ''}<div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
+const kpi = (label, valeur, pied = '', cls = '', ico = '') => `<div class="kpi ${cls}">${ico ? `<div class="kpi-ico" aria-hidden="true">${ICONE_EMOJI[ico] ? icone(ICONE_EMOJI[ico], 20) : ico}</div>` : ''}<div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
 
 function bonjour() {
   const h = new Date().getHours();
