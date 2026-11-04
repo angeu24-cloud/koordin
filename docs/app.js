@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.1';
+const VERSION = '2.2';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -2672,7 +2672,7 @@ function tableauFactures(factures, { compact = false } = {}) {
     ${factures.map((f) => {
       const echue = f.statut === 'a_payer' && f.date_echeance && f.date_echeance < auj;
       return `<tr><td class="nowrap">${fdate(f.date_facture)}</td>
-        <td><b>${esc(f.libelle)}</b><div class="muted" style="font-size:12px">${esc([f.numero, CATEGORIES[f.categorie], compact ? f.projets?.nom : null].filter(Boolean).join(' · '))}</div></td>
+        <td><b>${esc(f.libelle)}</b>${f.justificatif ? ` <button type="button" class="btn-justif" data-justif="${esc(f.justificatif)}" title="Voir le justificatif" aria-label="Voir le justificatif">📎</button>` : ''}<div class="muted" style="font-size:12px">${esc([f.numero, CATEGORIES[f.categorie], compact ? f.projets?.nom : null].filter(Boolean).join(' · '))}</div></td>
         ${compact ? '' : `<td>${esc(f.projets?.nom || '')}<div class="muted" style="font-size:12px">${esc(f.lots?.nom || '')}</div></td><td>${esc(f.fournisseurs?.nom || '—')}</td>`}
         <td class="num">${money(f.montant)}</td>
         <td class="nowrap">${f.date_echeance ? `${fdate(f.date_echeance)}${echue ? ' <span class="badge crit">⏰ Échue</span>' : ''}` : '—'}</td>
@@ -2682,6 +2682,7 @@ function tableauFactures(factures, { compact = false } = {}) {
 }
 
 function brancherFactures(zone, factures, refresh) {
+  $$('[data-justif]', zone).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); ouvrirJustificatif(b.dataset.justif); }));
   $$('[data-payer]', zone).forEach((b) => (b.onclick = async () => {
     try {
       await q(sb.from('factures').update({ statut: 'payee', date_paiement: todayISO() }).eq('id', b.dataset.payer));
@@ -2692,36 +2693,159 @@ function brancherFactures(zone, factures, refresh) {
   $$('[data-edit-fac]', zone).forEach((b) => (b.onclick = () => formulaireFacture(factures.find((f) => f.id === b.dataset.editFac), refresh)));
 }
 
-async function formulaireFacture(fac, refresh, projetId = null) {
-  const [projets, fournisseurs] = await Promise.all([listeProjets(), listeFournisseurs()]);
-  const v = fac || { projet_id: projetId, categorie: 'materiaux', statut: 'a_payer', date_facture: todayISO() };
-  ouvrirModale({
-    titre: fac ? 'Modifier la facture' : 'Saisir une facture ou une dépense',
+// ─── Justificatifs (photos / PDF des factures) ───
+const extJustif = (chemin) => (/\.pdf$/i.test(chemin || '') ? 'pdf' : 'image');
+async function ouvrirJustificatif(chemin) {
+  const fenetre = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('justificatifs').createSignedUrl(chemin, 600);
+  if (error || !data?.signedUrl) { fenetre?.close(); toast('Justificatif introuvable.', 'err'); return; }
+  if (fenetre) fenetre.location = data.signedUrl; else location.href = data.signedUrl;
+}
+async function envoyerJustificatif(fichier) {
+  const pdf = fichier.type === 'application/pdf';
+  if (!pdf && !/^image\//.test(fichier.type)) throw new Error('Choisissez une photo ou un PDF.');
+  const blob = pdf ? fichier : await compresserImage(fichier, 2200, 0.85);
+  if (blob.size > 10 * 1024 * 1024) throw new Error('Fichier trop lourd (10 Mo maximum).');
+  const chemin = `${S.entreprise.id}/${todayISO().slice(0, 7)}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${pdf ? 'pdf' : 'jpg'}`;
+  const { error } = await sb.storage.from('justificatifs').upload(chemin, blob, { contentType: pdf ? 'application/pdf' : 'image/jpeg' });
+  if (error) throw new Error(/bucket|not found/i.test(error.message) ? 'Le rangement des justificatifs nécessite la mise à jour 2.2 de la base de données (kit d’installation).' : error.message);
+  return { chemin, blob, type: pdf ? 'application/pdf' : 'image/jpeg' };
+}
+const versBase64 = (blob) => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = ko; r.readAsDataURL(blob); });
+const normNom = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\b(sarl|sa|sas|ci|ltd|ets|etablissements?)\b/g, '').replace(/[^a-z0-9]/g, '');
+
+async function lireFactureIA(justif, fournisseurs) {
+  try {
+    const data = await versBase64(justif.blob);
+    const { data: rep, error } = await sb.functions.invoke('koordin-ia', { body: { facture: { data, media_type: justif.type, fournisseurs: fournisseurs.map((f) => f.nom) } } });
+    if (error) {
+      let msg = '';
+      try { msg = (await error.context?.json())?.erreur || ''; } catch { /* rien */ }
+      return { erreur: msg || 'Lecture automatique indisponible : l’assistant IA n’est pas encore activé.' };
+    }
+    if (rep?.erreur) return { erreur: rep.erreur };
+    return { lu: rep?.facture || null };
+  } catch {
+    return { erreur: 'Lecture automatique indisponible pour le moment.' };
+  }
+}
+
+const attendreFermeture = (el) => new Promise((ok) => {
+  const obs = new MutationObserver(() => { if (!el.isConnected) { obs.disconnect(); ok(); } });
+  obs.observe(document.body, { childList: true });
+});
+
+let dernierProjetFacture = null;
+async function scannerFactures(fichiers, refresh) {
+  fichiers = [...fichiers].slice(0, 20);
+  if (!fichiers.length) return;
+  const fournisseurs = await listeFournisseurs();
+  let enregistrees = 0;
+  for (let i = 0; i < fichiers.length; i++) {
+    const etape = fichiers.length > 1 ? ` (${i + 1}/${fichiers.length})` : '';
+    const attente = ouvrirModale({ titre: `📷 Lecture de la facture${etape}`, corps: `<div class="scan-attente"><div class="spinner"></div><p id="scan-txt">Envoi du document…</p></div>` });
+    let justif = null, resultat = { erreur: null, lu: null };
+    try {
+      justif = await envoyerJustificatif(fichiers[i]);
+      $('#scan-txt', attente.el).textContent = 'KOORDIN lit la facture… (quelques secondes)';
+      resultat = await lireFactureIA(justif, fournisseurs);
+    } catch (e) {
+      attente.fermer();
+      toast(messageErreur(e), 'err', 7000);
+      continue;
+    }
+    attente.fermer();
+    const r = await formulaireFacture(null, () => {}, dernierProjetFacture, { justificatif: justif.chemin, lecture: resultat, fournisseurs, etape });
+    if (r?.enregistree) enregistrees++;
+    else await sb.storage.from('justificatifs').remove([justif.chemin]);
+  }
+  if (enregistrees) { toast(`${enregistrees} facture${enregistrees > 1 ? 's' : ''} enregistrée${enregistrees > 1 ? 's' : ''} ✅`); refresh(); }
+}
+
+async function formulaireFacture(fac, refresh, projetId = null, opts = {}) {
+  const [projets, fournisseurs] = await Promise.all([listeProjets(), opts.fournisseurs ? opts.fournisseurs : listeFournisseurs()]);
+  const v = fac ? { ...fac } : { projet_id: projetId, categorie: 'materiaux', statut: 'a_payer', date_facture: todayISO() };
+  let justificatif = fac?.justificatif || opts.justificatif || null;
+  const lu = opts.lecture?.lu;
+  let nouveauFournisseur = '';
+  let notice = '';
+  if (lu) {
+    const dateOk = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null);
+    if (lu.libelle) v.libelle = lu.libelle;
+    if (lu.numero) v.numero = lu.numero;
+    if (num(lu.montant_ttc) > 0) v.montant = Math.round(num(lu.montant_ttc));
+    if (num(lu.montant_ht) > 0) v.montant_ht = Math.round(num(lu.montant_ht));
+    if (num(lu.tva) > 0) v.tva = Math.round(num(lu.tva));
+    if (dateOk(lu.date_facture)) v.date_facture = lu.date_facture;
+    if (dateOk(lu.date_echeance)) v.date_echeance = lu.date_echeance;
+    if (CATEGORIES[lu.categorie]) v.categorie = lu.categorie;
+    if (lu.deja_payee) { v.statut = 'payee'; v.date_paiement = v.date_facture; }
+    if (lu.fournisseur) {
+      const n = normNom(lu.fournisseur);
+      const trouve = fournisseurs.find((f) => normNom(f.nom) === n) || (n.length >= 4 ? fournisseurs.find((f) => { const m = normNom(f.nom); return m.length >= 4 && (m.includes(n) || n.includes(m)); }) : null);
+      if (trouve) v.fournisseur_id = trouve.id; else { nouveauFournisseur = lu.fournisseur.trim().slice(0, 80); v.fournisseur_id = '__nouveau__'; }
+    }
+    const avert = [];
+    if (lu.est_une_facture === false) avert.push('Ce document ne ressemble pas à une facture.');
+    if (lu.devise && !normNom(lu.devise).includes(normNom(devise())) && !(normNom(devise()) === 'fcfa' && /xof|cfa/i.test(lu.devise))) avert.push(`Montant en ${lu.devise} : vérifiez la conversion.`);
+    if (lu.remarque) avert.push(lu.remarque);
+    notice = `<div class="notice ok">✨ Facture lue automatiquement : <b>vérifiez chaque champ</b> avant d’enregistrer, puis choisissez le chantier.</div>${avert.length ? `<div class="notice warn">⚠️ ${avert.map(esc).join('<br>')}</div>` : ''}`;
+  } else if (opts.lecture?.erreur) {
+    const err = /Aucune question/i.test(opts.lecture.erreur) ? 'La lecture automatique demande de mettre à jour l’assistant IA (kit d’installation).'
+      : /ANTHROPIC_API_KEY|koordin-ia|non activé|pas encore activé/i.test(opts.lecture.erreur) ? 'La lecture automatique n’est pas encore activée (assistant IA).'
+        : opts.lecture.erreur.replace(/\s*$/, '').replace(/([^.!?])$/, '$1.');
+    notice = `<div class="notice warn">📎 Justificatif joint. ${esc(err)} Remplissez les champs en regardant le document.</div>`;
+  }
+  const optionsFournisseurs = [...(nouveauFournisseur ? [['__nouveau__', `➕ Nouveau : ${nouveauFournisseur}`]] : []), ...fournisseurs.map((f) => [f.id, f.nom])];
+  const blocJustif = () => justificatif
+    ? `<button type="button" class="btn sm" id="voir-justif">${extJustif(justificatif) === 'pdf' ? '📄' : '🖼️'} Voir le justificatif</button>`
+    : '<span class="muted" style="font-size:12px">Aucun justificatif</span>';
+  let resoudre;
+  const fin = new Promise((ok) => { resoudre = ok; });
+  let enregistree = false;
+  const m = ouvrirModale({
+    titre: fac ? 'Modifier la facture' : `${opts.lecture ? '📷 Facture scannée' : 'Saisir une facture ou une dépense'}${opts.etape || ''}`,
     large: true,
-    corps: `<div class="form-grid">
+    boutonOk: opts.etape && !fac ? 'Enregistrer' : 'Enregistrer',
+    corps: `${notice}<div class="form-grid">
       ${F.select('projet_id', 'Projet', projets.map((x) => [x.id, x.nom]), v.projet_id, { required: true, vide: '— Choisir —' })}
       <label class="field">Lot<select name="lot_id" id="f-lot"><option value="">— Sans lot —</option></select></label>
       ${F.text('libelle', 'Libellé', v.libelle, { required: true, full: true, placeholder: 'Ex. Facture acier HA 12 — livraison du 12/03' })}
       ${F.select('categorie', 'Catégorie', Object.entries(CATEGORIES), v.categorie)}
-      ${F.select('fournisseur_id', 'Fournisseur', fournisseurs.map((f) => [f.id, f.nom]), v.fournisseur_id, { vide: '— Aucun —' })}
+      ${F.select('fournisseur_id', 'Fournisseur', optionsFournisseurs, v.fournisseur_id, { vide: '— Aucun —' })}
       <label class="field">Commande liée<select name="commande_id" id="f-cmd"><option value="">— Aucune —</option></select></label>
       ${F.text('numero', 'N° de facture', v.numero, { hint: 'Contrôle automatique des doublons' })}
+      ${F.text('montant_ht', `Montant HT (${devise()})`, v.montant_ht, { type: 'number', min: 0, inputmode: 'numeric', hint: 'Facultatif' })}
+      ${F.text('tva', `TVA (${devise()})`, v.tva, { type: 'number', min: 0, inputmode: 'numeric', hint: 'Facultatif' })}
       ${F.text('montant', `Montant TTC (${devise()})`, v.montant, { type: 'number', min: 0, required: true, inputmode: 'numeric' })}
       ${F.text('date_facture', 'Date de facture', v.date_facture, { type: 'date', required: true })}
       ${F.text('date_echeance', 'Date d’échéance', v.date_echeance, { type: 'date' })}
       ${F.select('statut', 'Statut', Object.entries(STATUT_FACTURE).map(([k, [, l]]) => [k, l]), v.statut)}
       ${F.text('date_paiement', 'Date de paiement', v.date_paiement, { type: 'date' })}
+      <div class="field full">Justificatif (photo ou PDF de la facture)
+        <div class="justif-ligne"><span id="justif-zone">${blocJustif()}</span>
+          <label class="btn sm">📎 ${justificatif ? 'Remplacer' : 'Joindre'}<input type="file" id="justif-fichier" accept="image/*,application/pdf" hidden></label></div></div>
     </div>
     ${fac ? '<div class="form-actions" style="justify-content:flex-start;margin-top:10px"><button type="button" class="btn danger sm" id="del-f">Supprimer</button></div>' : ''}`,
     onSubmit: async (d) => {
+      let fournisseurId = d.fournisseur_id;
+      if (fournisseurId === '__nouveau__') {
+        const cree = await q(sb.from('fournisseurs').insert({ nom: nouveauFournisseur }).select('id').single());
+        fournisseurId = cree.id;
+      }
       const data = {
-        projet_id: d.projet_id, lot_id: d.lot_id, libelle: d.libelle, categorie: d.categorie, fournisseur_id: d.fournisseur_id,
+        projet_id: d.projet_id, lot_id: d.lot_id, libelle: d.libelle, categorie: d.categorie, fournisseur_id: fournisseurId,
         commande_id: d.commande_id, numero: d.numero, montant: num(d.montant), date_facture: d.date_facture,
+        montant_ht: d.montant_ht ? num(d.montant_ht) : null, tva: d.tva ? num(d.tva) : null, justificatif,
         date_echeance: d.date_echeance, statut: d.statut, date_paiement: d.statut === 'payee' ? (d.date_paiement || todayISO()) : null,
       };
+      if (!justificatif) delete data.justificatif;
+      if (!data.montant_ht && !data.tva && !fac?.montant_ht && !fac?.tva) { delete data.montant_ht; delete data.tva; }
       if (fac) await q(sb.from('factures').update(data).eq('id', fac.id));
       else await q(sb.from('factures').insert(data));
-      toast('Facture enregistrée.');
+      dernierProjetFacture = d.projet_id;
+      enregistree = true;
+      if (!opts.lecture) toast('Facture enregistrée.');
       refresh();
     },
     onOpen: (el) => {
@@ -2738,12 +2862,245 @@ async function formulaireFacture(fac, refresh, projetId = null) {
       };
       sp.onchange = () => { v.lot_id = null; v.commande_id = null; charger(); };
       charger();
+      const brancherVoir = () => $('#voir-justif', el)?.addEventListener('click', () => ouvrirJustificatif(justificatif));
+      brancherVoir();
+      $('#justif-fichier', el).addEventListener('change', async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        try {
+          toast('Envoi du justificatif…', 'warn', 2500);
+          const j = await envoyerJustificatif(f);
+          justificatif = j.chemin;
+          $('#justif-zone', el).innerHTML = blocJustif();
+          brancherVoir();
+          toast('Justificatif joint ✅ Il sera gardé à l’enregistrement.');
+        } catch (err) { toast(messageErreur(err), 'err', 6000); }
+      });
       $('#del-f', el)?.addEventListener('click', async () => {
         if (!(await confirmer('Supprimer cette facture ?', 'Supprimer'))) return;
-        try { await q(sb.from('factures').delete().eq('id', fac.id)); el.remove(); toast('Facture supprimée.'); refresh(); } catch (e) { toast(messageErreur(e), 'err'); }
+        try {
+          await q(sb.from('factures').delete().eq('id', fac.id));
+          if (fac.justificatif) await sb.storage.from('justificatifs').remove([fac.justificatif]);
+          el.remove(); toast('Facture supprimée.'); refresh();
+        } catch (e) { toast(messageErreur(e), 'err'); }
       });
     },
   });
+  attendreFermeture(m.el).then(() => resoudre({ enregistree }));
+  return fin;
+}
+
+// ─── Export Excel (.xlsx) pour le comptable ───
+let excelCharge = null;
+function chargerExcel() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  excelCharge ||= new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'exceljs.min.js';
+    s.onload = () => ok(window.ExcelJS);
+    s.onerror = () => { excelCharge = null; ko(new Error('Impossible de charger l’outil Excel. Vérifiez votre connexion internet.')); };
+    document.head.appendChild(s);
+  });
+  return excelCharge;
+}
+
+async function exporterExcelCompta(factures, projets) {
+  const ExcelJS = await chargerExcel();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'KOORDIN';
+  wb.created = new Date();
+  const OR = 'FFE8A020', NUIT = 'FF111521', GRIS = 'FFF4F5F9', ROUGE = 'FFFDE2E2', VERT = 'FFDCF5E8';
+  const fmtMontant = `#,##0 "${devise().replace(/"/g, '')}";-#,##0 "${devise().replace(/"/g, '')}";"-"`;
+  const jour = (iso) => (iso ? parseDay(iso) : null);
+  const auj = todayISO();
+  const entete = (ws) => {
+    const r = ws.getRow(1);
+    r.height = 22;
+    r.eachCell((c) => {
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NUIT } };
+      c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      c.border = { bottom: { style: 'medium', color: { argb: OR } } };
+    });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  };
+  const ligneTotal = (ws, ligne) => {
+    const r = ws.getRow(ligne);
+    r.eachCell({ includeEmpty: true }, (c) => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } }; c.border = { top: { style: 'thin' } }; });
+  };
+  const somme = (l, k) => l.reduce((s, x) => s + num(x[k]), 0);
+
+  // 1. Factures
+  const ws = wb.addWorksheet('Factures', { properties: { tabColor: { argb: OR } } });
+  ws.columns = [
+    { header: 'Date', key: 'date', width: 12, style: { numFmt: 'dd/mm/yyyy' } },
+    { header: 'N° facture', key: 'numero', width: 16 },
+    { header: 'Fournisseur', key: 'fournisseur', width: 24 },
+    { header: 'Chantier', key: 'chantier', width: 28 },
+    { header: 'Lot', key: 'lot', width: 16 },
+    { header: 'Catégorie', key: 'categorie', width: 17 },
+    { header: 'Libellé', key: 'libelle', width: 40 },
+    { header: 'Montant HT', key: 'ht', width: 16, style: { numFmt: fmtMontant } },
+    { header: 'TVA', key: 'tva', width: 14, style: { numFmt: fmtMontant } },
+    { header: 'Montant TTC', key: 'ttc', width: 17, style: { numFmt: fmtMontant } },
+    { header: 'Échéance', key: 'echeance', width: 12, style: { numFmt: 'dd/mm/yyyy' } },
+    { header: 'Statut', key: 'statut', width: 11 },
+    { header: 'Payée le', key: 'paye_le', width: 12, style: { numFmt: 'dd/mm/yyyy' } },
+    { header: 'Jours de retard', key: 'retard', width: 10, style: { numFmt: '0' } },
+    { header: 'Justificatif', key: 'justif', width: 11 },
+  ];
+  const tri = [...factures].sort((a, b) => String(a.date_facture).localeCompare(String(b.date_facture)));
+  tri.forEach((f, i) => {
+    const n = i + 2;
+    const echue = f.statut === 'a_payer' && f.date_echeance && f.date_echeance < auj;
+    const row = ws.addRow({
+      date: jour(f.date_facture), numero: f.numero || '', fournisseur: f.fournisseurs?.nom || '', chantier: f.projets?.nom || '', lot: f.lots?.nom || '',
+      categorie: CATEGORIES[f.categorie] || f.categorie, libelle: f.libelle, ht: f.montant_ht == null ? null : num(f.montant_ht), tva: f.tva == null ? null : num(f.tva),
+      ttc: num(f.montant), echeance: jour(f.date_echeance), statut: f.statut === 'payee' ? 'Payée' : 'À payer', paye_le: jour(f.date_paiement),
+      retard: { formula: `IF(AND(L${n}="À payer",K${n}<>"",K${n}<TODAY()),TODAY()-K${n},"")`, result: echue ? Math.round((parseDay(auj) - parseDay(f.date_echeance)) / 864e5) : '' },
+      justif: f.justificatif ? 'Oui' : 'Non',
+    });
+    const st = row.getCell('statut');
+    st.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: f.statut === 'payee' ? VERT : echue ? ROUGE : 'FFFFF4DB' } };
+    st.alignment = { horizontal: 'center' };
+    if (echue) row.getCell('retard').font = { bold: true, color: { argb: 'FFC62828' } };
+    row.getCell('libelle').alignment = { wrapText: true, vertical: 'top' };
+  });
+  const derniere = tri.length + 1;
+  entete(ws);
+  ws.autoFilter = { from: 'A1', to: `O${Math.max(derniere, 1)}` };
+  const tot = ws.addRow({ libelle: 'TOTAL (s’adapte aux filtres)' });
+  ['H', 'I', 'J'].forEach((col) => { tot.getCell(col).value = { formula: `SUBTOTAL(109,${col}2:${col}${Math.max(derniere, 2)})`, result: somme(tri, { H: 'montant_ht', I: 'tva', J: 'montant' }[col]) }; tot.getCell(col).numFmt = fmtMontant; });
+  ligneTotal(ws, tot.number);
+
+  const plage = (col) => `Factures!$${col}$2:$${col}$${Math.max(derniere, 2)}`;
+  // 2. Par chantier
+  const wc = wb.addWorksheet('Par chantier');
+  wc.columns = [
+    { header: 'Chantier', key: 'nom', width: 32 },
+    { header: 'Budget', key: 'budget', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Facturé TTC', key: 'facture', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Payé', key: 'paye', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Reste à payer', key: 'reste', width: 18, style: { numFmt: fmtMontant } },
+    { header: '% du budget facturé', key: 'pct', width: 14, style: { numFmt: '0%' } },
+  ];
+  const chantiers = projets.filter((x) => factures.some((f) => f.projet_id === x.id) || x.statut !== 'termine');
+  chantiers.forEach((x, i) => {
+    const n = i + 2;
+    const fx = factures.filter((f) => f.projet_id === x.id);
+    const fac = somme(fx, 'montant'), pay = somme(fx.filter((f) => f.statut === 'payee'), 'montant');
+    wc.addRow({
+      nom: x.nom, budget: num(x.budget),
+      facture: { formula: `SUMIFS(${plage('J')},${plage('D')},A${n})`, result: fac },
+      paye: { formula: `SUMIFS(${plage('J')},${plage('D')},A${n},${plage('L')},"Payée")`, result: pay },
+      reste: { formula: `C${n}-D${n}`, result: fac - pay },
+      pct: { formula: `IF(B${n}>0,C${n}/B${n},0)`, result: num(x.budget) > 0 ? fac / num(x.budget) : 0 },
+    });
+  });
+  entete(wc);
+  const nc = chantiers.length + 1;
+  const tc = wc.addRow({ nom: 'TOTAL' });
+  ['B', 'C', 'D', 'E'].forEach((col) => { tc.getCell(col).value = { formula: `SUM(${col}2:${col}${Math.max(nc, 2)})` }; tc.getCell(col).numFmt = fmtMontant; });
+  ligneTotal(wc, tc.number);
+
+  // 3. Par fournisseur
+  const wf = wb.addWorksheet('Par fournisseur');
+  wf.columns = [
+    { header: 'Fournisseur', key: 'nom', width: 30 },
+    { header: 'Nb de factures', key: 'nb', width: 12 },
+    { header: 'Facturé TTC', key: 'facture', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Payé', key: 'paye', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Reste à payer', key: 'reste', width: 18, style: { numFmt: fmtMontant } },
+  ];
+  const noms = [...new Set(factures.map((f) => f.fournisseurs?.nom).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  noms.forEach((nom, i) => {
+    const n = i + 2;
+    const fx = factures.filter((f) => f.fournisseurs?.nom === nom);
+    const fac = somme(fx, 'montant'), pay = somme(fx.filter((f) => f.statut === 'payee'), 'montant');
+    wf.addRow({
+      nom, nb: { formula: `COUNTIFS(${plage('C')},A${n})`, result: fx.length },
+      facture: { formula: `SUMIFS(${plage('J')},${plage('C')},A${n})`, result: fac },
+      paye: { formula: `SUMIFS(${plage('J')},${plage('C')},A${n},${plage('L')},"Payée")`, result: pay },
+      reste: { formula: `C${n}-D${n}`, result: fac - pay },
+    });
+  });
+  entete(wf);
+  const tf = wf.addRow({ nom: 'TOTAL' });
+  ['B', 'C', 'D', 'E'].forEach((col) => { tf.getCell(col).value = { formula: `SUM(${col}2:${col}${Math.max(noms.length + 1, 2)})` }; if (col !== 'B') tf.getCell(col).numFmt = fmtMontant; });
+  ligneTotal(wf, tf.number);
+
+  // 4. Échéancier (factures à payer)
+  const we = wb.addWorksheet('Échéancier', { properties: { tabColor: { argb: 'FFC62828' } } });
+  we.columns = [
+    { header: 'Échéance', key: 'echeance', width: 12, style: { numFmt: 'dd/mm/yyyy' } },
+    { header: 'Fournisseur', key: 'fournisseur', width: 26 },
+    { header: 'N° facture', key: 'numero', width: 16 },
+    { header: 'Chantier', key: 'chantier', width: 28 },
+    { header: 'Montant TTC', key: 'ttc', width: 17, style: { numFmt: fmtMontant } },
+    { header: 'Jours de retard', key: 'retard', width: 11, style: { numFmt: '0' } },
+  ];
+  const apayer = factures.filter((f) => f.statut === 'a_payer').sort((a, b) => String(a.date_echeance || '9999').localeCompare(String(b.date_echeance || '9999')));
+  apayer.forEach((f, i) => {
+    const n = i + 2;
+    const echue = f.date_echeance && f.date_echeance < auj;
+    const row = we.addRow({
+      echeance: jour(f.date_echeance), fournisseur: f.fournisseurs?.nom || '', numero: f.numero || '', chantier: f.projets?.nom || '', ttc: num(f.montant),
+      retard: { formula: `IF(AND(A${n}<>"",A${n}<TODAY()),TODAY()-A${n},"")`, result: echue ? Math.round((parseDay(auj) - parseDay(f.date_echeance)) / 864e5) : '' },
+    });
+    if (echue) row.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ROUGE } }; });
+  });
+  entete(we);
+  const te = we.addRow({ chantier: 'TOTAL À PAYER' });
+  te.getCell('E').value = { formula: `SUM(E2:E${Math.max(apayer.length + 1, 2)})`, result: somme(apayer, 'montant') };
+  te.getCell('E').numFmt = fmtMontant;
+  ligneTotal(we, te.number);
+
+  // 5. Par mois
+  const wm = wb.addWorksheet('Par mois');
+  wm.columns = [
+    { header: 'Mois', key: 'mois', width: 18 },
+    { header: 'Nb de factures', key: 'nb', width: 12 },
+    { header: 'Facturé TTC', key: 'facture', width: 18, style: { numFmt: fmtMontant } },
+    { header: 'Payé', key: 'paye', width: 18, style: { numFmt: fmtMontant } },
+  ];
+  const mois = [...new Set(factures.map((f) => String(f.date_facture).slice(0, 7)))].sort();
+  mois.forEach((mo) => {
+    const fx = factures.filter((f) => String(f.date_facture).startsWith(mo));
+    const lib = parseDay(`${mo}-01`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    wm.addRow({ mois: lib.charAt(0).toUpperCase() + lib.slice(1), nb: fx.length, facture: somme(fx, 'montant'), paye: somme(fx.filter((f) => f.statut === 'payee'), 'montant') });
+  });
+  entete(wm);
+
+  [ws, wc, wf, we, wm].forEach((w) => { w.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 }; });
+  const tampon = await wb.xlsx.writeBuffer();
+  const blob = new Blob([tampon], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const nom = `KOORDIN-comptabilite-${(S.entreprise?.nom || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-')}-${todayISO()}.xlsx`;
+  const fichier = new File([blob], nom, { type: blob.type });
+  return { blob, nom, fichier };
+}
+
+async function boutonExcel(factures, projets) {
+  if (DEMO) { toast('L’export Excel fonctionne dans la version installée de KOORDIN.', 'warn'); return; }
+  toast('Préparation du fichier Excel…', 'warn', 2500);
+  try {
+    const { blob, nom, fichier } = await exporterExcelCompta(factures, projets);
+    const url = URL.createObjectURL(blob);
+    const partage = navigator.canShare?.({ files: [fichier] });
+    const m = ouvrirModale({
+      titre: '📊 Fichier Excel prêt',
+      corps: `<p style="margin-bottom:10px"><b>${factures.length}</b> facture(s) · 5 onglets : <b>Factures</b> (avec filtres et totaux), <b>Par chantier</b>, <b>Par fournisseur</b>, <b>Échéancier</b> et <b>Par mois</b>.</p>
+        <div class="rc-boutons"><a class="btn primary" href="${url}" download="${esc(nom)}">⬇️ Télécharger</a>${partage ? '<button type="button" class="btn" id="xl-partager">📤 Envoyer (WhatsApp, e-mail…)</button>' : ''}</div>
+        <p class="hint mt">Le fichier s’ouvre dans Excel, Google Sheets ou WPS Office. Les totaux se recalculent si vous filtrez.</p>
+        <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button></div>`,
+    });
+    $('#xl-partager', m.el)?.addEventListener('click', async () => {
+      try { await navigator.share({ files: [fichier], title: nom }); } catch (e) { if (e?.name !== 'AbortError') toast('Le partage n’a pas fonctionné : téléchargez le fichier.', 'warn'); }
+    });
+    attendreFermeture(m.el).then(() => setTimeout(() => URL.revokeObjectURL(url), 60000));
+  } catch (e) {
+    console.error(e);
+    toast(messageErreur(e), 'err', 6000);
+  }
 }
 
 let ongletCompta = 'factures';
@@ -2757,7 +3114,7 @@ PAGES.compta = async () => {
   const paye = factures.filter((f) => f.statut === 'payee').reduce((s, f) => s + num(f.montant), 0);
   const echues = factures.filter((f) => f.statut === 'a_payer' && f.date_echeance && f.date_echeance < todayISO());
   const p = page(`
-    ${entete('Comptabilité', 'Factures, dépenses et situation financière', `<button class="btn" id="csv">⬇️ Export Excel (CSV)</button>${can('direction', 'comptable') ? '<button class="btn primary" id="nfa">＋ Saisir une facture</button>' : ''}`)}
+    ${entete('Comptabilité', 'Factures, dépenses et situation financière', `<button class="btn" id="csv">📊 Export Excel</button>${can('direction', 'comptable') ? `${DEMO ? '' : '<label class="btn">📷 Scanner des factures<input type="file" id="scan-f" accept="image/*,application/pdf" multiple hidden></label>'}<button class="btn primary" id="nfa">＋ Saisir une facture</button>` : ''}`)}
     <div class="grid k4">
       ${kpi('Total facturé', moneyShort(total))}
       ${kpi('Payé', moneyShort(paye), `${pct(paye, total)} %`)}
@@ -2794,9 +3151,8 @@ PAGES.compta = async () => {
   };
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletCompta = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
   $('#nfa', p)?.addEventListener('click', () => formulaireFacture(null, () => naviguer()));
-  $('#csv', p).onclick = () => DEMO ? toast('L’export Excel fonctionne dans la version installée de KOORDIN.', 'warn') : exporterCSV(`koordin-factures-${todayISO()}.csv`,
-    ['Date', 'N°', 'Libellé', 'Catégorie', 'Projet', 'Lot', 'Fournisseur', 'Montant', 'Échéance', 'Statut', 'Date paiement'],
-    filtrees().map((f) => [f.date_facture, f.numero, f.libelle, CATEGORIES[f.categorie], f.projets?.nom, f.lots?.nom, f.fournisseurs?.nom, f.montant, f.date_echeance, f.statut === 'payee' ? 'Payée' : 'À payer', f.date_paiement]));
+  $('#csv', p).onclick = () => boutonExcel(filtrees(), projets);
+  $('#scan-f', p)?.addEventListener('change', (e) => { const f = [...e.target.files]; e.target.value = ''; scannerFactures(f, () => naviguer()); });
   rendre();
   if (memo.get('koordin-ouvrir') === 'facture') { memo.del('koordin-ouvrir'); formulaireFacture(null, () => naviguer()); }
 };
