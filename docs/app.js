@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.4';
+const VERSION = '2.5';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -422,7 +422,7 @@ async function listeFournisseurs() {
   return q(sb.from('fournisseurs').select('id, nom').order('nom'));
 }
 async function chargerEquipe() {
-  S.equipe = await q(sb.from('profils').select('id, nom, email, role, actif, telephone').order('nom'));
+  S.equipe = await avecCache('equipe', () => q(sb.from('profils').select('id, nom, email, role, actif, telephone').order('nom')), { defaut: [] });
 }
 
 // ─────────────────────────────── Graphiques ───────────────────────────────
@@ -527,8 +527,23 @@ async function demarrer() {
   if (suivi) return ecranSuiviClient(suivi[1]);
   const { data: { session } } = await sb.auth.getSession();
   if (location.hash.includes('type=recovery')) return;
+  if (!session && !navigator.onLine) {
+    const locale = sessionLocale();
+    if (locale) return ouvrirApplication(locale);
+  }
   if (!session) return ecranConnexion(parrainEnAttente() ? 'creer' : 'connexion');
   await ouvrirApplication(session);
+}
+
+// Sans réseau, la session enregistrée sur le téléphone suffit pour ouvrir KOORDIN
+function sessionLocale() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (/^sb-.*-auth-token$/.test(k)) { const v = JSON.parse(localStorage.getItem(k)); if (v?.user?.id) return v; }
+    }
+  } catch { /* rien */ }
+  return null;
 }
 
 function ecranConfiguration() {
@@ -735,8 +750,8 @@ async function ouvrirApplication(session) {
   S.session = session;
   $('#root').innerHTML = loading();
   try {
-    let profil = await q(sb.from('profils').select('*, entreprises(*)').eq('id', session.user.id).maybeSingle());
-    if (!profil) {
+    let profil = await avecCache('profil', () => q(sb.from('profils').select('*, entreprises(*)').eq('id', session.user.id).maybeSingle()), { id: session.user.id });
+    if (!profil && navigator.onLine) {
       const rejoint = await q(sb.rpc('accepter_invitation'));
       if (rejoint) profil = await q(sb.from('profils').select('*, entreprises(*)').eq('id', session.user.id).maybeSingle());
     }
@@ -745,15 +760,16 @@ async function ouvrirApplication(session) {
     S.entreprise = profil.entreprises;
     S.plateformeAdmin = false;
     if (!DEMO) {
-      const { data: admin } = await sb.rpc('est_admin_plateforme');
-      S.plateformeAdmin = admin === true;
+      const { data: admin, error: errAdmin } = navigator.onLine ? await sb.rpc('est_admin_plateforme') : { error: true };
+      S.plateformeAdmin = errAdmin ? relire('admin') === true : admin === true;
+      if (!errAdmin) memoriser('admin', S.plateformeAdmin);
     }
     await chargerEquipe();
     construireInterface();
     ecouterTempsReel();
     if (!DEMO) window.onhashchange = naviguer;
     await naviguer();
-    if (!DEMO) suivreMisesAJour();
+    if (!DEMO) { suivreMisesAJour(); ecouterReseau(); majIndicateurReseau(); setTimeout(() => { synchroniser(); prechargerHorsLigne(); }, 1200); }
     let guideVu = '1';
     try { guideVu = localStorage.getItem(`koordin-guide-vu-${S.profil.id}`); } catch { /* rien */ }
     if (!DEMO && !guideVu) setTimeout(() => ouvrirGuide({ premiereFois: true }), 900);
@@ -763,6 +779,188 @@ async function ouvrirApplication(session) {
       <div class="auth-msg err" style="margin:16px 0">${esc(messageErreur(e))}</div>
       <button class="btn primary block" onclick="location.reload()">Réessayer</button></div></div>`;
   }
+}
+
+// ═══════════════════════════════ FONCTIONNEMENT SANS RÉSEAU (2.5) ═══════════════════════════════
+// • Les données utiles au terrain (chantiers, lots, ouvriers) sont gardées sur le téléphone.
+// • Un rapport ou un appel fait sans réseau est rangé dans une « boîte d'envoi » (IndexedDB),
+//   puis envoyé tout seul dès que le réseau revient. Rien n'est perdu si l'application est fermée.
+
+const estErreurReseau = (e) => !navigator.onLine || /Failed to fetch|NetworkError|Load failed|fetch failed|ERR_INTERNET|network/i.test(String(e?.message || e || ''));
+const cleCache = (k, id = S.profil?.id) => `koordin-cache-${id || 'x'}-${k}`;
+function memoriser(k, donnees, id) { try { localStorage.setItem(cleCache(k, id), JSON.stringify(donnees)); } catch { /* stockage plein */ } }
+function relire(k, id) { try { const v = localStorage.getItem(cleCache(k, id)); return v ? JSON.parse(v) : undefined; } catch { return undefined; } }
+async function avecCache(k, charger, { defaut, id } = {}) {
+  if (!navigator.onLine) {
+    // Hors ligne : on lit directement le téléphone (une requête mettrait plusieurs secondes à échouer)
+    const c = relire(k, id);
+    if (c !== undefined) return c;
+    if (defaut !== undefined) return defaut;
+    throw new Error('Failed to fetch');
+  }
+  try {
+    const d = await charger();
+    memoriser(k, d, id);
+    return d;
+  } catch (e) {
+    if (!estErreurReseau(e)) throw e;
+    const c = relire(k, id);
+    if (c !== undefined) return c;
+    if (defaut !== undefined) return defaut;
+    throw e;
+  }
+}
+
+// ─── Boîte d'envoi ───
+let baseEnvois = null;
+function ouvrirBaseEnvois() {
+  baseEnvois ||= new Promise((ok, ko) => {
+    const r = indexedDB.open('koordin-envois', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('envois', { keyPath: 'id' });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => { baseEnvois = null; ko(r.error); };
+  });
+  return baseEnvois;
+}
+async function boiteEnvois(mode, action) {
+  const db = await ouvrirBaseEnvois();
+  return new Promise((ok, ko) => {
+    const tx = db.transaction('envois', mode);
+    const req = action(tx.objectStore('envois'));
+    tx.oncomplete = () => ok(req?.result);
+    tx.onerror = () => ko(tx.error);
+  });
+}
+const ajouterEnvoi = (envoi) => boiteEnvois('readwrite', (s) => s.put({ id: crypto.randomUUID(), profil_id: S.profil.id, cree_le: new Date().toISOString(), essais: 0, erreur: null, ...envoi }));
+const supprimerEnvoi = (id) => boiteEnvois('readwrite', (s) => s.delete(id));
+const majEnvoi = (envoi) => boiteEnvois('readwrite', (s) => s.put(envoi));
+async function listeEnvois() {
+  try { return ((await boiteEnvois('readonly', (s) => s.getAll())) || []).filter((x) => x.profil_id === S.profil?.id).sort((a, b) => a.cree_le.localeCompare(b.cree_le)); } catch { return []; }
+}
+
+// ─── Envoi d'un rapport (même chemin en ligne et depuis la boîte d'envoi) ───
+async function envoyerRapport(rapport, photos, progression = () => {}) {
+  const { error } = await sb.from('rapports').insert(rapport);
+  if (error && !/duplicate key|rapports_pkey|23505/.test(`${error.message} ${error.code}`)) throw error;
+  let echecs = 0;
+  const deja = photos.length ? ((await sb.from('rapport_photos').select('chemin').eq('rapport_id', rapport.id)).data || []).map((x) => x.chemin) : [];
+  for (let i = 0; i < photos.length; i++) {
+    progression(i + 1, photos.length);
+    const chemin = `${S.entreprise.id}/${rapport.id}/photo-${i + 1}.jpg`;
+    if (deja.includes(chemin)) continue;
+    const { error: e1 } = await sb.storage.from('photos-chantier').upload(chemin, photos[i], { contentType: 'image/jpeg', upsert: false });
+    if (e1 && !/exists|Duplicate/i.test(e1.message)) { if (estErreurReseau(e1)) throw e1; echecs++; continue; }
+    const { error: e2 } = await sb.from('rapport_photos').insert({ rapport_id: rapport.id, chemin });
+    if (e2) { if (estErreurReseau(e2)) throw e2; echecs++; }
+  }
+  return { echecs };
+}
+
+// ─── Envoi d'un appel de pointage ───
+async function envoyerAppel({ projet_id, date, choix }) {
+  const existants = await q(sb.from('pointages').select('id, ouvrier_id, presence, paye').eq('projet_id', projet_id).eq('date_pointage', date));
+  const deja = new Map(existants.map((x) => [x.ouvrier_id, x]));
+  const ajouts = [], modifs = [], suppr = [];
+  choix.forEach(([id, v]) => {
+    const ex = deja.get(id);
+    if (ex?.paye) return;
+    if (!ex && v) ajouts.push({ projet_id, ouvrier_id: id, date_pointage: date, presence: v });
+    else if (ex && !v) suppr.push(ex.id);
+    else if (ex && v && Number(ex.presence) !== v) modifs.push([ex.id, v]);
+  });
+  if (ajouts.length) await q(sb.from('pointages').insert(ajouts));
+  for (const [id, v] of modifs) await q(sb.from('pointages').update({ presence: v }).eq('id', id));
+  if (suppr.length) await q(sb.from('pointages').delete().in('id', suppr));
+}
+
+// ─── Synchronisation ───
+let synchroEnCours = false;
+async function synchroniser({ silencieux = false } = {}) {
+  if (synchroEnCours || DEMO || !S.profil || !navigator.onLine) { majIndicateurReseau(); return; }
+  const envois = await listeEnvois();
+  if (!envois.length) { majIndicateurReseau(); return; }
+  synchroEnCours = true;
+  majIndicateurReseau();
+  let reussis = 0, echoues = 0;
+  try {
+    await sb.auth.getSession(); // renouvelle la connexion si elle a expiré pendant la coupure
+    for (const envoi of envois) {
+      try {
+        if (envoi.type === 'rapport') {
+          const { echecs } = await envoyerRapport(envoi.rapport, envoi.photos || []);
+          if (echecs) toast(`Rapport envoyé, mais ${echecs} photo(s) n’ont pas pu être envoyées.`, 'warn', 6000);
+        } else if (envoi.type === 'appel') {
+          await envoyerAppel(envoi.appel);
+        }
+        await supprimerEnvoi(envoi.id);
+        reussis++;
+      } catch (e) {
+        if (estErreurReseau(e)) break;
+        echoues++;
+        await majEnvoi({ ...envoi, essais: envoi.essais + 1, erreur: messageErreur(e) });
+      }
+    }
+  } finally {
+    synchroEnCours = false;
+  }
+  if (reussis && !silencieux) toast(`📶 Réseau retrouvé : ${reussis} envoi${reussis > 1 ? 's' : ''} terminé${reussis > 1 ? 's' : ''} ✅`);
+  if (echoues) toast(`${echoues} envoi(s) refusé(s) : touchez l’indicateur en haut pour voir pourquoi.`, 'err', 7000);
+  await majIndicateurReseau();
+  if (reussis && /^#\/(rapports|pointage|dashboard)?$/.test(hashCourant() || '#/')) naviguer();
+}
+
+async function majIndicateurReseau() {
+  const pastille = $('#reseau');
+  if (!pastille || !S.profil) return;
+  const n = (await listeEnvois()).length;
+  const enLigne = navigator.onLine;
+  pastille.classList.toggle('hidden', enLigne && !n);
+  pastille.classList.toggle('hors', !enLigne);
+  pastille.innerHTML = !enLigne
+    ? `<span class="reseau-point"></span>Hors ligne${n ? ` · ${n}` : ''}`
+    : synchroEnCours ? '<span class="reseau-point tourne"></span>Envoi…' : `<span class="reseau-point attente"></span>${n} à envoyer`;
+  pastille.setAttribute('aria-label', !enLigne ? `Hors ligne, ${n} envoi(s) en attente` : `${n} envoi(s) en attente`);
+}
+
+async function ouvrirBoiteEnvois() {
+  const envois = await listeEnvois();
+  const m = ouvrirModale({
+    titre: navigator.onLine ? '📤 Envois en attente' : '📶 Vous êtes hors ligne',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:12px">${navigator.onLine
+      ? 'Ces éléments ont été enregistrés sur le téléphone pendant une coupure de réseau.'
+      : 'Vous pouvez continuer à faire vos rapports et votre pointage : ils sont gardés sur le téléphone et partiront tout seuls dès que le réseau revient.'}</p>
+      ${envois.length ? `<div class="paie-liste">${envois.map((x) => `<div class="paie-ligne">
+        <div class="paie-nom"><b>${x.type === 'rapport' ? `📋 Rapport du ${fdate(x.rapport.date_rapport)}` : `👷 Appel du ${fdate(x.appel.date)}`}</b>
+          <span>${esc(x.libelle || '')}${x.photos?.length ? ` · ${x.photos.length} photo(s)` : ''}</span>
+          ${x.erreur ? `<span style="color:var(--crit)">⚠️ ${esc(x.erreur)}</span>` : `<span>Enregistré le ${new Date(x.cree_le).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>`}</div>
+        <div class="paie-montant"><button type="button" class="btn sm ghost" data-retirer="${x.id}">Retirer</button></div></div>`).join('')}</div>`
+        : empty('✅', 'Rien en attente : tout est envoyé.')}
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button>${envois.length && navigator.onLine ? '<button type="button" class="btn primary" id="envoyer-tout">📤 Envoyer maintenant</button>' : ''}</div>`,
+  });
+  $('#envoyer-tout', m.el)?.addEventListener('click', async () => { m.fermer(); await synchroniser(); });
+  $$('[data-retirer]', m.el).forEach((b) => (b.onclick = async () => {
+    if (!(await confirmer('Retirer cet envoi ? Il sera définitivement perdu.', 'Retirer'))) return;
+    await supprimerEnvoi(b.dataset.retirer);
+    m.fermer(); majIndicateurReseau(); ouvrirBoiteEnvois();
+  }));
+}
+
+// Préparer le téléphone pour travailler sans réseau (chantiers, lots, ouvriers)
+async function prechargerHorsLigne() {
+  if (DEMO || !navigator.onLine || !can('technicien', 'coordinateur', 'direction')) return;
+  try {
+    const projets = await avecCache('projets-actifs', () => q(sb.from('projets').select('id, nom, statut').neq('statut', 'termine').order('nom')));
+    await Promise.all(projets.slice(0, 30).map((pr) => avecCache(`lots-${pr.id}`, () => q(sb.from('lots').select('id, nom, avancement').eq('projet_id', pr.id).order('ordre')))));
+    await avecCache('ouvriers-actifs', () => q(sb.from('ouvriers').select('id, nom, metier, telephone, tarif_jour, actif').eq('actif', true).order('nom')), { defaut: [] });
+  } catch { /* on réessaiera à la prochaine ouverture */ }
+}
+
+function ecouterReseau() {
+  if (DEMO || ecouterReseau.fait) return;
+  ecouterReseau.fait = true;
+  window.addEventListener('online', () => { majIndicateurReseau(); setTimeout(() => synchroniser(), 1500); });
+  window.addEventListener('offline', () => { majIndicateurReseau(); toast('📶 Réseau perdu : vous pouvez continuer, vos rapports et pointages seront envoyés plus tard.', 'warn', 6000); });
+  setInterval(() => { if (navigator.onLine) synchroniser({ silencieux: false }); }, 60000);
 }
 
 // ─── Guide vidéo de prise en main ───
@@ -925,6 +1123,7 @@ function construireInterface() {
       <div class="sep"></div>
       <div class="company">${esc(S.entreprise?.nom)}</div>
       <div class="topbar-right">
+        <button type="button" class="reseau-pill hidden" id="reseau"></button>
         <button class="icon-btn" id="btn-notif" title="Activité et alertes" aria-label="Activité et alertes">${icone('cloche', 20)}<span class="count hidden" id="notif-count"></span></button>
         <button class="user-chip" id="btn-user">
           <div class="avatar">${esc(initiales(p.nom))}</div>
@@ -937,6 +1136,7 @@ function construireInterface() {
     <nav class="bottom-nav">${principaux.map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icone('plus')}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
   </div>`;
   $('#nav-plus')?.addEventListener('click', ouvrirFeuilleMenu);
+  $('#reseau')?.addEventListener('click', ouvrirBoiteEnvois);
   $('#btn-user').onclick = ouvrirMenuUtilisateur;
   $('#btn-notif').onclick = ouvrirNotifications;
   majCompteurNotifications();
@@ -1053,12 +1253,40 @@ async function naviguer() {
   const main = $('#main');
   main.innerHTML = loading();
   main.scrollTop = 0;
+  if (!DEMO && !navigator.onLine && !['nouveau-rapport', 'pointage'].includes(cible)) { pageHorsLigne(); return; }
   try {
     await PAGES[cible](id);
+    banniereEnvois(cible);
   } catch (e) {
     console.error(e);
+    if (estErreurReseau(e)) { pageHorsLigne(); return; }
     main.innerHTML = `<div class="page"><div class="card">${empty('⚠️', messageErreur(e))}<div class="right"><button class="btn" onclick="location.reload()">Recharger</button></div></div></div>`;
   }
+}
+
+function pageHorsLigne() {
+  const raccourcis = [
+    can(...ROLES_RAPPORT) && ['#/nouveau-rapport', 'rapports', 'Faire un rapport'],
+    can('direction', 'coordinateur', 'technicien') && ['#/pointage', 'pointage', 'Faire l’appel'],
+  ].filter(Boolean);
+  $('#main').innerHTML = `<div class="page"><div class="card hors-ligne">
+    <div class="hors-ligne-ic">${icone('communiques', 30)}</div>
+    <h2>Vous êtes hors ligne</h2>
+    <p>Cette page a besoin d’internet. ${raccourcis.length ? 'Vous pouvez quand même faire votre <b>rapport</b> et votre <b>pointage</b> : ils seront envoyés tout seuls dès que le réseau revient.' : 'Elle s’affichera dès que le réseau revient.'}</p>
+    <div class="rc-boutons">${raccourcis.map(([h, ic, l]) => `<a class="btn primary" href="${h}">${icone(ic, 18)} ${l}</a>`).join('')}<button type="button" class="btn" id="hl-envois">📤 Envois en attente</button></div>
+  </div></div>`;
+  $('#hl-envois').onclick = ouvrirBoiteEnvois;
+}
+async function banniereEnvois(cible) {
+  if (DEMO || !['dashboard', 'rapports', 'pointage'].includes(cible)) return;
+  const n = (await listeEnvois()).length;
+  const pg = $('#main .page');
+  if (!n || !pg || $('.bandeau-envois', pg)) return;
+  const div = document.createElement('div');
+  div.className = 'notice warn bandeau-envois';
+  div.innerHTML = `⏳ <b>${n} envoi${n > 1 ? 's' : ''}</b> enregistré${n > 1 ? 's' : ''} sur le téléphone, en attente de réseau. <button type="button" class="btn sm">Voir</button>`;
+  $('button', div).onclick = ouvrirBoiteEnvois;
+  pg.prepend(div);
 }
 
 // ─── Licence ───
@@ -2211,7 +2439,7 @@ async function compresserImage(fichier, max = 1600, qualite = 0.8) {
 }
 
 PAGES['nouveau-rapport'] = async () => {
-  const projets = (await q(sb.from('projets').select('id, nom, statut').neq('statut', 'termine').order('nom')));
+  const projets = await avecCache('projets-actifs', () => q(sb.from('projets').select('id, nom, statut').neq('statut', 'termine').order('nom')));
   const cle = `koordin-brouillon-${S.profil.id}`;
   let brouillon = {};
   try { brouillon = JSON.parse(localStorage.getItem(cle) || '{}'); } catch { /* rien */ }
@@ -2226,6 +2454,7 @@ PAGES['nouveau-rapport'] = async () => {
   }
   const p = page(`
     ${entete('Rapport de chantier', 'Remplissez-le sur place : il remonte immédiatement à la coordination et à la direction.')}
+    ${navigator.onLine ? '' : '<div class="notice warn">📶 Hors ligne : remplissez votre rapport normalement, il sera gardé sur le téléphone puis envoyé tout seul au retour du réseau.</div>'}
     ${brouillon.travaux ? '<div class="notice">📝 Brouillon restauré : vos dernières saisies non envoyées ont été récupérées.</div>' : ''}
     <form class="card" id="f-rap" novalidate>
       <div class="form-grid">
@@ -2261,7 +2490,7 @@ PAGES['nouveau-rapport'] = async () => {
     $('#av-hint', p).textContent = lot ? `Avancement actuel enregistré : ${lot.avancement} %` : 'Choisissez un lot pour déclarer son avancement.';
   };
   const chargerLots = async (garder) => {
-    lots = selProjet.value ? await q(sb.from('lots').select('id, nom, avancement').eq('projet_id', selProjet.value).order('ordre')) : [];
+    lots = selProjet.value ? await avecCache(`lots-${selProjet.value}`, () => q(sb.from('lots').select('id, nom, avancement').eq('projet_id', selProjet.value).order('ordre')), { defaut: [] }) : [];
     selLot.innerHTML = '<option value="">— Général —</option>' + lots.map((l) => `<option value="${l.id}" ${l.id === garder ? 'selected' : ''}>${esc(l.nom)} (${l.avancement} %)</option>`).join('');
     const lot = lots.find((l) => l.id === selLot.value);
     if (lot && !garder) av.value = lot.avancement;
@@ -2300,25 +2529,30 @@ PAGES['nouveau-rapport'] = async () => {
     const btn = $('#envoyer', p);
     btn.disabled = true;
     btn.textContent = 'Envoi en cours…';
+    const rapport = {
+      id: crypto.randomUUID(), projet_id: d.projet_id, lot_id: d.lot_id, date_rapport: d.date_rapport, meteo: d.meteo,
+      effectif: d.effectif != null ? Math.round(num(d.effectif)) : null,
+      travaux: d.travaux, incidents: d.incidents, besoins: d.besoins,
+      avancement: d.lot_id ? Math.round(num(av.value)) : null,
+    };
+    const blobs = photos.map((ph) => ph.blob);
+    const garderSurTelephone = async () => {
+      await ajouterEnvoi({ type: 'rapport', rapport, photos: blobs, libelle: projets.find((x) => x.id === d.projet_id)?.nom || '' });
+      try { localStorage.removeItem(cle); } catch { /* rien */ }
+      toast('📶 Pas de réseau : rapport enregistré sur le téléphone. Il partira tout seul dès que le réseau revient ✅', 'warn', 7000);
+      majIndicateurReseau();
+      allerA('#/rapports');
+    };
     try {
-      const rapport = await q(sb.from('rapports').insert({
-        projet_id: d.projet_id, lot_id: d.lot_id, date_rapport: d.date_rapport, meteo: d.meteo,
-        effectif: d.effectif != null ? Math.round(num(d.effectif)) : null,
-        travaux: d.travaux, incidents: d.incidents, besoins: d.besoins,
-        avancement: d.lot_id ? Math.round(num(av.value)) : null,
-      }).select('id').single());
-      let echecs = 0;
-      for (let i = 0; i < photos.length; i++) {
-        btn.textContent = `Envoi des photos ${i + 1}/${photos.length}…`;
-        const chemin = `${S.entreprise.id}/${rapport.id}/${Date.now()}-${i + 1}.jpg`;
-        const { error } = await sb.storage.from('photos-chantier').upload(chemin, photos[i].blob, { contentType: 'image/jpeg' });
-        if (error) { echecs++; continue; }
-        await sb.from('rapport_photos').insert({ rapport_id: rapport.id, chemin });
-      }
+      if (!navigator.onLine) { await garderSurTelephone(); return; }
+      const { echecs } = await envoyerRapport(rapport, blobs, (i, n) => { btn.textContent = `Envoi des photos ${i}/${n}…`; });
       try { localStorage.removeItem(cle); } catch { /* rien */ }
       toast(echecs ? `Rapport envoyé, mais ${echecs} photo(s) n’ont pas pu être envoyées.` : 'Rapport envoyé ✅ La coordination est prévenue.', echecs ? 'warn' : 'ok');
       allerA('#/rapports');
     } catch (err) {
+      if (estErreurReseau(err)) {
+        try { await garderSurTelephone(); return; } catch { /* stockage indisponible : on garde le brouillon */ }
+      }
       toast(`${messageErreur(err)} Votre saisie est conservée en brouillon.`, 'err', 7000);
       btn.disabled = false;
       btn.textContent = '📤 Envoyer le rapport';
@@ -3848,6 +4082,7 @@ PAGES.pointage = async () => {
     ...(can('direction', 'coordinateur', 'technicien') ? [['ouvriers', '👷 Ouvriers']] : []),
   ];
   if (!onglets.some(([k]) => k === ongletPointage)) ongletPointage = onglets[0][0];
+  if (!navigator.onLine && onglets.some(([k]) => k === 'appel')) ongletPointage = 'appel';
   const p = page(`
     ${entete('Pointage', 'Présence des ouvriers journaliers et paie de la semaine')}
     <div class="tabs">${onglets.map(([k, l]) => `<button class="tab ${k === ongletPointage ? 'active' : ''}" data-o="${k}">${l}</button>`).join('')}</div>
@@ -3867,7 +4102,7 @@ PAGES.pointage = async () => {
 };
 
 async function ongletAppel(zone) {
-  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  const projets = await avecCache('projets-actifs', () => q(sb.from('projets').select('id, nom, statut').neq('statut', 'termine').order('nom')));
   if (!projets.length) { zone.innerHTML = `<div class="card">${empty('🏗️', 'Aucun chantier en cours. Le pointage se fait sur un chantier.')}</div>`; return; }
   const tech = role() === 'technicien';
   const auj = todayISO();
@@ -3888,14 +4123,13 @@ async function ongletAppel(zone) {
   const charger = async () => {
     zAppel.innerHTML = loading();
     const [o, pt, ail] = await Promise.all([
-      q(sb.from('ouvriers').select('id, nom, metier, telephone, tarif_jour, actif').eq('actif', true).order('nom')),
-      q(sb.from('pointages').select('id, ouvrier_id, presence, tarif_jour, paye').eq('projet_id', projetId).eq('date_pointage', date)),
-      sb.rpc('pointages_du_jour', { p_date: date }),
+      avecCache('ouvriers-actifs', () => q(sb.from('ouvriers').select('id, nom, metier, telephone, tarif_jour, actif').eq('actif', true).order('nom'))),
+      avecCache(`pointages-${projetId}-${date}`, () => q(sb.from('pointages').select('id, ouvrier_id, presence, tarif_jour, paye').eq('projet_id', projetId).eq('date_pointage', date)), { defaut: [] }),
+      avecCache(`ailleurs-${date}`, async () => { const r = await sb.rpc('pointages_du_jour', { p_date: date }); if (r.error) throw r.error; return r.data || []; }, { defaut: [] }),
     ]);
-    if (ail.error) throw ail.error;
     ouvriers = o;
     deja = new Map(pt.map((x) => [x.ouvrier_id, x]));
-    ailleurs = new Map((ail.data || []).filter((x) => x.projet_id !== projetId).map((x) => [x.ouvrier_id, x.projet]));
+    ailleurs = new Map(ail.filter((x) => x.projet_id !== projetId).map((x) => [x.ouvrier_id, x.projet]));
     choix = new Map(pt.map((x) => [x.ouvrier_id, Number(x.presence)]));
     dessiner();
   };
@@ -3956,22 +4190,22 @@ async function ongletAppel(zone) {
   const enregistrer = async () => {
     const btn = $('#ap-ok', zAppel);
     btn.disabled = true; btn.textContent = 'Enregistrement…';
+    const appel = { projet_id: projetId, date, choix: [...choix].filter(([id]) => !ailleurs.has(id) && !deja.get(id)?.paye) };
+    const r = resume();
+    const garderSurTelephone = async () => {
+      await ajouterEnvoi({ type: 'appel', appel, libelle: `${projets.find((x) => x.id === projetId)?.nom || ''} · ${r.presents + r.demis} ouvrier(s)` });
+      memoriser(`pointages-${projetId}-${date}`, appel.choix.filter(([, v]) => v).map(([id, v]) => ({ id: null, ouvrier_id: id, presence: v, tarif_jour: ouvriers.find((x) => x.id === id)?.tarif_jour, paye: false })));
+      toast('📶 Pas de réseau : appel enregistré sur le téléphone. Il partira tout seul dès que le réseau revient ✅', 'warn', 7000);
+      majIndicateurReseau();
+      btn.disabled = false; btn.textContent = '💾 Enregistrer l’appel';
+    };
     try {
-      const ajouts = [], modifs = [], suppr = [];
-      choix.forEach((v, id) => {
-        const ex = deja.get(id);
-        if (ex?.paye || ailleurs.has(id)) return;
-        if (!ex && v) ajouts.push({ projet_id: projetId, ouvrier_id: id, date_pointage: date, presence: v });
-        else if (ex && !v) suppr.push(ex.id);
-        else if (ex && v && Number(ex.presence) !== v) modifs.push([ex.id, v]);
-      });
-      if (ajouts.length) await q(sb.from('pointages').insert(ajouts));
-      for (const [id, v] of modifs) await q(sb.from('pointages').update({ presence: v }).eq('id', id));
-      if (suppr.length) await q(sb.from('pointages').delete().in('id', suppr));
-      const r = resume();
+      if (!navigator.onLine) { await garderSurTelephone(); return; }
+      await envoyerAppel(appel);
       toast(`Appel enregistré ✅ ${r.presents + r.demis} ouvrier(s) pointé(s) le ${fdate(date)}.`);
       await charger();
     } catch (e) {
+      if (estErreurReseau(e)) { try { await garderSurTelephone(); return; } catch { /* stockage indisponible */ } }
       toast(erreurPointage(e), 'err', 7000);
       btn.disabled = false; btn.textContent = '💾 Enregistrer l’appel';
     }

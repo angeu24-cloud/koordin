@@ -1113,3 +1113,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .page > *, .feuille, .feuille-fond { animation: none !important; }
 }
+
+/* 2.5 : hors ligne */
+.reseau-pill { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; font: 600 12px var(--font); cursor: pointer;
+  color: var(--warn); background: var(--warn-dim); border: 1px solid rgba(240, 180, 41, .35); white-space: nowrap; }
+.reseau-pill.hors { color: var(--crit); background: var(--crit-dim); border-color: rgba(255, 107, 107, .35); }
+.reseau-point { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.reseau-point.tourne { animation: reseau-pulse 1s ease-in-out infinite; }
+@keyframes reseau-pulse { 50% { opacity: .3; } }
+.hors-ligne { text-align: center; padding: 30px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.hors-ligne h2 { font-size: 20px; font-weight: 800; }
+.hors-ligne p { color: var(--text-2); max-width: 420px; line-height: 1.55; }
+.hors-ligne-ic { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; color: var(--crit); background: var(--crit-dim); border: 1px solid rgba(255, 107, 107, .3); }
+.hors-ligne .rc-boutons { justify-content: center; }
+.hors-ligne .btn .ic { display: inline-block; vertical-align: -3px; }
+.bandeau-envois { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bandeau-envois .btn { margin-left: auto; }

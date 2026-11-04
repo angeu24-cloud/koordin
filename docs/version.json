@@ -1,9 +1,9 @@
 {
-  "version": "2.4",
-  "date": "2026-11-12",
+  "version": "2.5",
+  "date": "2026-11-14",
   "nouveautes": [
-    "Nouveau look « sombre et doré » : cartes en relief, boutons dorés, onglets en pastilles, apparition douce des pages.",
-    "Icônes dessinées à la place des emojis dans les menus et les indicateurs.",
-    "Menu du bas simplifié : vos 4 rubriques principales + « Plus » qui ouvre toutes les autres en grandes tuiles."
+    "Fonctionne sans réseau : le rapport du jour (avec photos) et l'appel du pointage peuvent être faits même hors connexion.",
+    "Ils sont gardés sur le téléphone et partent tout seuls dès que le réseau revient, même si l'application a été fermée.",
+    "Une pastille en haut indique « Hors ligne » ou le nombre d'envois en attente ; touchez-la pour les voir."
   ]
 }
