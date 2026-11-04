@@ -1,9 +1,10 @@
 {
-  "version": "2.1",
-  "date": "2026-11-07",
+  "version": "2.2",
+  "date": "2026-11-08",
   "nouveautes": [
-    "Parrainage : dans « Abonnement », retrouvez votre code et invitez d'autres entreprises du BTP par WhatsApp en un geste.",
-    "L'entreprise invitée profite de 30 jours d'essai gratuit au lieu de 14.",
-    "Vous gagnez 1 mois offert sur votre licence dès qu'elle paie son premier abonnement. Suivez vos filleules et vos mois gagnés au même endroit."
+    "Comptabilité : « 📷 Scanner des factures ». Prenez une facture en photo ou choisissez un PDF : KOORDIN la lit et pré-remplit fournisseur, numéro, dates, montants HT, TVA et TTC. Vous vérifiez, puis vous enregistrez.",
+    "Plusieurs factures d'un coup : sélectionnez jusqu'à 20 photos ou PDF, elles s'enchaînent une par une.",
+    "Chaque facture garde son justificatif (photo ou PDF), consultable avec le trombone 📎.",
+    "Nouvel export Excel (.xlsx) : 5 onglets (Factures avec filtres et totaux, Par chantier, Par fournisseur, Échéancier, Par mois), prêts pour le comptable."
   ]
 }
