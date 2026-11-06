@@ -1129,3 +1129,8 @@ body {
 .hors-ligne .btn .ic { display: inline-block; vertical-align: -3px; }
 .bandeau-envois { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bandeau-envois .btn { margin-left: auto; }
+
+/* 2.6 : prévenir l'auteur d'un rapport */
+.wa-apercu { background: rgba(37, 211, 102, .08); border: 1px solid rgba(37, 211, 102, .3); border-radius: 14px 14px 14px 4px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 4px; }
+.form-actions { flex-wrap: wrap; }
+@media (max-width: 520px) { .form-actions > .btn { flex: 1 1 auto; justify-content: center; text-align: center; } }

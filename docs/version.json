@@ -1,9 +1,8 @@
 {
-  "version": "2.5",
-  "date": "2026-11-14",
+  "version": "2.6",
+  "date": "2026-11-16",
   "nouveautes": [
-    "Fonctionne sans réseau : le rapport du jour (avec photos) et l'appel du pointage peuvent être faits même hors connexion.",
-    "Ils sont gardés sur le téléphone et partent tout seuls dès que le réseau revient, même si l'application a été fermée.",
-    "Une pastille en haut indique « Hors ligne » ou le nombre d'envois en attente ; touchez-la pour les voir."
+    "Quand votre rapport est validé ou rejeté, vous recevez tout de suite une alerte dans KOORDIN (avec le commentaire ou le motif du rejet).",
+    "Celui qui valide peut aussi prévenir l'auteur par WhatsApp en un geste : le message est déjà écrit avec son numéro."
   ]
 }

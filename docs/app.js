@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.5';
+const VERSION = '2.6';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1203,6 +1203,14 @@ function ecouterTempsReel() {
   S.canal = sb.channel('koordin-activites')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activites' }, (payload) => {
       const a = payload.new;
+      if (a.destinataire_id && a.destinataire_id === S.profil.id) {
+        toast(a.message, a.niveau === 'info' ? 'ok' : 'warn', 10000);
+        try { navigator.vibrate?.([120, 60, 120]); } catch { /* rien */ }
+        majCompteurNotifications();
+        if (/^#\/(rapports|dashboard)?$/.test(hashCourant() || '#/')) naviguer();
+        return;
+      }
+      if (a.destinataire_id) return;
       if (a.type === 'equipe') chargerEquipe();
       if (a.acteur_id !== S.profil.id && a.niveau !== 'info') toast(a.message, a.niveau === 'critique' ? 'err' : 'warn', 7000);
       else if (a.acteur_id !== S.profil.id && a.type === 'rapport') toast(a.message, 'ok');
@@ -2378,7 +2386,7 @@ async function detailRapport(id) {
   const m = ouvrirModale({ titre: 'Rapport de chantier', large: true, corps: loading() });
   try {
     const r = await q(sb.from('rapports')
-      .select('*, projets(nom), lots(nom, avancement), auteur:profils!rapports_auteur_id_fkey(nom), validateur:profils!rapports_valide_par_fkey(nom), rapport_photos(chemin)')
+      .select('*, projets(nom), lots(nom, avancement), auteur:profils!rapports_auteur_id_fkey(nom, email, telephone), validateur:profils!rapports_valide_par_fkey(nom), rapport_photos(chemin)')
       .eq('id', id).single());
     let urls = [];
     if (r.rapport_photos?.length) {
@@ -2409,9 +2417,10 @@ async function detailRapport(id) {
       if (statut === 'rejete' && !com) return toast('Indiquez le motif du rejet.', 'warn');
       try {
         await q(sb.from('rapports').update({ statut, commentaire_validation: com || null }).eq('id', r.id));
-        toast(statut === 'valide' ? 'Rapport validé.' : 'Rapport rejeté, le technicien est informé.');
         m.fermer();
         naviguer();
+        if (r.auteur_id !== S.profil.id) proposerWhatsAppRapport(r, statut, com);
+        else toast(statut === 'valide' ? 'Rapport validé.' : 'Rapport rejeté.');
       } catch (e) { toast(messageErreur(e), 'err'); }
     };
     $('#val', m.el)?.addEventListener('click', () => decider('valide'));
@@ -2419,6 +2428,31 @@ async function detailRapport(id) {
   } catch (e) {
     $('.modal-body', m.el).innerHTML = empty('⚠️', messageErreur(e));
   }
+}
+
+// Après une validation : prévenir l'auteur par WhatsApp en un geste
+function numeroAuteur(profil) {
+  const brut = profil?.telephone || (/^(\d{8,15})@tel\.koordin\.app$/.exec(profil?.email || '') || [])[1] || '';
+  let n = String(brut).replace(/\D/g, '');
+  if (n.length === 10 && n.startsWith('0')) n = `225${n}`; // numéro ivoirien saisi sans indicatif
+  return n.length >= 8 ? n : '';
+}
+function proposerWhatsAppRapport(r, statut, commentaire) {
+  const prenom = String(r.auteur?.nom || '').split(' ')[0];
+  const quand = parseDay(r.date_rapport).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const message = statut === 'valide'
+    ? `Bonjour ${prenom}, votre rapport du ${quand} sur « ${r.projets?.nom} » a été validé ✅.${commentaire ? ` Commentaire : ${commentaire}` : ''}\n${S.profil.nom} (KOORDIN)`
+    : `Bonjour ${prenom}, votre rapport du ${quand} sur « ${r.projets?.nom} » a été rejeté ↩️. Motif : ${commentaire}\nMerci de le corriger et d’envoyer un nouveau rapport dans KOORDIN.\n${S.profil.nom}`;
+  const numero = numeroAuteur(r.auteur);
+  const m = ouvrirModale({
+    titre: statut === 'valide' ? '✅ Rapport validé' : '↩️ Rapport rejeté',
+    corps: `<p style="margin-bottom:10px"><b>${esc(r.auteur?.nom || '')}</b> a reçu une alerte dans KOORDIN.</p>
+      <p class="muted" style="font-size:13px;margin-bottom:12px">Voulez-vous aussi le prévenir sur WhatsApp ? Le message est déjà écrit${numero ? '' : ' (choisissez le contact dans WhatsApp : son numéro n’est pas connu)'}.</p>
+      <div class="wa-apercu">${esc(message).replace(/\n/g, '<br>')}</div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Pas maintenant</button>
+        <a class="btn primary" id="wa-envoyer" href="https://wa.me/${numero}?text=${encodeURIComponent(message)}" target="_blank" rel="noopener">📲 Prévenir par WhatsApp</a></div>`,
+  });
+  $('#wa-envoyer', m.el).addEventListener('click', () => setTimeout(() => m.fermer(), 300));
 }
 
 // ─── Nouveau rapport (pensé pour le téléphone) ───
