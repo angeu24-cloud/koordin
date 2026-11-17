@@ -1134,3 +1134,37 @@ body {
 .wa-apercu { background: rgba(37, 211, 102, .08); border: 1px solid rgba(37, 211, 102, .3); border-radius: 14px 14px 14px 4px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 4px; }
 .form-actions { flex-wrap: wrap; }
 @media (max-width: 520px) { .form-actions > .btn { flex: 1 1 auto; justify-content: center; text-align: center; } }
+
+/* 2.7 : matériel, sécurité, réception, rappels */
+.secu-chantiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.secu-chantier { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 14px; background: var(--verre); border: 1px solid var(--liseré); }
+.secu-chantier b { font-size: 26px; font-weight: 800; color: var(--ok); letter-spacing: -.5px; }
+.secu-chantier span { font-size: 12px; color: var(--text-2); }
+.secu-ligne img, .reserve-ligne img { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+.secu-ligne, .reserve-ligne { justify-content: flex-start; }
+.secu-ligne .paie-nom, .reserve-ligne .paie-nom { flex: 1; }
+.secu-photo { width: 100%; max-height: 280px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; }
+.reserve-ajout { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; margin-top: 10px; align-items: center; }
+.signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.sig { position: relative; }
+.signature-pad { width: 100%; height: 150px; background: #fff; border-radius: 12px; border: 1px dashed var(--gold); touch-action: none; display: block; margin-top: 6px; }
+.signature-effacer { position: absolute; right: 6px; bottom: 6px; background: rgba(255, 255, 255, .85); color: #111521; }
+.signature-img { width: 100%; height: 150px; object-fit: contain; background: #fff; border-radius: 12px; margin-top: 6px; }
+.rapports-jour .paie-montant { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 520px) {
+  .reserve-ajout { grid-template-columns: 1fr 1fr; }
+  .signatures { grid-template-columns: 1fr; }
+}
+
+/* 2.8 : mon espace et salaires */
+.espace-carte { display: flex; align-items: center; gap: 16px; padding: 18px; margin-bottom: 16px; border-radius: var(--rayon, 18px);
+  background: radial-gradient(400px 200px at 0% 0%, rgba(232, 160, 32, .18), transparent 70%), var(--surface); border: 1px solid var(--liseré-or, var(--border)); box-shadow: var(--ombre-carte, none); }
+.espace-avatar { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; font-weight: 800; font-size: 22px; color: #1a1203;
+  background: linear-gradient(135deg, var(--or-1, #f7cf6f), var(--or-3, #b9740a)); box-shadow: 0 8px 24px rgba(232, 160, 32, .3); flex-shrink: 0; }
+.espace-qui { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.espace-qui p { font-size: 13px; color: var(--text-2); }
+.a-signer { border-color: var(--gold) !important; box-shadow: inset 3px 0 0 var(--gold) !important; }
+.versement-montant { font-size: 30px; font-weight: 800; letter-spacing: -.8px; text-align: center; padding: 14px; margin-bottom: 12px; border-radius: 14px;
+  color: var(--gold); background: var(--gold-dim); border: 1px solid var(--liseré-or, var(--border)); }
+.paie-mois-ligne { cursor: pointer; gap: 12px; }
+.paie-mois-ligne .paie-nom { flex: 1; }

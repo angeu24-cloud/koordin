@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.6';
+const VERSION = '2.8';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -48,10 +48,14 @@ const MENU = [
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
+  { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
+  { r: 'materiel', court: 'Matériel', label: 'Matériel et engins', ico: '🚜', roles: ['direction', 'coordinateur', 'magasinier', 'technicien', 'achats', 'comptable'] },
+  { r: 'securite', court: 'Sécurité', label: 'Sécurité chantier', ico: '🦺', roles: ['direction', 'coordinateur', 'technicien'] },
   { r: 'equipe', court: 'Équipe',          label: 'Équipe',          ico: '👥', roles: ['direction'] },
   { r: 'ia', court: 'IA',              label: 'Assistant IA',    ico: '🧠', roles: ROLES_IA },
   { r: 'abonnement', court: 'Abonnement', label: 'Abonnement', ico: '💳', roles: ['direction'], licence: true },
+  { r: 'mon-espace', court: 'Mon espace', label: 'Mon espace', ico: '👤', roles: TOUS },
   { r: 'parametres', court: 'Réglages',      label: 'Paramètres',      ico: '⚙️', roles: ['direction'] },
   { r: 'console', court: 'Console', label: 'Console KOORDIN', ico: '🛡️', roles: TOUS, admin: true },
 ];
@@ -1068,6 +1072,10 @@ const TRACES = {
   abonnement: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M7 15h4"/>',
   parametres: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.4 4.4l1.7 1.7M17.9 17.9l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.4 19.6l1.7-1.7M17.9 6.1l1.7-1.7"/>',
   console: '<path d="M12 3 19.5 6v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/>',
+  materiel: '<path d="M2.5 17V9.5h9l3 4.5h4a2 2 0 0 1 2 2v1"/><path d="M11.5 9.5V6h-5v3.5"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/><path d="M8.5 17.5h6.5"/>',
+  securite: '<path d="M4 14a8 8 0 0 1 16 0v2H4v-2Z"/><path d="M12 6V3.5"/><path d="M9.5 6.5 9 4M14.5 6.5 15 4"/><path d="M3 16h18v1.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5V16Z"/>',
+  'mon-espace': '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
   cloche: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
   tendance: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
@@ -1157,6 +1165,7 @@ function ouvrirMenuUtilisateur(e) {
     <button data-theme-set="light">${theme === 'light' ? '●' : '○'} Thème clair (chantier)</button>
     <button data-theme-set="dark">${theme === 'dark' ? '●' : '○'} Thème sombre</button>
     ${S.installPrompt ? '<button id="m-install">📲 Installer l’application</button>' : ''}
+    ${DEMO ? '' : '<button id="m-espace">👤 Mon espace</button>'}
     ${DEMO ? '' : '<button id="m-guide">🎓 Guide vidéo</button>'}
     ${DEMO ? '' : `<button id="m-news">✨ Nouveautés <span class="muted" style="margin-left:auto">v${VERSION}</span></button>`}
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
@@ -1172,6 +1181,7 @@ function ouvrirMenuUtilisateur(e) {
   $('#m-install', m)?.addEventListener('click', async () => { S.installPrompt.prompt(); S.installPrompt = null; fermerPanneaux(); });
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
   $('#m-guide', m)?.addEventListener('click', () => { fermerPanneaux(); ouvrirGuide(); });
+  $('#m-espace', m)?.addEventListener('click', () => { fermerPanneaux(); allerA('#/mon-espace'); });
   $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); await sb.auth.signOut(); };
 }
 
@@ -1207,13 +1217,13 @@ function ecouterTempsReel() {
         toast(a.message, a.niveau === 'info' ? 'ok' : 'warn', 10000);
         try { navigator.vibrate?.([120, 60, 120]); } catch { /* rien */ }
         majCompteurNotifications();
-        if (/^#\/(rapports|dashboard)?$/.test(hashCourant() || '#/')) naviguer();
+        if (/^#\/(rapports|dashboard|mon-espace|salaires)?$/.test(hashCourant() || '#/')) naviguer();
         return;
       }
       if (a.destinataire_id) return;
       if (a.type === 'equipe') chargerEquipe();
       if (a.acteur_id !== S.profil.id && a.niveau !== 'info') toast(a.message, a.niveau === 'critique' ? 'err' : 'warn', 7000);
-      else if (a.acteur_id !== S.profil.id && a.type === 'rapport') toast(a.message, 'ok');
+      else if (a.acteur_id !== S.profil.id && (a.type === 'rapport' || (a.type === 'equipe' && a.roles?.length))) toast(a.message, 'ok', 7000);
       majCompteurNotifications();
     })
     .subscribe();
@@ -1335,6 +1345,8 @@ function bonjour() {
 PAGES.dashboard = async () => {
   const tableaux = { technicien: dashTechnicien, achats: dashAchats, comptable: dashComptable, magasinier: dashMagasinier };
   await (tableaux[role()] || dashDirection)();
+  await encartRapportsDuJour();
+  await encartVersementsAConfirmer().catch(() => {});
   placerAnnonce($('#zone-annonce'));
   await encartCommuniques();
 };
@@ -1437,6 +1449,7 @@ async function dashTechnicien() {
   ]);
   const nomP = (id) => projets.find((p) => p.id === id)?.nom || '';
   const aujourdhui = rapports.some((r) => r.date_rapport === todayISO());
+  setTimeout(() => rappelRapportTechnicien(aujourdhui, projets.length > 0), 900);
   const url = await urlsPhotos(projets.map(couvertureDe));
   page(`
     ${entete(bonjour(), 'Votre journée sur le terrain')}
@@ -2067,6 +2080,7 @@ PAGES.projet = async (id) => {
     ['equipe', 'Équipe'],
     ...(can('direction', 'coordinateur', 'achats', 'comptable', 'magasinier') ? [['achats', 'Achats et factures']] : []),
     ['galerie', '📷 Galerie'],
+    ...(can('direction', 'coordinateur', 'technicien') && !DEMO ? [['reception', '🤝 Réception']] : []),
     ['communiques', 'Communiqués'],
   ];
   if (!onglets.some(([k]) => k === ongletProjet)) ongletProjet = 'apercu';
@@ -2133,7 +2147,7 @@ async function rendreOngletProjet(projet) {
   const zone = $('#onglet');
   zone.innerHTML = loading();
   detruireGraphiques();
-  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques, galerie: ongletGalerie };
+  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques, galerie: ongletGalerie, reception: ongletReception };
   try {
     await ONGLETS[ongletProjet](projet, zone);
   } catch (e) {
@@ -4066,6 +4080,839 @@ async function pdfSituation(id) {
     piedPDF(doc, `${S.entreprise?.nom || ''} - Situation n° ${s.numero} - ${d.numero}`);
     presenterPDF(doc.output('blob'), `Situation-${s.numero}-${d.numero}.pdf`, `Bonjour, veuillez trouver ci-joint la situation de travaux n° ${s.numero} (${d.objet}). Net à payer : ${money(s.net_a_payer)}. Cordialement, ${S.entreprise?.nom || ''}`);
   } catch (e) { console.error(e); toast(erreurVentes(e), 'err', 6000); }
+}
+
+// ═══════════════════════════════ MATÉRIEL ET ENGINS (2.7) ═══════════════════════════════
+
+const CATEGORIES_MATERIEL = { engin: '🚜 Engin', vehicule: '🚚 Véhicule', outil: '🔨 Outil', groupe: '⚡ Groupe électrogène', echafaudage: '🏗️ Échafaudage', autre: '📦 Autre' };
+const ETAT_MATERIEL = {
+  disponible: ['info', '🅿️ Au dépôt'],
+  en_service: ['ok', '✅ En service'],
+  en_panne: ['crit', '⚠️ En panne'],
+  entretien: ['warn', '🛠️ En entretien'],
+};
+const TYPE_EVT_MATERIEL = { affectation: '🚚 Déplacement', carburant: '⛽ Carburant', panne: '⚠️ Panne', reparation: '🔧 Réparation', entretien: '🛠️ Entretien', compteur: '⏱️ Relevé du compteur' };
+let ongletMateriel = 'parc';
+const entretienProche = (m) => m.entretien_tous_les && num(m.compteur) - num(m.dernier_entretien) >= num(m.entretien_tous_les) * 0.9;
+const erreurMateriel = (e) => (/relation .*(materiels|materiel_evenements|securite|receptions|reserves)/i.test(String(e?.message)) && /does not exist|schema cache|could not find/i.test(String(e?.message))
+  ? 'Cette fonction nécessite la mise à jour 2.7 de la base de données (kit d’installation).' : messageErreur(e));
+
+PAGES.materiel = async () => {
+  const gerer = can('direction', 'coordinateur', 'magasinier');
+  const p = page(`
+    ${entete('Matériel et engins', 'Où est chaque engin, carburant, pannes, entretien et coût par chantier', gerer ? '<button class="btn primary" id="nm">＋ Nouveau matériel</button>' : '')}
+    <div class="tabs"><button class="tab ${ongletMateriel === 'parc' ? 'active' : ''}" data-o="parc">🚜 Le parc</button>${can('direction', 'coordinateur', 'comptable', 'magasinier') ? `<button class="tab ${ongletMateriel === 'couts' ? 'active' : ''}" data-o="couts">💰 Coût par chantier</button>` : ''}</div>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('🚜', 'Le suivi du matériel fonctionne dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try { if (ongletMateriel === 'couts') await coutsMateriel(zone); else await parcMateriel(zone, rendre); }
+    catch (e) { zone.innerHTML = `<div class="card">${empty('🚜', erreurMateriel(e))}</div>`; }
+  };
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletMateriel = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
+  $('#nm', p)?.addEventListener('click', () => formulaireMateriel(null, rendre));
+  await rendre();
+};
+
+async function parcMateriel(zone, rendre) {
+  const materiels = await q(sb.from('materiels').select('*, projets(nom)').eq('actif', true).order('nom'));
+  const panne = materiels.filter((m) => m.etat === 'en_panne').length;
+  const entretien = materiels.filter(entretienProche).length;
+  let filtre = '';
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi('Matériels suivis', materiels.length)}
+      ${kpi('En service', materiels.filter((m) => m.etat === 'en_service').length)}
+      ${kpi('En panne', panne, panne ? 'À réparer' : '✅ Aucune', panne ? 'alert' : '')}
+      ${kpi('Entretien à prévoir', entretien, entretien ? 'Vidange, révision…' : '✅ Rien d’urgent', entretien ? 'warn' : '')}
+    </div>
+    <div class="card"><input class="input" id="mq" placeholder="🔍 Rechercher un engin, un chantier…" style="width:100%">
+      <div class="paie-liste" id="ml"></div></div>`;
+  const dessiner = () => {
+    const l = materiels.filter((m) => !filtre || `${m.nom} ${m.reference || ''} ${m.projets?.nom || ''}`.toLowerCase().includes(filtre));
+    $('#ml', zone).innerHTML = l.length ? l.map((m) => `<button type="button" class="paie-ligne vente-ligne" data-mat="${m.id}">
+      <div class="paie-nom"><b>${esc(m.nom)}</b><span>${esc([CATEGORIES_MATERIEL[m.categorie], m.reference, m.proprietaire === 'location' ? 'En location' : null].filter(Boolean).join(' · '))}</span>
+        <span>📍 ${esc(m.projets?.nom || 'Au dépôt')} · ⏱️ ${nf.format(num(m.compteur))} ${m.unite_compteur}${entretienProche(m) ? ' · <b style="color:var(--warn)">🛠️ Entretien à prévoir</b>' : ''}</span></div>
+      <div class="paie-montant">${badge(ETAT_MATERIEL[m.etat])}${num(m.cout_jour) ? `<span>${moneyShort(m.cout_jour)}/jour</span>` : ''}</div></button>`).join('')
+      : empty('🚜', materiels.length ? 'Aucun résultat.' : 'Aucun matériel enregistré. Ajoutez vos engins, véhicules et gros outils pour savoir où ils sont et ce qu’ils coûtent.');
+    $$('[data-mat]', zone).forEach((b) => (b.onclick = () => ficheMateriel(b.dataset.mat, rendre)));
+  };
+  $('#mq', zone).oninput = (e) => { filtre = e.target.value.toLowerCase(); dessiner(); };
+  dessiner();
+}
+
+async function formulaireMateriel(m, rendre) {
+  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  ouvrirModale({
+    titre: m ? `Modifier « ${m.nom} »` : 'Nouveau matériel',
+    corps: `<div class="form-grid">
+      ${F.text('nom', 'Nom', m?.nom, { required: true, full: true, placeholder: 'Ex. Bétonnière 350 L n°2, Camion benne Renault' })}
+      ${F.select('categorie', 'Catégorie', Object.entries(CATEGORIES_MATERIEL), m?.categorie || 'engin')}
+      ${F.text('reference', 'Immatriculation / n° de série', m?.reference)}
+      ${F.select('proprietaire', 'Propriété', [['entreprise', 'À l’entreprise'], ['location', 'En location']], m?.proprietaire || 'entreprise')}
+      ${F.text('cout_jour', `Coût par jour (${devise()})`, m?.cout_jour ?? '', { type: 'number', min: 0, inputmode: 'numeric', hint: 'Prix de location, ou coût interne estimé' })}
+      ${F.select('unite_compteur', 'Compteur', [['h', 'Heures (engins)'], ['km', 'Kilomètres (véhicules)']], m?.unite_compteur || 'h')}
+      ${F.text('compteur', 'Compteur actuel', m?.compteur ?? 0, { type: 'number', min: 0, step: 'any', inputmode: 'decimal' })}
+      ${F.text('entretien_tous_les', 'Entretien tous les… (h ou km)', m?.entretien_tous_les ?? '', { type: 'number', min: 1, step: 'any', inputmode: 'decimal', hint: 'Ex. 250 h pour une vidange. Facultatif.' })}
+      ${m ? '' : F.select('projet_id', 'Où se trouve-t-il ?', [['', '🅿️ Au dépôt'], ...projets.map((x) => [x.id, x.nom])], '')}
+      ${m ? `<label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="actif" ${m.actif ? 'checked' : ''} style="width:auto"> Toujours dans le parc (décochez s’il est vendu ou rendu)</label>` : ''}
+    </div>`,
+    onSubmit: async (d) => {
+      const data = { nom: d.nom.trim(), categorie: d.categorie, reference: d.reference || null, proprietaire: d.proprietaire, cout_jour: num(d.cout_jour), unite_compteur: d.unite_compteur, compteur: num(d.compteur), entretien_tous_les: d.entretien_tous_les ? num(d.entretien_tous_les) : null };
+      try {
+        if (m) { data.actif = !!d.actif; await q(sb.from('materiels').update(data).eq('id', m.id)); }
+        else {
+          data.dernier_entretien = num(d.compteur);
+          const cree = await q(sb.from('materiels').insert(data).select('id').single());
+          if (d.projet_id) await q(sb.from('materiel_evenements').insert({ materiel_id: cree.id, type: 'affectation', projet_id: d.projet_id }));
+        }
+      } catch (e) { throw new Error(erreurMateriel(e)); }
+      toast(m ? 'Matériel mis à jour.' : `${data.nom} ajouté ✅`);
+      rendre();
+    },
+  });
+}
+
+async function ficheMateriel(id, rendre) {
+  const [m, evts, projets] = await Promise.all([
+    q(sb.from('materiels').select('*, projets(nom)').eq('id', id).single()),
+    q(sb.from('materiel_evenements').select('*, projets(nom), profils(nom)').eq('materiel_id', id).order('date_evenement', { ascending: false }).order('created_at', { ascending: false }).limit(40)),
+    q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom')),
+  ]);
+  const gerer = can('direction', 'coordinateur', 'magasinier');
+  const terrain = gerer || can('technicien');
+  const mm = ouvrirModale({
+    titre: m.nom, large: true,
+    corps: `<div class="split" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><span class="muted">${esc([CATEGORIES_MATERIEL[m.categorie], m.reference].filter(Boolean).join(' · '))}</span>${badge(ETAT_MATERIEL[m.etat])}</div>
+      <div class="detail-grid">
+        <div><span>Où</span><b>${esc(m.projets?.nom || 'Au dépôt')}</b></div>
+        <div><span>Compteur</span><b>${nf.format(num(m.compteur))} ${m.unite_compteur}</b></div>
+        <div><span>Coût / jour</span><b>${money(m.cout_jour)}</b></div>
+        <div><span>Prochain entretien</span><b>${m.entretien_tous_les ? `à ${nf.format(num(m.dernier_entretien) + num(m.entretien_tous_les))} ${m.unite_compteur}` : '—'}</b></div>
+      </div>
+      ${entretienProche(m) ? '<div class="notice warn">🛠️ Entretien à prévoir bientôt (vidange, graissage, révision).</div>' : ''}
+      <div class="rc-boutons mt">
+        ${gerer ? '<button type="button" class="btn primary" data-evt="affectation">🚚 Déplacer</button>' : ''}
+        ${terrain ? '<button type="button" class="btn" data-evt="carburant">⛽ Carburant</button><button type="button" class="btn" data-evt="panne">⚠️ Panne</button><button type="button" class="btn" data-evt="compteur">⏱️ Compteur</button>' : ''}
+        ${gerer ? `<button type="button" class="btn" data-evt="reparation">🔧 Réparation</button><button type="button" class="btn" data-evt="entretien">🛠️ Entretien</button><button type="button" class="btn ghost" id="mt-modif">✏️ Modifier</button>` : ''}
+      </div>
+      <div class="detail-block mt"><h4>Historique</h4>${evts.length ? `<div class="feed">${evts.map((e) => `<div class="feed-item"><div class="feed-dot ${e.type === 'panne' ? 'attention' : 'info'}">${TYPE_EVT_MATERIEL[e.type].split(' ')[0]}</div>
+        <div><div><b>${esc(TYPE_EVT_MATERIEL[e.type].split(' ').slice(1).join(' '))}</b>${e.type === 'affectation' ? ` → ${esc(e.projets?.nom || 'Dépôt')}` : e.projets?.nom ? ` · ${esc(e.projets.nom)}` : ''}${e.quantite ? ` · ${nf.format(num(e.quantite))} L` : ''}${e.montant ? ` · ${money(e.montant)}` : ''}${e.compteur ? ` · ${nf.format(num(e.compteur))} ${m.unite_compteur}` : ''}</div>
+        ${e.note ? `<div class="muted" style="font-size:12px">${esc(e.note)}</div>` : ''}<div class="when">${fdate(e.date_evenement)}${e.profils?.nom ? ` · ${esc(e.profils.nom)}` : ''}</div></div></div>`).join('')}</div>` : empty('🕓', 'Aucun mouvement enregistré.')}</div>`,
+  });
+  $('#mt-modif', mm.el)?.addEventListener('click', () => { mm.fermer(); formulaireMateriel(m, rendre); });
+  $$('[data-evt]', mm.el).forEach((b) => (b.onclick = () => { mm.fermer(); formulaireEvenementMateriel(m, b.dataset.evt, projets, rendre); }));
+}
+
+function formulaireEvenementMateriel(m, type, projets, rendre) {
+  const champs = {
+    affectation: F.select('projet_id', 'Nouveau lieu', [['', '🅿️ Retour au dépôt'], ...projets.map((x) => [x.id, x.nom])], m.projet_id || '', { full: true }),
+    carburant: `${F.text('quantite', 'Litres', '', { type: 'number', min: 0, step: 'any', required: true, inputmode: 'decimal' })}${F.text('montant', `Montant (${devise()})`, '', { type: 'number', min: 0, inputmode: 'numeric' })}${F.text('compteur', `Compteur (${m.unite_compteur})`, '', { type: 'number', min: 0, step: 'any', inputmode: 'decimal' })}`,
+    panne: F.area('note', 'Que se passe-t-il ?', '', { required: true, placeholder: 'Ex. Fuite d’huile hydraulique, ne démarre plus…' }),
+    compteur: F.text('compteur', `Compteur actuel (${m.unite_compteur})`, m.compteur, { type: 'number', min: 0, step: 'any', required: true, inputmode: 'decimal' }),
+    reparation: `${F.text('montant', `Coût de la réparation (${devise()})`, '', { type: 'number', min: 0, inputmode: 'numeric' })}${F.area('note', 'Réparation effectuée', '', { placeholder: 'Ex. Remplacement du flexible hydraulique' })}`,
+    entretien: `${F.text('compteur', `Compteur à l’entretien (${m.unite_compteur})`, m.compteur, { type: 'number', min: 0, step: 'any', inputmode: 'decimal' })}${F.text('montant', `Coût (${devise()})`, '', { type: 'number', min: 0, inputmode: 'numeric' })}${F.area('note', 'Travaux d’entretien', '', { placeholder: 'Ex. Vidange moteur + filtres' })}`,
+  }[type];
+  ouvrirModale({
+    titre: `${TYPE_EVT_MATERIEL[type]} · ${m.nom}`,
+    corps: `<div class="form-grid">${champs}${F.text('date_evenement', 'Date', todayISO(), { type: 'date', required: true, max: todayISO() })}</div>`,
+    onSubmit: async (d) => {
+      const data = { materiel_id: m.id, type, date_evenement: d.date_evenement, note: d.note || null };
+      if (type === 'affectation') data.projet_id = d.projet_id || null;
+      else data.projet_id = m.projet_id || null;
+      if (d.quantite) data.quantite = num(d.quantite);
+      if (d.montant) data.montant = num(d.montant);
+      if (d.compteur !== undefined && d.compteur !== '' && d.compteur !== null) data.compteur = num(d.compteur);
+      try { await q(sb.from('materiel_evenements').insert(data)); } catch (e) { throw new Error(erreurMateriel(e)); }
+      toast(type === 'panne' ? 'Panne signalée : la direction et le magasin sont prévenus.' : 'Enregistré ✅');
+      rendre();
+    },
+  });
+}
+
+async function coutsMateriel(zone) {
+  const [materiels, evts, projets] = await Promise.all([
+    q(sb.from('materiels').select('id, nom, cout_jour')),
+    q(sb.from('materiel_evenements').select('materiel_id, type, projet_id, date_evenement, montant, quantite, created_at').order('date_evenement').order('created_at')),
+    q(sb.from('projets').select('id, nom, statut').order('nom')),
+  ]);
+  const parProjet = new Map();
+  const ligne = (id) => { if (!parProjet.has(id)) parProjet.set(id, { jours: 0, usage: 0, carburant: 0, litres: 0, reparations: 0 }); return parProjet.get(id); };
+  const auj = todayISO();
+  materiels.forEach((m) => {
+    const aff = evts.filter((e) => e.materiel_id === m.id && e.type === 'affectation');
+    aff.forEach((e, i) => {
+      if (!e.projet_id) return;
+      const fin = aff[i + 1]?.date_evenement || auj;
+      const jours = Math.max(1, Math.round((parseDay(fin) - parseDay(e.date_evenement)) / 864e5) + (aff[i + 1] ? 0 : 1));
+      const l = ligne(e.projet_id); l.jours += jours; l.usage += jours * num(m.cout_jour);
+    });
+  });
+  evts.filter((e) => e.projet_id && e.montant).forEach((e) => {
+    const l = ligne(e.projet_id);
+    if (e.type === 'carburant') { l.carburant += num(e.montant); l.litres += num(e.quantite); }
+    if (e.type === 'reparation' || e.type === 'entretien') l.reparations += num(e.montant);
+  });
+  const lignes = projets.filter((x) => parProjet.has(x.id)).map((x) => ({ ...x, ...parProjet.get(x.id), total: 0 }));
+  lignes.forEach((l) => { l.total = l.usage + l.carburant + l.reparations; });
+  zone.innerHTML = `<div class="card"><div class="card-title">Coût du matériel par chantier</div>
+    <p class="hint" style="margin:-6px 0 12px">Jours de présence × coût par jour, plus le carburant et les réparations notés sur le chantier.</p>
+    ${lignes.length ? `<div class="paie-liste">${lignes.sort((a, b) => b.total - a.total).map((l) => `<div class="paie-ligne">
+      <div class="paie-nom"><b>${esc(l.nom)}</b><span>${nf.format(l.jours)} jour(s)-engin · ⛽ ${nf.format(Math.round(l.litres))} L · 🔧 ${moneyShort(l.reparations)}</span></div>
+      <div class="paie-montant"><b>${money(l.total)}</b><span>dont usage ${moneyShort(l.usage)}</span></div></div>`).join('')}</div>`
+      : empty('💰', 'Pas encore de données : déplacez un engin sur un chantier ou notez un plein de carburant.')}</div>`;
+}
+
+// ═══════════════════════════════ SÉCURITÉ CHANTIER (2.7) ═══════════════════════════════
+
+const TYPE_SECURITE = {
+  accident: ['crit', '🚑 Accident'],
+  presqu_accident: ['warn', '⚠️ Presqu’accident'],
+  incident: ['warn', '🔶 Incident / danger'],
+  causerie: ['ok', '🗣️ Causerie sécurité'],
+  visite: ['info', '🔍 Visite de sécurité'],
+};
+const GRAVITE = { faible: 'Faible', moyenne: 'Moyenne', grave: 'Grave' };
+
+async function envoyerPhotoChantier(fichier, dossier) {
+  const blob = await compresserImage(fichier, 1600, 0.8);
+  const chemin = `${S.entreprise.id}/${dossier}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
+  const { error } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: 'image/jpeg' });
+  if (error) throw error;
+  return chemin;
+}
+
+PAGES.securite = async () => {
+  const p = page(`
+    ${entete('Sécurité chantier', 'Accidents, presqu’accidents, dangers, causeries et visites', '<button class="btn primary" id="ns">＋ Déclarer</button>')}
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('🦺', 'La sécurité chantier fonctionne dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try { await listeSecurite(zone, rendre); } catch (e) { zone.innerHTML = `<div class="card">${empty('🦺', erreurMateriel(e))}</div>`; }
+  };
+  $('#ns', p).onclick = () => formulaireSecurite(rendre);
+  await rendre();
+};
+
+async function listeSecurite(zone, rendre) {
+  const [evts, projets] = await Promise.all([
+    q(sb.from('securite').select('*, projets(nom), profils(nom)').order('date_evenement', { ascending: false }).order('created_at', { ascending: false }).limit(300)),
+    q(sb.from('projets').select('id, nom, date_debut, statut').neq('statut', 'termine').order('nom')),
+  ]);
+  const auj = parseDay(todayISO());
+  const joursDepuis = (iso) => Math.max(0, Math.round((auj - parseDay(iso)) / 864e5));
+  const dernierAccident = evts.find((e) => e.type === 'accident');
+  const mois = todayISO().slice(0, 7);
+  const ouverts = evts.filter((e) => e.statut === 'ouvert');
+  const parChantier = projets.map((pr) => {
+    const acc = evts.find((e) => e.type === 'accident' && e.projet_id === pr.id);
+    return { ...pr, jours: acc ? joursDepuis(acc.date_evenement) : pr.date_debut ? joursDepuis(pr.date_debut) : null };
+  });
+  const url = await urlsPhotos(evts.map((e) => e.photo).filter(Boolean));
+  let filtre = '';
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi('Jours sans accident', dernierAccident ? joursDepuis(dernierAccident.date_evenement) : '—', dernierAccident ? `dernier le ${fdate(dernierAccident.date_evenement)}` : 'Aucun accident déclaré', dernierAccident && joursDepuis(dernierAccident.date_evenement) < 30 ? 'alert' : '')}
+      ${kpi('Points ouverts', ouverts.length, ouverts.length ? 'Dangers à traiter' : '✅ Tout est traité', ouverts.length ? 'warn' : '')}
+      ${kpi('Causeries ce mois', evts.filter((e) => e.type === 'causerie' && e.date_evenement.startsWith(mois)).length, 'Objectif : 1 par semaine')}
+      ${kpi('Presqu’accidents (12 mois)', evts.filter((e) => e.type === 'presqu_accident' && joursDepuis(e.date_evenement) <= 365).length)}
+    </div>
+    ${parChantier.length ? `<div class="card"><div class="card-title">Jours sans accident par chantier</div><div class="secu-chantiers">${parChantier.map((c) => `<div class="secu-chantier"><b>${c.jours ?? '—'}</b><span>${esc(c.nom)}</span></div>`).join('')}</div></div>` : ''}
+    <div class="card"><div class="toolbar"><select class="input" id="sf"><option value="">Tous les chantiers</option>${projets.map((x) => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></div><div class="paie-liste" id="sl"></div></div>`;
+  const dessiner = () => {
+    const l = evts.filter((e) => !filtre || e.projet_id === filtre);
+    $('#sl', zone).innerHTML = l.length ? l.map((e) => `<button type="button" class="paie-ligne vente-ligne secu-ligne" data-secu="${e.id}">
+      ${e.photo && url(e.photo) ? `<img src="${esc(url(e.photo))}" alt="" loading="lazy">` : ''}
+      <div class="paie-nom"><b>${esc(TYPE_SECURITE[e.type][1])}${['accident', 'presqu_accident', 'incident'].includes(e.type) ? ` · ${GRAVITE[e.gravite]}` : ''}</b>
+        <span>${esc(e.projets?.nom || '')} · ${fdate(e.date_evenement)}${e.participants ? ` · ${e.participants} participant(s)` : ''}</span>
+        <span>${esc(e.description.slice(0, 110))}</span></div>
+      <div class="paie-montant">${e.statut === 'ouvert' ? badge(['warn', '⏳ Ouvert']) : badge(['ok', '✅ Traité'])}</div></button>`).join('')
+      : empty('🦺', 'Rien de déclaré. Pensez à noter chaque causerie sécurité et chaque situation dangereuse : c’est ce qui évite les accidents.');
+    $$('[data-secu]', zone).forEach((b) => (b.onclick = () => ficheSecurite(evts.find((x) => x.id === b.dataset.secu), url, rendre)));
+  };
+  $('#sf', zone).onchange = (e) => { filtre = e.target.value; dessiner(); };
+  dessiner();
+}
+
+async function formulaireSecurite(rendre) {
+  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  let photo = null;
+  ouvrirModale({
+    titre: 'Déclarer : sécurité chantier',
+    corps: `<div class="form-grid">
+      ${F.select('type', 'Type', Object.entries(TYPE_SECURITE).map(([k, [, l]]) => [k, l]), 'causerie', { full: true })}
+      ${F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, vide: '— Choisir —' })}
+      ${F.text('date_evenement', 'Date', todayISO(), { type: 'date', required: true, max: todayISO() })}
+      <div class="secu-grave">${F.select('gravite', 'Gravité', Object.entries(GRAVITE), 'faible')}</div>
+      <div class="secu-part">${F.text('participants', 'Nombre de participants', '', { type: 'number', min: 0, inputmode: 'numeric' })}</div>
+      ${F.area('description', 'Description', '', { required: true, placeholder: 'Ex. Causerie : port du harnais en hauteur. / Chute d’un parpaing près de l’entrée.' })}
+      ${F.area('mesures', 'Mesures prises ou à prendre', '', { placeholder: 'Ex. Zone balisée, garde-corps posé, rappel aux équipes.' })}
+      <div class="field full">Photo (facultatif)<label class="btn" style="width:max-content">📷 Ajouter une photo<input type="file" id="secu-photo" accept="image/*" hidden></label><span class="hint" id="secu-photo-ok"></span></div>
+    </div>`,
+    onOpen: (el) => {
+      const maj = () => {
+        const t = $('[name="type"]', el).value;
+        $('.secu-grave', el).classList.toggle('hidden', !['accident', 'presqu_accident', 'incident'].includes(t));
+        $('.secu-part', el).classList.toggle('hidden', t !== 'causerie');
+      };
+      $('[name="type"]', el).onchange = maj; maj();
+      $('#secu-photo', el).onchange = (e) => { photo = e.target.files[0] || null; $('#secu-photo-ok', el).textContent = photo ? '✅ Photo prête' : ''; };
+    },
+    onSubmit: async (d) => {
+      try {
+        const chemin = photo ? await envoyerPhotoChantier(photo, 'securite') : null;
+        await q(sb.from('securite').insert({ type: d.type, projet_id: d.projet_id, date_evenement: d.date_evenement, gravite: d.gravite || 'faible', participants: d.participants ? Math.round(num(d.participants)) : null, description: d.description, mesures: d.mesures || null, photo: chemin }));
+      } catch (e) { throw new Error(erreurMateriel(e)); }
+      toast(d.type === 'accident' ? 'Accident déclaré : la direction est alertée.' : 'Enregistré ✅');
+      rendre();
+    },
+  });
+}
+
+function ficheSecurite(e, url, rendre) {
+  const gerer = can('direction', 'coordinateur') || e.auteur_id === S.profil.id;
+  const m = ouvrirModale({
+    titre: TYPE_SECURITE[e.type][1],
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">${esc(e.projets?.nom || '')} · ${fdate(e.date_evenement)}${e.profils?.nom ? ` · déclaré par ${esc(e.profils.nom)}` : ''}</p>
+      ${e.photo && url(e.photo) ? `<a href="${esc(url(e.photo))}" target="_blank" rel="noopener"><img class="secu-photo" src="${esc(url(e.photo))}" alt="Photo"></a>` : ''}
+      <div class="detail-block"><h4>Description</h4><p>${esc(e.description)}</p></div>
+      ${e.statut === 'ouvert' && gerer ? `<label class="field">Mesures prises<textarea id="secu-mesures">${esc(e.mesures || '')}</textarea></label>` : e.mesures ? `<div class="detail-block"><h4>Mesures</h4><p>${esc(e.mesures)}</p></div>` : ''}
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button>${e.statut === 'ouvert' && gerer ? '<button type="button" class="btn primary" id="secu-clore">✅ Marquer comme traité</button>' : ''}</div>`,
+  });
+  $('#secu-clore', m.el)?.addEventListener('click', async () => {
+    try { await q(sb.from('securite').update({ statut: 'clos', mesures: $('#secu-mesures', m.el).value || null }).eq('id', e.id)); toast('Marqué comme traité ✅'); m.fermer(); rendre(); }
+    catch (err) { toast(erreurMateriel(err), 'err'); }
+  });
+}
+
+// ═══════════════════════════════ RÉCEPTION DES TRAVAUX (2.7) ═══════════════════════════════
+
+const TYPE_RECEPTION = { provisoire: 'Réception provisoire', partielle: 'Réception partielle', definitive: 'Réception définitive' };
+
+async function ongletReception(projet, zone) {
+  const gerer = can('direction', 'coordinateur');
+  const [pvs, reserves] = await Promise.all([
+    q(sb.from('receptions').select('id, type, date_reception, statut, nom_client').eq('projet_id', projet.id).order('date_reception', { ascending: false })),
+    q(sb.from('reserves').select('id, reception_id, statut').eq('projet_id', projet.id)),
+  ]);
+  const ouvertes = reserves.filter((r) => r.statut === 'ouverte').length;
+  zone.innerHTML = `<div class="card"><div class="card-title">Procès-verbaux de réception ${gerer ? '<button type="button" class="btn sm primary" id="npv">＋ Nouveau PV</button>' : ''}</div>
+    ${reserves.length ? `<div class="notice ${ouvertes ? 'warn' : 'ok'}">${ouvertes ? `⏳ <b>${ouvertes}</b> réserve(s) à lever sur ${reserves.length}.` : `✅ Toutes les réserves sont levées (${reserves.length}).`}</div>` : ''}
+    ${pvs.length ? `<div class="paie-liste">${pvs.map((pv) => {
+      const rs = reserves.filter((r) => r.reception_id === pv.id);
+      return `<button type="button" class="paie-ligne vente-ligne" data-pv="${pv.id}"><div class="paie-nom"><b>${TYPE_RECEPTION[pv.type]}</b><span>${fdate(pv.date_reception)}${pv.nom_client ? ` · ${esc(pv.nom_client)}` : ''} · ${rs.length} réserve(s), ${rs.filter((r) => r.statut === 'ouverte').length} à lever</span></div>
+        <div class="paie-montant">${pv.statut === 'signe' ? badge(['ok', '✍️ Signé']) : badge(['muted', '📝 Brouillon'])}</div></button>`;
+    }).join('')}</div>` : empty('🤝', gerer ? 'Aucun procès-verbal. À la fin des travaux, faites la visite avec le client : notez les réserves en photo et faites signer sur le téléphone.' : 'Aucun procès-verbal de réception pour ce chantier.')}</div>`;
+  const rafraichir = () => ongletReception(projet, zone);
+  $('#npv', zone)?.addEventListener('click', async () => {
+    try {
+      const pv = await q(sb.from('receptions').insert({ projet_id: projet.id, objet: projet.nom, nom_client: projet.client || null, nom_entreprise: S.profil.nom }).select('id').single());
+      editeurReception(pv.id, projet, rafraichir);
+    } catch (e) { toast(erreurMateriel(e), 'err'); }
+  });
+  $$('[data-pv]', zone).forEach((b) => (b.onclick = () => editeurReception(b.dataset.pv, projet, rafraichir)));
+}
+
+function padSignature(conteneur, initiale) {
+  conteneur.innerHTML = '<canvas class="signature-pad"></canvas><button type="button" class="btn sm ghost signature-effacer">Effacer</button>';
+  const c = $('canvas', conteneur);
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const dims = () => { const r = c.getBoundingClientRect(); c.width = r.width * ratio; c.height = r.height * ratio; const x = c.getContext('2d'); x.scale(ratio, ratio); x.lineWidth = 2.4; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#111521'; };
+  dims();
+  let vide = true, trace = false;
+  if (initiale) { const img = new Image(); img.onload = () => { c.getContext('2d').drawImage(img, 0, 0, c.width / ratio, c.height / ratio); vide = false; }; img.src = initiale; }
+  const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  c.addEventListener('pointerdown', (e) => { trace = true; vide = false; c.setPointerCapture(e.pointerId); const x = c.getContext('2d'); x.beginPath(); x.moveTo(...pos(e)); e.preventDefault(); });
+  c.addEventListener('pointermove', (e) => { if (!trace) return; const x = c.getContext('2d'); x.lineTo(...pos(e)); x.stroke(); e.preventDefault(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => c.addEventListener(t, () => { trace = false; }));
+  $('.signature-effacer', conteneur).onclick = () => { c.getContext('2d').clearRect(0, 0, c.width, c.height); vide = true; };
+  return { valeur: () => (vide ? null : c.toDataURL('image/png')) };
+}
+
+async function editeurReception(id, projet, rafraichir) {
+  const [pv, reserves] = await Promise.all([
+    q(sb.from('receptions').select('*').eq('id', id).single()),
+    q(sb.from('reserves').select('*').eq('reception_id', id).order('created_at')),
+  ]);
+  const gerer = can('direction', 'coordinateur');
+  const signe = pv.statut === 'signe';
+  const modifiable = gerer && !signe;
+  const url = await urlsPhotos(reserves.flatMap((r) => [r.photo, r.photo_levee]).filter(Boolean));
+  const m = ouvrirModale({ titre: `${TYPE_RECEPTION[pv.type]} · ${projet.nom}`, large: true, corps: `
+    ${signe ? `<div class="notice ok">✍️ Procès-verbal signé le ${new Date(pv.signe_le).toLocaleDateString('fr-FR')} : il ne peut plus être modifié. Les réserves peuvent être levées.</div>` : ''}
+    <form class="form-grid" id="pv-form" onsubmit="return false">
+      ${F.select('type', 'Type de réception', Object.entries(TYPE_RECEPTION), pv.type)}
+      ${F.text('date_reception', 'Date', pv.date_reception, { type: 'date' })}
+      ${F.text('participants', 'Personnes présentes', pv.participants, { full: true, placeholder: 'Ex. M. Kouadio (client), Mme Bamba (architecte), Ange (entreprise)' })}
+      ${F.area('observations', 'Observations générales', pv.observations, { placeholder: 'Ex. Ouvrage conforme au marché, sous réserve des points ci-dessous.' })}
+    </form>
+    <div class="detail-block mt"><h4>Réserves (${reserves.length})</h4>
+      <div class="paie-liste">${reserves.map((r) => `<div class="paie-ligne reserve-ligne">
+        ${r.photo && url(r.photo) ? `<a href="${esc(url(r.photo))}" target="_blank" rel="noopener"><img src="${esc(url(r.photo))}" alt=""></a>` : ''}
+        <div class="paie-nom"><b>${esc(r.description)}</b><span>${esc(r.localisation || '')}${r.statut === 'levee' ? ` · levée le ${new Date(r.levee_le).toLocaleDateString('fr-FR')}` : ''}</span></div>
+        <div class="paie-montant">${r.statut === 'levee' ? badge(['ok', '✅ Levée']) : `${badge(['warn', '⏳ À lever'])}${signe && can('direction', 'coordinateur', 'technicien') ? `<label class="btn sm">✅ Lever<input type="file" accept="image/*" data-lever="${r.id}" hidden></label><button type="button" class="btn sm ghost" data-lever-sans="${r.id}">Sans photo</button>` : ''}${modifiable ? `<button type="button" class="btn sm ghost" data-suppr-res="${r.id}">✕</button>` : ''}`}</div></div>`).join('') || '<p class="muted" style="font-size:13px">Aucune réserve : ouvrage accepté sans réserve.</p>'}</div>
+      ${modifiable ? `<div class="reserve-ajout">
+        <input class="input" id="res-desc" placeholder="Nouvelle réserve (ex. Fissure enduit façade nord)">
+        <input class="input" id="res-loc" placeholder="Où ? (ex. Chambre 2, RDC)">
+        <label class="btn sm">📷 Photo<input type="file" id="res-photo" accept="image/*" hidden></label>
+        <button type="button" class="btn sm primary" id="res-ajout">＋ Ajouter</button></div>` : ''}
+    </div>
+    <div class="detail-block mt"><h4>Signatures</h4>
+      <div class="signatures">
+        <div><label class="field">Nom du client / maître d’ouvrage<input name="nom_client" class="input" value="${esc(pv.nom_client || '')}" ${modifiable ? '' : 'disabled'}></label>${signe ? `<img class="signature-img" src="${esc(pv.signature_client)}" alt="Signature du client">` : '<div class="sig" id="sig-client"></div>'}</div>
+        <div><label class="field">Pour l’entreprise<input name="nom_entreprise" class="input" value="${esc(pv.nom_entreprise || '')}" ${modifiable ? '' : 'disabled'}></label>${signe ? `<img class="signature-img" src="${esc(pv.signature_entreprise)}" alt="Signature de l’entreprise">` : '<div class="sig" id="sig-entreprise"></div>'}</div>
+      </div>
+      ${modifiable ? '<p class="hint">Faites signer avec le doigt dans chaque cadre blanc.</p>' : ''}
+    </div>
+    <div class="rc-boutons mt">
+      ${modifiable ? '<button type="button" class="btn" id="pv-ok">💾 Enregistrer le brouillon</button><button type="button" class="btn primary" id="pv-signer">✍️ Signer et finaliser</button>' : ''}
+      <button type="button" class="btn ${signe ? 'primary' : ''}" id="pv-pdf">📄 PV en PDF</button>
+      ${modifiable ? '<button type="button" class="btn danger" id="pv-suppr">Supprimer</button>' : ''}
+    </div>` });
+  const el = m.el;
+  if (!modifiable) $$('#pv-form input, #pv-form select, #pv-form textarea', el).forEach((x) => { x.disabled = true; });
+  const sigC = !signe ? padSignature($('#sig-client', el), pv.signature_client) : null;
+  const sigE = !signe ? padSignature($('#sig-entreprise', el), pv.signature_entreprise) : null;
+  if (!modifiable && sigC) { $$('.sig', el).forEach((x) => { x.style.pointerEvents = 'none'; x.style.opacity = '.6'; }); }
+  const donnees = () => {
+    const d = lireFormulaire($('#pv-form', el));
+    return { type: d.type, date_reception: d.date_reception, participants: d.participants || null, observations: d.observations || null,
+      nom_client: $('[name="nom_client"]', el).value || null, nom_entreprise: $('[name="nom_entreprise"]', el).value || null,
+      signature_client: sigC?.valeur() || null, signature_entreprise: sigE?.valeur() || null };
+  };
+  const rouvrir = () => { m.fermer(); rafraichir(); editeurReception(id, projet, rafraichir); };
+  $('#pv-ok', el)?.addEventListener('click', async () => {
+    try { await q(sb.from('receptions').update(donnees()).eq('id', id)); toast('Brouillon enregistré ✅'); m.fermer(); rafraichir(); } catch (e) { toast(erreurMateriel(e), 'err'); }
+  });
+  $('#pv-signer', el)?.addEventListener('click', async () => {
+    const d = donnees();
+    if (!d.signature_client || !d.signature_entreprise) { toast('Les deux signatures sont nécessaires (client et entreprise).', 'warn'); return; }
+    if (!d.nom_client) { toast('Indiquez le nom du client.', 'warn'); return; }
+    if (!(await confirmer('Finaliser le procès-verbal ? Une fois signé, il ne pourra plus être modifié (seules les réserves pourront être levées).', 'Signer'))) return;
+    try {
+      await q(sb.from('receptions').update({ ...d, statut: 'signe' }).eq('id', id));
+      toast('Procès-verbal signé ✅');
+      m.fermer(); rafraichir();
+      pdfReception(id, projet);
+    } catch (e) { toast(e?.hint || erreurMateriel(e), 'err', 6000); }
+  });
+  $('#pv-pdf', el).onclick = async () => { if (modifiable) { try { await q(sb.from('receptions').update(donnees()).eq('id', id)); } catch { /* aperçu quand même */ } } pdfReception(id, projet); };
+  $('#pv-suppr', el)?.addEventListener('click', async () => {
+    if (!(await confirmer('Supprimer ce brouillon de procès-verbal et ses réserves ?', 'Supprimer'))) return;
+    try { await q(sb.from('receptions').delete().eq('id', id)); toast('Brouillon supprimé.'); m.fermer(); rafraichir(); } catch (e) { toast(erreurMateriel(e), 'err'); }
+  });
+  $('#res-ajout', el)?.addEventListener('click', async () => {
+    const desc = $('#res-desc', el).value.trim();
+    if (!desc) { toast('Décrivez la réserve.', 'warn'); return; }
+    try {
+      await q(sb.from('receptions').update(donnees()).eq('id', id));
+      const f = $('#res-photo', el).files[0];
+      const chemin = f ? await envoyerPhotoChantier(f, 'reception') : null;
+      await q(sb.from('reserves').insert({ reception_id: id, projet_id: projet.id, description: desc, localisation: $('#res-loc', el).value.trim() || null, photo: chemin }));
+      rouvrir();
+    } catch (e) { toast(erreurMateriel(e), 'err'); }
+  });
+  $('#res-photo', el)?.addEventListener('change', (e) => { if (e.target.files[0]) toast('Photo prête ✅ Touchez « Ajouter ».'); });
+  $$('[data-suppr-res]', el).forEach((b) => (b.onclick = async () => { try { await q(sb.from('reserves').delete().eq('id', b.dataset.supprRes)); rouvrir(); } catch (e) { toast(erreurMateriel(e), 'err'); } }));
+  const lever = async (rid, fichier) => {
+    try {
+      const chemin = fichier ? await envoyerPhotoChantier(fichier, 'reception') : null;
+      await q(sb.from('reserves').update({ statut: 'levee', ...(chemin ? { photo_levee: chemin } : {}) }).eq('id', rid));
+      toast('Réserve levée ✅'); rouvrir();
+    } catch (e) { toast(erreurMateriel(e), 'err'); }
+  };
+  $$('[data-lever]', el).forEach((inp) => (inp.onchange = (e) => { if (e.target.files[0]) lever(inp.dataset.lever, e.target.files[0]); }));
+  $$('[data-lever-sans]', el).forEach((b) => (b.onclick = () => lever(b.dataset.leverSans, null)));
+}
+
+async function pdfReception(id, projet) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const [pv, reserves] = await Promise.all([
+      q(sb.from('receptions').select('*').eq('id', id).single()),
+      q(sb.from('reserves').select('*').eq('reception_id', id).order('created_at')),
+    ]);
+    const url = await urlsPhotos(reserves.map((r) => r.photo).filter(Boolean));
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, 'PROCÈS-VERBAL', TYPE_RECEPTION[pv.type], `du ${fdate(pv.date_reception)}`);
+    let y = 46;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(100, 108, 128); doc.text('CHANTIER', 16, y); doc.text('CLIENT / MAÎTRE D\'OUVRAGE', 110, y); y += 5.5;
+    doc.setFontSize(11); doc.setTextColor(17, 21, 33);
+    doc.text(doc.splitTextToSize(textePDF([projet.nom, projet.localisation].filter(Boolean).join(' - ')), 88), 16, y);
+    doc.text(doc.splitTextToSize(textePDF(pv.nom_client || projet.client || '-'), 84), 110, y);
+    y += 13;
+    const para = (titre, texte) => {
+      if (!texte) return;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(17, 21, 33); doc.text(textePDF(titre), 16, y); y += 5;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.splitTextToSize(textePDF(texte), 178).forEach((l) => { if (y > 270) { doc.addPage(); y = 20; } doc.text(l, 16, y); y += 4.8; });
+      y += 3;
+    };
+    para('Personnes présentes', pv.participants);
+    para('Observations', pv.observations || (reserves.length ? 'Les travaux sont reçus sous les réserves listées ci-dessous.' : 'Les travaux sont reçus sans réserve.'));
+    if (reserves.length) {
+      y = tableauPDF(doc, y + 2, [{ titre: 'Réserve', x: 16, l: 100 }, { titre: 'Localisation', x: 118, l: 46 }, { titre: 'État', x: 166, l: 28, align: 'right' }],
+        reserves.map((r) => ({ cells: [r.description, r.localisation || '-', r.statut === 'levee' ? `Levée ${new Date(r.levee_le).toLocaleDateString('fr-FR')}` : 'A lever'] })));
+      const photos = reserves.filter((r) => r.photo && url(r.photo)).slice(0, 6);
+      if (photos.length) {
+        y += 2;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.text('Photos des réserves', 16, y); y += 4;
+        const lp = 56, hp = 42;
+        for (let i = 0; i < photos.length; i++) {
+          if (i % 3 === 0 && i) y += hp + 9;
+          if (y + hp > 270) { doc.addPage(); y = 20; }
+          const img = await imagePourPDF(url(photos[i].photo), lp / hp);
+          const x = 16 + (i % 3) * (lp + 5);
+          if (img) doc.addImage(img.data, 'JPEG', x, y, lp, hp);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 108, 128);
+          doc.text(doc.splitTextToSize(textePDF(photos[i].description), lp)[0], x, y + hp + 3.5); doc.setTextColor(17, 21, 33);
+        }
+        y += hp + 10;
+      }
+    }
+    if (y > 225) { doc.addPage(); y = 25; }
+    y += 4;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(textePDF(`Le client : ${pv.nom_client || ''}`), 16, y); doc.text(textePDF(`Pour ${S.entreprise?.nom || ''} : ${pv.nom_entreprise || ''}`), 110, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 84, 32); doc.rect(110, y + 3, 84, 32);
+    if (pv.signature_client) doc.addImage(pv.signature_client, 'PNG', 18, y + 5, 80, 28);
+    if (pv.signature_entreprise) doc.addImage(pv.signature_entreprise, 'PNG', 112, y + 5, 80, 28);
+    y += 40;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 108, 128);
+    doc.text(textePDF(pv.statut === 'signe' ? `Signé électroniquement le ${new Date(pv.signe_le).toLocaleString('fr-FR')}.` : 'BROUILLON - document non signé.'), 16, y);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - PV de réception - ${projet.nom}`);
+    presenterPDF(doc.output('blob'), `PV-reception-${projet.nom}-${pv.date_reception}.pdf`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9.]+/g, '-'), `Bonjour, veuillez trouver ci-joint le procès-verbal de ${TYPE_RECEPTION[pv.type].toLowerCase()} du chantier « ${projet.nom} ». Cordialement, ${S.entreprise?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurMateriel(e), 'err', 6000); }
+}
+
+// ═══════════════════════════════ RAPPEL DU RAPPORT DU JOUR (2.7) ═══════════════════════════════
+
+async function rappelRapportTechnicien(aujourdhui, aDesChantiers) {
+  if (DEMO || aujourdhui || !aDesChantiers || new Date().getHours() < 16) return;
+  const enAttente = (await listeEnvois()).some((x) => x.type === 'rapport' && x.rapport.date_rapport === todayISO());
+  if (enAttente) return;
+  const cle = `koordin-rappel-${S.profil.id}-${todayISO()}`;
+  let deja = null;
+  try { deja = localStorage.getItem(cle); localStorage.setItem(cle, '1'); } catch { /* rien */ }
+  if (deja) return;
+  toast('⏰ La journée se termine : pensez à envoyer votre rapport du jour.', 'warn', 9000);
+  try { navigator.vibrate?.([150, 80, 150]); } catch { /* rien */ }
+}
+
+async function encartRapportsDuJour() {
+  if (DEMO || !can('direction', 'coordinateur')) return;
+  const pg = $('#main .page');
+  if (!pg) return;
+  const auj = todayISO();
+  const [projets, rapports, affect] = await Promise.all([
+    q(sb.from('projets').select('id, nom').eq('statut', 'en_cours').order('nom')),
+    q(sb.from('rapports').select('projet_id').eq('date_rapport', auj)),
+    q(sb.from('affectations').select('projet_id, profils(id, nom, role, email, telephone)')),
+  ]).catch(() => [[], [], []]);
+  if (!projets.length) return;
+  const avec = new Set(rapports.map((r) => r.projet_id));
+  const sans = projets.filter((x) => !avec.has(x.id));
+  const carte = document.createElement('div');
+  carte.className = 'card section rapports-jour';
+  carte.innerHTML = `<div class="card-title">Rapports du jour <span class="badge ${sans.length ? 'warn' : 'ok'}">${projets.length - sans.length} / ${projets.length} chantiers</span></div>
+    ${sans.length ? `<div class="paie-liste">${sans.map((x) => {
+      const techs = affect.filter((a) => a.projet_id === x.id && a.profils?.role === 'technicien').map((a) => a.profils);
+      return `<div class="paie-ligne"><div class="paie-nom"><b>${esc(x.nom)}</b><span>${techs.length ? `Pas encore de rapport de ${esc(techs.map((t) => t.nom).join(', '))}` : 'Aucun technicien affecté'}</span></div>
+        <div class="paie-montant">${techs.map((t) => `<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${numeroAuteur(t)}?text=${encodeURIComponent(`Bonjour ${String(t.nom).split(' ')[0]}, pensez à envoyer votre rapport du jour pour « ${x.nom} » dans KOORDIN. Merci ! ${S.profil.nom}`)}">📲 Rappeler ${esc(String(t.nom).split(' ')[0])}</a>`).join('')}</div></div>`;
+    }).join('')}</div>` : '<p class="muted" style="font-size:13px">✅ Tous les chantiers en cours ont envoyé leur rapport aujourd’hui.</p>'}`;
+  const ancre = $('.grid.k4', pg);
+  if (ancre) ancre.after(carte); else pg.append(carte);
+}
+
+// ═══════════════════════════════ MON ESPACE ET SALAIRES (2.8) ═══════════════════════════════
+// Chaque membre voit ses propres versements, confirme la réception en signant au doigt
+// ou signale un problème. La Comptabilité et la Direction enregistrent et valident.
+
+const TYPE_VERSEMENT = { salaire: 'Salaire', avance: 'Avance', prime: 'Prime', autre: 'Versement' };
+const STATUT_VERSEMENT = {
+  verse: ['warn', '⏳ À confirmer'],
+  recu: ['info', '✍️ Reçu, à valider'],
+  conteste: ['crit', '⚠️ Problème signalé'],
+  valide: ['ok', '✅ Validé'],
+};
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const libellePeriode = (per) => `${MOIS_FR[Number(per.slice(5, 7)) - 1]} ${per.slice(0, 4)}`;
+const libelleVersement = (v) => `${TYPE_VERSEMENT[v.type] || 'Versement'} de ${libellePeriode(v.periode)}`;
+const erreurVersement = (e) => {
+  const m = String(e?.message || '');
+  if (/^VERSEMENT_/.test(m) && e?.hint) return e.hint;
+  if (/relation .*versements/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Cette fonction nécessite la mise à jour 2.8 de la base de données (kit d’installation).';
+  return messageErreur(e);
+};
+
+// ─── Mon espace ───
+
+PAGES['mon-espace'] = async () => {
+  const pr = S.profil;
+  const p = page(`
+    <section class="espace-carte">
+      <div class="espace-avatar">${esc(initiales(pr.nom))}</div>
+      <div class="espace-qui"><h1 class="page-title">${esc(pr.nom)}</h1>
+        <p>${ROLES[pr.role].ico} ${esc(ROLES[pr.role].label)} · ${esc(S.entreprise?.nom || '')}</p>
+        <p class="muted">${esc(afficherIdentifiant(pr.email))}</p></div>
+    </section>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('👤', 'L’espace personnel fonctionne dans la version installée de KOORDIN.')}</div>`; return; }
+  zone.innerHTML = loading();
+  try {
+    const [versements, chantiers] = await Promise.all([
+      q(sb.from('versements').select('*').eq('profil_id', pr.id).order('periode', { ascending: false }).order('created_at', { ascending: false })),
+      q(sb.from('affectations').select('projets(nom, statut)').eq('profil_id', pr.id)).catch(() => []),
+    ]);
+    const annee = todayISO().slice(0, 4);
+    const aConfirmer = versements.filter((v) => v.statut === 'verse');
+    const recuAnnee = versements.filter((v) => ['recu', 'valide'].includes(v.statut) && v.periode.startsWith(annee)).reduce((s, v) => s + num(v.montant), 0);
+    zone.innerHTML = `
+      ${aConfirmer.length ? `<div class="notice warn">💵 <b>${aConfirmer.length} versement${aConfirmer.length > 1 ? 's' : ''}</b> à confirmer : touchez-le, vérifiez le montant, puis signez.</div>` : ''}
+      <div class="grid k3 paie-kpis">
+        ${kpi('À confirmer', aConfirmer.length, aConfirmer.length ? 'Touchez pour signer' : '✅ Rien en attente', aConfirmer.length ? 'warn' : '')}
+        ${kpi(`Reçu en ${annee}`, moneyShort(recuAnnee), 'Versements confirmés')}
+        ${kpi('Dernier versement', versements[0] ? money(versements[0].montant) : '—', versements[0] ? libelleVersement(versements[0]) : '')}
+      </div>
+      <div class="card"><div class="card-title">Mes versements <small>visibles par vous, la comptabilité et la direction seulement</small></div>
+        ${versements.length ? `<div class="paie-liste">${versements.map((v) => `<button type="button" class="paie-ligne vente-ligne ${v.statut === 'verse' ? 'a-signer' : ''}" data-v="${v.id}">
+          <div class="paie-nom"><b>${esc(libelleVersement(v))}</b><span>${esc([fdate(v.date_versement), v.moyen, v.reference].filter(Boolean).join(' · '))}</span></div>
+          <div class="paie-montant"><b>${money(v.montant)}</b>${badge(v.statut === 'recu' ? ['info', '📤 Envoyé à la compta'] : STATUT_VERSEMENT[v.statut])}</div></button>`).join('')}</div>`
+          : empty('💵', 'Aucun versement pour le moment. Quand la comptabilité enregistrera votre salaire, il apparaîtra ici pour que vous confirmiez la réception.')}
+      </div>
+      ${chantiers.length ? `<div class="card"><div class="card-title">Mes chantiers</div><div class="paie-liste">${chantiers.filter((a) => a.projets).map((a) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(a.projets.nom)}</b></div><div class="paie-montant">${badge(STATUT_PROJET[a.projets.statut] || ['muted', a.projets.statut])}</div></div>`).join('')}</div></div>` : ''}`;
+    $$('[data-v]', zone).forEach((b) => (b.onclick = () => confirmerVersement(versements.find((x) => x.id === b.dataset.v))));
+  } catch (e) { zone.innerHTML = `<div class="card">${empty('👤', erreurVersement(e))}</div>`; }
+};
+
+function confirmerVersement(v) {
+  const aSigner = v.statut === 'verse';
+  const m = ouvrirModale({
+    titre: libelleVersement(v),
+    corps: `<div class="versement-montant">${money(v.montant)}</div>
+      <div class="detail-grid">
+        <div><span>Versé le</span><b>${fdate(v.date_versement)}</b></div>
+        <div><span>Moyen</span><b>${esc(v.moyen)}</b></div>
+        <div><span>Référence</span><b>${esc(v.reference || '—')}</b></div>
+        <div><span>État</span><b>${esc(STATUT_VERSEMENT[v.statut][1])}</b></div>
+      </div>
+      ${v.note ? `<div class="detail-block"><h4>Note de la comptabilité</h4><p>${esc(v.note)}</p></div>` : ''}
+      ${v.statut === 'conteste' ? `<div class="notice warn">⚠️ Vous avez signalé : « ${esc(v.commentaire_employe || '')} ». La comptabilité va corriger.</div>` : ''}
+      ${['recu', 'valide'].includes(v.statut) && v.signature ? `<div class="detail-block"><h4>Votre signature (${new Date(v.confirme_le).toLocaleDateString('fr-FR')})</h4><img class="signature-img" src="${esc(v.signature)}" alt="Signature"></div>` : ''}
+      ${aSigner ? `<div class="detail-block"><h4>Je confirme avoir bien reçu ${money(v.montant)}</h4><div class="sig" id="sig-v"></div><p class="hint">Signez avec le doigt dans le cadre blanc.</p></div>
+        <div class="vers-probleme hidden"><label class="field">Quel est le problème ?<textarea id="v-pb" placeholder="Ex. J’ai reçu 120 000 au lieu de 150 000 / Je n’ai rien reçu."></textarea></label></div>` : ''}
+      <div class="form-actions">
+        ${aSigner ? '<button type="button" class="btn ghost" id="v-signaler">⚠️ Signaler un problème</button><button type="button" class="btn primary" id="v-signer">✍️ Signer et envoyer</button>' : '<button type="button" class="btn ghost" data-close>Fermer</button>'}
+        ${['recu', 'valide'].includes(v.statut) ? '<button type="button" class="btn" id="v-pdf">📄 Accusé de réception</button>' : ''}
+      </div>`,
+  });
+  const sig = aSigner ? padSignature($('#sig-v', m.el)) : null;
+  let modePb = false;
+  $('#v-signer', m.el)?.addEventListener('click', async () => {
+    const s = sig.valeur();
+    if (!s) { toast('Signez avec le doigt dans le cadre blanc.', 'warn'); return; }
+    try {
+      await q(sb.from('versements').update({ statut: 'recu', signature: s }).eq('id', v.id));
+      toast('Merci ✅ Votre confirmation est envoyée à la comptabilité et à la direction.', 'ok', 6000);
+      m.fermer(); naviguer();
+    } catch (e) { toast(erreurVersement(e), 'err', 6000); }
+  });
+  $('#v-signaler', m.el)?.addEventListener('click', async (ev) => {
+    if (!modePb) {
+      modePb = true;
+      $('.vers-probleme', m.el).classList.remove('hidden');
+      $('#v-pb', m.el).focus();
+      ev.target.textContent = '📤 Envoyer le problème';
+      ev.target.classList.replace('ghost', 'danger');
+      return;
+    }
+    const txt = $('#v-pb', m.el).value.trim();
+    if (!txt) { toast('Expliquez le problème.', 'warn'); return; }
+    try {
+      await q(sb.from('versements').update({ statut: 'conteste', commentaire_employe: txt }).eq('id', v.id));
+      toast('Problème envoyé à la comptabilité et à la direction.', 'warn', 6000);
+      m.fermer(); naviguer();
+    } catch (e) { toast(erreurVersement(e), 'err', 6000); }
+  });
+  $('#v-pdf', m.el)?.addEventListener('click', () => pdfAccuseVersement(v, S.profil));
+}
+
+async function encartVersementsAConfirmer() {
+  if (DEMO) return;
+  const pg = $('#main .page');
+  if (!pg) return;
+  const { count } = await sb.from('versements').select('id', { count: 'exact', head: true }).eq('profil_id', S.profil.id).eq('statut', 'verse');
+  if (!count) return;
+  const div = document.createElement('a');
+  div.href = '#/mon-espace';
+  div.className = 'notice warn bandeau-envois';
+  div.innerHTML = `💵 <b>${count} versement${count > 1 ? 's' : ''}</b> à confirmer dans votre espace. <span class="btn sm">Ouvrir</span>`;
+  pg.prepend(div);
+}
+
+// ─── Salaires (Comptabilité et Direction) ───
+
+let filtreSalaires = 'tous';
+PAGES.salaires = async () => {
+  const p = page(`
+    ${entete('Salaires', 'Versements à l’équipe, confirmations signées et validation', '<button class="btn" id="paie-mois">📋 Paie du mois</button><button class="btn primary" id="nv">＋ Versement</button>')}
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('💵', 'Les salaires fonctionnent dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try { await listeSalaires(zone, rendre); } catch (e) { zone.innerHTML = `<div class="card">${empty('💵', erreurVersement(e))}</div>`; }
+  };
+  $('#nv', p).onclick = () => formulaireVersement(null, rendre);
+  $('#paie-mois', p).onclick = () => paieDuMois(rendre);
+  await rendre();
+};
+
+async function listeSalaires(zone, rendre) {
+  await chargerEquipe();
+  const versements = await q(sb.from('versements').select('*').order('periode', { ascending: false }).order('created_at', { ascending: false }).limit(1000));
+  const mois = todayISO().slice(0, 7);
+  const ceMois = versements.filter((v) => v.periode === mois);
+  const nb = (s) => versements.filter((v) => v.statut === s).length;
+  const filtres = [['tous', 'Tous', versements.length], ['recu', 'À valider', nb('recu')], ['conteste', 'Problèmes', nb('conteste')], ['verse', 'En attente du bénéficiaire', nb('verse')], ['valide', 'Validés', nb('valide')]];
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi(`Versé en ${libellePeriode(mois)}`, moneyShort(ceMois.reduce((s, v) => s + num(v.montant), 0)), `${ceMois.length} versement(s)`)}
+      ${kpi('À valider', nb('recu'), 'Confirmés et signés', nb('recu') ? 'warn' : '')}
+      ${kpi('Problèmes signalés', nb('conteste'), nb('conteste') ? 'À corriger' : '✅ Aucun', nb('conteste') ? 'alert' : '')}
+      ${kpi('En attente du bénéficiaire', nb('verse'), 'Pas encore confirmés')}
+    </div>
+    <div class="card">
+      <div class="galerie-filtres" style="margin-bottom:12px">${filtres.map(([k, l, n]) => `<button type="button" class="chip-filtre ${k === filtreSalaires ? 'actif' : ''}" data-f="${k}">${l} <b>${n}</b></button>`).join('')}</div>
+      <div class="toolbar"><input class="input" id="sq" placeholder="🔍 Rechercher un nom…" style="flex:1"><button type="button" class="btn sm" id="s-csv">⬇️ Excel</button></div>
+      <div class="paie-liste" id="sl"></div></div>`;
+  let filtre = '';
+  const dessiner = () => {
+    const l = versements.filter((v) => (filtreSalaires === 'tous' || v.statut === filtreSalaires) && (!filtre || nomMembre(v.profil_id).toLowerCase().includes(filtre)));
+    $('#sl', zone).innerHTML = l.length ? l.map((v) => `<button type="button" class="paie-ligne vente-ligne" data-v="${v.id}">
+      <div class="paie-nom"><b>${esc(nomMembre(v.profil_id))}</b><span>${esc(libelleVersement(v))} · ${esc(v.moyen)} · ${fdate(v.date_versement)}</span>${v.statut === 'conteste' ? `<span style="color:var(--crit)">« ${esc(v.commentaire_employe || '')} »</span>` : ''}</div>
+      <div class="paie-montant"><b>${money(v.montant)}</b>${badge(STATUT_VERSEMENT[v.statut])}</div></button>`).join('')
+      : empty('💵', versements.length ? 'Rien dans ce filtre.' : 'Aucun versement. Touchez « 📋 Paie du mois » pour enregistrer les salaires de toute l’équipe en une fois.');
+    $$('[data-v]', zone).forEach((b) => (b.onclick = () => ficheVersement(versements.find((x) => x.id === b.dataset.v), rendre)));
+  };
+  $$('[data-f]', zone).forEach((b) => (b.onclick = () => { filtreSalaires = b.dataset.f; $$('[data-f]', zone).forEach((x) => x.classList.toggle('actif', x === b)); dessiner(); }));
+  $('#sq', zone).oninput = (e) => { filtre = e.target.value.toLowerCase(); dessiner(); };
+  $('#s-csv', zone).onclick = () => exporterCSV(`koordin-salaires-${todayISO()}.csv`,
+    ['Bénéficiaire', 'Rôle', 'Type', 'Période', `Montant (${devise()})`, 'Moyen', 'Référence', 'Date du versement', 'État', 'Confirmé le', 'Validé le'],
+    versements.map((v) => { const pr = S.equipe.find((x) => x.id === v.profil_id); return [pr?.nom || '', ROLES[pr?.role]?.label || '', TYPE_VERSEMENT[v.type], v.periode, Math.round(num(v.montant)), v.moyen, v.reference || '', v.date_versement, STATUT_VERSEMENT[v.statut][1].replace(/^\S+\s/, ''), v.confirme_le ? v.confirme_le.slice(0, 10) : '', v.valide_le ? v.valide_le.slice(0, 10) : '']; }));
+  dessiner();
+}
+
+const champsVersement = (v = {}) => `
+  ${F.select('type', 'Type', Object.entries(TYPE_VERSEMENT), v.type || 'salaire')}
+  ${F.text('periode', 'Mois concerné', v.periode || todayISO().slice(0, 7), { type: 'month', required: true })}
+  ${F.select('moyen', 'Moyen de paiement', MOYENS_ENCAISSEMENT.map((x) => [x, x]), v.moyen || 'Wave')}
+  ${F.text('date_versement', 'Date du versement', v.date_versement || todayISO(), { type: 'date', required: true })}`;
+
+function formulaireVersement(v, rendre, profilId = null) {
+  const membres = S.equipe.filter((x) => x.actif !== false);
+  ouvrirModale({
+    titre: v ? 'Corriger le versement' : 'Nouveau versement',
+    corps: `${v ? '<div class="notice">Après correction, le bénéficiaire devra confirmer à nouveau (une alerte lui est envoyée).</div>' : ''}<div class="form-grid">
+      ${F.select('profil_id', 'Bénéficiaire', membres.map((x) => [x.id, `${x.nom} — ${ROLES[x.role]?.label || x.role}`]), v?.profil_id || profilId || '', { required: true, vide: '— Choisir —', full: true })}
+      ${champsVersement(v || {})}
+      ${F.text('montant', `Montant (${devise()})`, v?.montant ?? '', { type: 'number', min: 1, required: true, inputmode: 'numeric' })}
+      ${F.text('reference', 'Référence (n° de transaction…)', v?.reference ?? '')}
+      ${F.area('note', 'Note pour le bénéficiaire (facultatif)', v?.note ?? '', { placeholder: 'Ex. Salaire d’octobre moins l’avance du 15.' })}
+    </div>`,
+    onSubmit: async (d) => {
+      const data = { profil_id: d.profil_id, type: d.type, periode: d.periode, moyen: d.moyen, date_versement: d.date_versement, montant: num(d.montant), reference: d.reference || null, note: d.note || null };
+      try { if (v) await q(sb.from('versements').update(data).eq('id', v.id)); else await q(sb.from('versements').insert(data)); }
+      catch (e) { throw new Error(erreurVersement(e)); }
+      toast(v ? 'Versement corrigé : le bénéficiaire est prévenu.' : 'Versement enregistré : le bénéficiaire est prévenu ✅');
+      rendre();
+    },
+  });
+}
+
+async function paieDuMois(rendre) {
+  await chargerEquipe();
+  const membres = S.equipe.filter((x) => x.actif !== false);
+  const derniers = await q(sb.from('versements').select('profil_id, montant, periode').eq('type', 'salaire').order('periode', { ascending: false }).limit(500));
+  const dernier = (id) => derniers.find((x) => x.profil_id === id)?.montant ?? '';
+  ouvrirModale({
+    titre: '📋 Paie du mois',
+    large: true,
+    boutonOk: 'Enregistrer les versements',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Cochez les personnes payées et vérifiez les montants (repris du dernier salaire). Chacune recevra une alerte pour confirmer la réception.</p>
+      <div class="form-grid">${champsVersement({})}</div>
+      <div class="paie-liste mt">${membres.map((x) => `<label class="paie-ligne paie-mois-ligne">
+        <input type="checkbox" name="inclure-${x.id}" ${dernier(x.id) ? 'checked' : ''} style="width:auto">
+        <div class="paie-nom"><b>${esc(x.nom)}</b><span>${esc(ROLES[x.role]?.label || '')}</span></div>
+        <input class="input" type="number" min="1" inputmode="numeric" name="montant-${x.id}" value="${esc(dernier(x.id))}" placeholder="Montant" style="width:130px"></label>`).join('')}</div>`,
+    onSubmit: async (d) => {
+      const lignes = membres.filter((x) => d[`inclure-${x.id}`] && num(d[`montant-${x.id}`]) > 0)
+        .map((x) => ({ profil_id: x.id, type: d.type, periode: d.periode, moyen: d.moyen, date_versement: d.date_versement, montant: num(d[`montant-${x.id}`]) }));
+      if (!lignes.length) throw new Error('Cochez au moins une personne avec un montant.');
+      try { await q(sb.from('versements').insert(lignes)); } catch (e) { throw new Error(erreurVersement(e)); }
+      toast(`${lignes.length} versement(s) enregistré(s) : chacun est prévenu ✅`);
+      rendre();
+    },
+  });
+}
+
+function ficheVersement(v, rendre) {
+  const pr = S.equipe.find((x) => x.id === v.profil_id);
+  const m = ouvrirModale({
+    titre: `${pr?.nom || ''} · ${libelleVersement(v)}`,
+    corps: `<div class="versement-montant">${money(v.montant)}</div>
+      <div class="detail-grid">
+        <div><span>Versé le</span><b>${fdate(v.date_versement)}</b></div>
+        <div><span>Moyen</span><b>${esc(v.moyen)}</b></div>
+        <div><span>Référence</span><b>${esc(v.reference || '—')}</b></div>
+        <div><span>État</span><b>${esc(STATUT_VERSEMENT[v.statut][1])}</b></div>
+      </div>
+      ${v.statut === 'conteste' ? `<div class="notice warn">⚠️ ${esc(pr?.nom || '')} signale : « ${esc(v.commentaire_employe || '')} »</div>` : ''}
+      ${v.signature ? `<div class="detail-block"><h4>Signature du bénéficiaire (${new Date(v.confirme_le).toLocaleString('fr-FR')})</h4><img class="signature-img" src="${esc(v.signature)}" alt="Signature"></div>` : ''}
+      ${v.valide_le ? `<p class="muted" style="font-size:12px">Validé le ${new Date(v.valide_le).toLocaleString('fr-FR')} par ${esc(nomMembre(v.valide_par))}.</p>` : ''}
+      <div class="rc-boutons mt">
+        ${v.statut === 'recu' ? '<button type="button" class="btn primary" id="fv-valider">✅ Valider</button>' : ''}
+        ${['verse', 'conteste'].includes(v.statut) ? '<button type="button" class="btn primary" id="fv-corriger">✏️ Corriger</button>' : ''}
+        ${v.statut === 'verse' ? `<a class="btn" target="_blank" rel="noopener" href="https://wa.me/${numeroAuteur(pr)}?text=${encodeURIComponent(`Bonjour ${String(pr?.nom || '').split(' ')[0]}, votre ${libelleVersement(v).toLowerCase()} (${money(v.montant)}) a été versé par ${v.moyen}. Merci de confirmer la réception dans KOORDIN (Mon espace). ${S.profil.nom}`)}">📲 Rappeler par WhatsApp</a>` : ''}
+        ${['recu', 'valide'].includes(v.statut) ? '<button type="button" class="btn" id="fv-pdf">📄 Accusé de réception</button>' : ''}
+        ${['verse', 'conteste'].includes(v.statut) ? '<button type="button" class="btn danger" id="fv-suppr">Supprimer</button>' : ''}
+      </div>`,
+  });
+  $('#fv-valider', m.el)?.addEventListener('click', async () => {
+    try { await q(sb.from('versements').update({ statut: 'valide' }).eq('id', v.id)); toast('Versement validé ✅'); m.fermer(); rendre(); } catch (e) { toast(erreurVersement(e), 'err'); }
+  });
+  $('#fv-corriger', m.el)?.addEventListener('click', () => { m.fermer(); formulaireVersement(v, rendre); });
+  $('#fv-pdf', m.el)?.addEventListener('click', () => pdfAccuseVersement(v, pr));
+  $('#fv-suppr', m.el)?.addEventListener('click', async () => {
+    if (!(await confirmer('Supprimer ce versement ?', 'Supprimer'))) return;
+    try { await q(sb.from('versements').delete().eq('id', v.id)); toast('Versement supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurVersement(e), 'err'); }
+  });
+}
+
+async function pdfAccuseVersement(v, pr) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, 'ACCUSÉ DE RÉCEPTION', libelleVersement(v), `versé le ${fdate(v.date_versement)}`);
+    let y = 50;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(17, 21, 33);
+    const texte = `Je soussigné(e) ${pr?.nom || ''}, ${ROLES[pr?.role]?.label || ''} chez ${S.entreprise?.nom || ''}, reconnais avoir reçu la somme de ${money(v.montant)} au titre de : ${libelleVersement(v)}, versée le ${fdate(v.date_versement)} par ${v.moyen}${v.reference ? ` (référence ${v.reference})` : ''}.`;
+    doc.splitTextToSize(textePDF(texte), 178).forEach((l) => { doc.text(l, 16, y); y += 6; });
+    y += 6;
+    doc.setFillColor(244, 245, 249); doc.roundedRect(16, y, 178, 18, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(textePDF(money(v.montant)), 105, y + 11.5, { align: 'center' });
+    y += 30;
+    doc.setFontSize(10); doc.text(textePDF(`Signature de ${pr?.nom || ''}`), 16, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 90, 36);
+    if (v.signature) doc.addImage(v.signature, 'PNG', 18, y + 5, 86, 32);
+    y += 46;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 108, 128);
+    doc.text(textePDF(`Confirmé et signé électroniquement dans KOORDIN le ${v.confirme_le ? new Date(v.confirme_le).toLocaleString('fr-FR') : '-'}.${v.valide_le ? ` Validé par la société le ${new Date(v.valide_le).toLocaleDateString('fr-FR')}.` : ''}`), 16, y);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Accusé de réception - ${pr?.nom || ''}`);
+    const nom = `Accuse-${libelleVersement(v)}-${pr?.nom || ''}.pdf`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9.]+/g, '-');
+    presenterPDF(doc.output('blob'), nom, `Accusé de réception : ${libelleVersement(v)} (${money(v.montant)}) - ${pr?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurVersement(e), 'err', 6000); }
 }
 
 // ═══════════════════════════════ STOCK ═══════════════════════════════

@@ -1,8 +1,9 @@
 {
-  "version": "2.6",
-  "date": "2026-11-16",
+  "version": "2.8",
+  "date": "2026-11-24",
   "nouveautes": [
-    "Quand votre rapport est validé ou rejeté, vous recevez tout de suite une alerte dans KOORDIN (avec le commentaire ou le motif du rejet).",
-    "Celui qui valide peut aussi prévenir l'auteur par WhatsApp en un geste : le message est déjà écrit avec son numéro."
+    "👤 Mon espace (avatar en haut à droite) : chacun voit ses propres versements de salaire, confirme la réception en signant au doigt, ou signale un problème. Les autres membres ne voient rien.",
+    "💵 Salaires (Comptabilité et Direction) : enregistrez un versement ou toute la paie du mois en une fois, suivez qui a confirmé, validez, et téléchargez l'accusé de réception signé.",
+    "Contient aussi la version 2.7 : matériel et engins, sécurité chantier, réception des travaux avec PV signé, rappel du rapport du jour."
   ]
 }
