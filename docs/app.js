@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.9.1';
+const VERSION = '3.0';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -42,6 +42,7 @@ const MENU = [
   { r: 'dashboard', court: 'Accueil',       label: 'Tableau de bord', ico: '📊', roles: TOUS },
   { r: 'projets', court: 'Projets',         label: 'Projets',         ico: '🏗️', roles: TOUS, labelTech: 'Mes chantiers' },
   { r: 'communiques', court: 'Infos',       label: 'Communiqués',     ico: '📢', roles: TOUS },
+  { r: 'appels', court: 'Appels', label: 'Appels et réunions', ico: '📹', roles: TOUS },
   { r: 'nouveau-rapport', court: 'Rapport', label: 'Nouveau rapport', ico: '➕', roles: ['technicien'] },
   { r: 'rapports', court: 'Rapports',        label: 'Rapports',        ico: '📋', roles: ROLES_RAPPORT, labelTech: 'Mes rapports' },
   { r: 'pointage', court: 'Pointage', label: 'Pointage', ico: '👷', roles: ['direction', 'coordinateur', 'technicien', 'comptable'] },
@@ -1076,6 +1077,7 @@ const TRACES = {
   materiel: '<path d="M2.5 17V9.5h9l3 4.5h4a2 2 0 0 1 2 2v1"/><path d="M11.5 9.5V6h-5v3.5"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/><path d="M8.5 17.5h6.5"/>',
   securite: '<path d="M4 14a8 8 0 0 1 16 0v2H4v-2Z"/><path d="M12 6V3.5"/><path d="M9.5 6.5 9 4M14.5 6.5 15 4"/><path d="M3 16h18v1.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5V16Z"/>',
   'mon-espace': '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  appels: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/>',
   contrats: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h3"/><path d="M4 7v13a1 1 0 0 0 1 1h2"/>',
   salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
@@ -1184,7 +1186,7 @@ function ouvrirMenuUtilisateur(e) {
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
   $('#m-guide', m)?.addEventListener('click', () => { fermerPanneaux(); ouvrirGuide(); });
   $('#m-espace', m)?.addEventListener('click', () => { fermerPanneaux(); allerA('#/mon-espace'); });
-  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); await sb.auth.signOut(); };
+  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); if (S.canalAppels) sb.removeChannel(S.canalAppels); await sb.auth.signOut(); };
 }
 
 function fermerPanneaux() {
@@ -1229,6 +1231,11 @@ function ecouterTempsReel() {
       majCompteurNotifications();
     })
     .subscribe();
+  // Canal séparé : si la mise à jour 3.0 n'est pas installée, le reste du temps réel continue de fonctionner
+  if (S.canalAppels) sb.removeChannel(S.canalAppels);
+  S.canalAppels = sb.channel('koordin-appels')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'appels' }, (pl) => gererAppelTempsReel(pl))
+    .subscribe((st) => { if (st === 'SUBSCRIBED') verifierAppelsEnAttente(); });
 }
 
 const ICONES_ACTIVITE = { projet: '🏗️', rapport: '📋', validation: '✅', commande: '🛒', facture: '🧾', stock: '📦', alerte: '🚨', equipe: '👥', communique: '📢' };
@@ -5525,6 +5532,425 @@ async function pdfRecuPrestataire(c, versements, idVersement) {
   } catch (e) { console.error(e); toast(erreurContrat(e), 'err', 6000); }
 }
 
+// ═══════════════════════════════ APPELS VIDÉO ET RÉUNIONS (3.0) ═══════════════════════════════
+// La vidéo passe directement d'un téléphone à l'autre (WebRTC). Supabase Realtime sert
+// uniquement à se trouver (présence) et à échanger les informations de connexion.
+
+const APPEL = { courant: null, sonnerie: null };
+const lienAppel = (id) => `${location.origin}${location.pathname}#/appels/${id}`;
+const nomAppel = (id) => S.equipe?.find((x) => x.id === id)?.nom || 'Un collègue';
+const appelActif = (a) => a.statut === 'en_cours' && Date.now() - new Date(a.created_at).getTime() < 3 * 3600e3;
+
+function erreurAppel(e) {
+  const m = String(e?.message || e?.name || '');
+  if (/^APPEL_/.test(m) && e?.hint) return e.hint;
+  if (/relation .*appels|repondre_appel/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Les appels nécessitent la mise à jour 3.0 de la base de données (kit d’installation).';
+  if (e?.name === 'NotAllowedError' || /Permission denied/i.test(m)) return 'Autorisez la caméra et le micro pour KOORDIN (icône 🔒 à côté de l’adresse, puis Autorisations).';
+  if (e?.name === 'NotFoundError' || e?.name === 'OverconstrainedError') return 'Aucune caméra ou aucun micro trouvé sur cet appareil.';
+  if (e?.name === 'NotReadableError') return 'La caméra est déjà utilisée par une autre application. Fermez-la puis réessayez.';
+  return messageErreur(e);
+}
+
+async function serveursICE() {
+  const s = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  try {
+    const { data } = await sb.from('parametres_plateforme').select('cle, valeur').in('cle', ['turn_url', 'turn_utilisateur', 'turn_mot_de_passe']);
+    const p = Object.fromEntries((data || []).map((x) => [x.cle, x.valeur]));
+    if (p.turn_url) s.push({ urls: p.turn_url.split(/[\s,]+/).filter(Boolean), username: p.turn_utilisateur || undefined, credential: p.turn_mot_de_passe || undefined });
+  } catch { /* relais facultatif */ }
+  return s;
+}
+
+PAGES.appels = async (id) => {
+  const p = page(`
+    ${entete('Appels et réunions', 'Voir un chantier en direct et se réunir en vidéo')}
+    <div class="appel-actions">
+      <button type="button" class="appel-gros" id="ap-chantier"><span class="appel-gros-ic">📹</span><b>${role() === 'technicien' ? 'Montrer le chantier en direct' : 'Voir un chantier en direct'}</b><small>${role() === 'technicien' ? 'Vous filmez, la direction voit et vous parle' : 'Le technicien filme, vous voyez et vous parlez'}</small></button>
+      <button type="button" class="appel-gros" id="ap-reunion"><span class="appel-gros-ic">👥</span><b>Démarrer une réunion</b><small>Vidéo avec plusieurs personnes de l’équipe</small></button>
+    </div>
+    <div id="ap-encours"></div>
+    <div class="card"><div class="card-title">Appeler directement</div><div id="ap-equipe" class="paie-liste"></div></div>
+    <div class="card"><div class="card-title">Historique des appels</div><div id="ap-histo" class="paie-liste"></div></div>`);
+  if (DEMO) { $('#ap-histo', p).innerHTML = empty('📹', 'Les appels vidéo fonctionnent dans la version installée de KOORDIN.'); return; }
+  await chargerEquipe();
+  const membres = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id);
+  $('#ap-equipe', p).innerHTML = membres.length ? membres.map((x) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(x.nom)}</b><span>${esc(ROLES[x.role]?.label || x.role)}</span></div>
+      <button type="button" class="btn sm primary" data-appeler="${x.id}">📹 Appeler</button></div>`).join('') : empty('👥', 'Invitez d’abord des membres dans « Équipe ».');
+  $$('[data-appeler]', p).forEach((b) => (b.onclick = () => {
+    const x = membres.find((m) => m.id === b.dataset.appeler);
+    lancerAppel({ mode: role() === 'technicien' || x.role === 'technicien' ? 'chantier' : 'reunion', invites: [x.id] });
+  }));
+  $('#ap-chantier', p).onclick = () => dialogueChantier(membres);
+  $('#ap-reunion', p).onclick = () => dialogueReunion(membres);
+  try {
+    const appels = await q(sb.from('appels').select('*, projets(nom)').order('created_at', { ascending: false }).limit(30));
+    const actifs = appels.filter((a) => appelActif(a) && (a.cree_par === S.profil.id || a.invites.includes(S.profil.id)));
+    $('#ap-encours', p).innerHTML = actifs.length ? `<div class="card appel-encours"><div class="card-title">🔴 En cours</div>${actifs.map((a) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(titreAppel(a))}</b><span>${esc(a.projets?.nom || '')} ${ago(a.created_at)}</span></div><button type="button" class="btn sm primary" data-rejoindre="${a.id}">Rejoindre</button></div>`).join('')}</div>` : '';
+    $$('[data-rejoindre]', p).forEach((b) => (b.onclick = () => ouvrirEcranAppel(actifs.find((a) => a.id === b.dataset.rejoindre))));
+    $('#ap-histo', p).innerHTML = appels.length ? appels.map((a) => {
+      const moi = a.cree_par === S.profil.id;
+      const manque = !moi && !a.participants.includes(S.profil.id) && !appelActif(a);
+      const duree = a.termine_le ? Math.max(1, Math.round((new Date(a.termine_le) - new Date(a.created_at)) / 60000)) : null;
+      const st = appelActif(a) ? ['ok', '🔴 En cours'] : manque ? ['warn', a.refus.includes(S.profil.id) ? 'Refusé' : 'Manqué'] : ['muted', duree ? `${duree} min` : 'Terminé'];
+      return `<div class="paie-ligne"><div class="paie-nom"><b>${a.mode === 'chantier' ? '📹' : '👥'} ${esc(titreAppel(a))}</b><span>${moi ? 'Vous avez appelé' : `Appel de ${esc(nomAppel(a.cree_par))}`} · ${new Date(a.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${a.projets?.nom ? ` · ${esc(a.projets.nom)}` : ''}</span></div><div class="paie-montant">${badge(st)}</div></div>`;
+    }).join('') : empty('📹', 'Aucun appel pour le moment. Appelez un technicien pour voir son chantier en direct.');
+  } catch (e) { $('#ap-histo', p).innerHTML = empty('📹', erreurAppel(e)); }
+  if (id) rejoindreParLien(id);
+};
+
+function titreAppel(a) {
+  if (a.titre) return a.titre;
+  const autres = [a.cree_par, ...a.invites].filter((x) => x !== S.profil.id).map(nomAppel);
+  return `${a.mode === 'chantier' ? 'Chantier en direct' : 'Réunion'} avec ${autres.slice(0, 3).join(', ')}${autres.length > 3 ? '…' : ''}`;
+}
+
+async function dialogueChantier(membres) {
+  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  const tech = role() === 'technicien';
+  const cibles = tech ? membres.filter((x) => x.role !== 'technicien') : membres.filter((x) => x.role === 'technicien');
+  ouvrirModale({
+    titre: tech ? '📹 Montrer le chantier en direct' : '📹 Voir un chantier en direct',
+    boutonOk: '📹 Appeler',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">${tech ? 'Votre caméra arrière filme le chantier : la personne appelée voit en direct et vous parle.' : 'Le technicien répond, sa caméra arrière filme le chantier : vous voyez en direct et vous vous parlez.'}</p>
+      <div class="form-grid">
+        ${F.select('projet_id', 'Chantier', [['', '— Choisir —'], ...projets.map((x) => [x.id, x.nom])], projets.length === 1 ? projets[0].id : '', { full: true })}
+        ${F.select('invite', tech ? 'Qui appeler ?' : 'Quel technicien ?', cibles.map((x) => [x.id, `${x.nom} · ${ROLES[x.role]?.label || x.role}`]), '', { full: true, required: true })}
+      </div>`,
+    onSubmit: async (d) => { await lancerAppel({ mode: 'chantier', invites: [d.invite], projet_id: d.projet_id || null }); },
+  });
+}
+
+async function dialogueReunion(membres) {
+  const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  ouvrirModale({
+    titre: '👥 Nouvelle réunion vidéo',
+    boutonOk: '📹 Démarrer',
+    corps: `<div class="form-grid">
+        ${F.text('titre', 'Sujet de la réunion', '', { full: true, placeholder: 'Ex. Point hebdomadaire Villa Cocody' })}
+        ${F.select('projet_id', 'Chantier (facultatif)', [['', '— Aucun —'], ...projets.map((x) => [x.id, x.nom])], '', { full: true })}
+      </div>
+      <div class="field full" style="margin-top:6px">Participants (7 au maximum)</div>
+      <div class="reunion-membres">${membres.map((x) => `<label class="reunion-membre"><input type="checkbox" name="m_${x.id}"><span><b>${esc(x.nom)}</b><small>${esc(ROLES[x.role]?.label || x.role)}</small></span></label>`).join('')}</div>`,
+    onSubmit: async (d) => {
+      const invites = Object.keys(d).filter((k) => k.startsWith('m_') && d[k]).map((k) => k.slice(2));
+      if (!invites.length) { toast('Cochez au moins une personne.', 'warn'); return false; }
+      if (invites.length > 7) { toast('7 participants au maximum (8 avec vous).', 'warn'); return false; }
+      await lancerAppel({ mode: 'reunion', invites, projet_id: d.projet_id || null, titre: d.titre || null });
+    },
+  });
+}
+
+async function lancerAppel(donnees) {
+  if (APPEL.courant) { toast('Vous êtes déjà en appel.', 'warn'); return; }
+  let a;
+  try { a = await q(sb.from('appels').insert(donnees).select('*, projets(nom)').single()); } catch (e) { toast(erreurAppel(e), 'err', 7000); return; }
+  await ouvrirEcranAppel(a);
+}
+
+async function rejoindreParLien(id) {
+  if (APPEL.courant?.id === id) return;
+  try {
+    const a = await q(sb.from('appels').select('*, projets(nom)').eq('id', id).single());
+    if (!appelActif(a)) { toast('Cet appel est terminé.', 'warn'); return; }
+    if (await confirmer(`Rejoindre « ${titreAppel(a)} » ? La caméra et le micro vont s’activer.`, '📹 Rejoindre')) ouvrirEcranAppel(a);
+  } catch (e) { toast(erreurAppel(e), 'err'); }
+}
+
+// ─── Sonnerie : appel entrant ───
+function gererAppelTempsReel(payload) {
+  const a = payload.new;
+  if (!a?.id) return;
+  if (payload.eventType === 'INSERT') {
+    if (a.cree_par !== S.profil.id && a.invites?.includes(S.profil.id)) sonner(a);
+    return;
+  }
+  if (APPEL.sonnerie?.id === a.id && (a.statut === 'termine' || a.participants.includes(S.profil.id) || a.refus.includes(S.profil.id))) {
+    arreterSonnerie();
+    if (a.statut === 'termine') toast(`📹 Appel manqué de ${nomAppel(a.cree_par)}.`, 'warn', 8000);
+  }
+  const c = APPEL.courant;
+  if (c?.id === a.id) {
+    c.appel = { ...c.appel, ...a };
+    if (a.statut === 'termine' && c.appel.cree_par !== S.profil.id) c.terminer('L’appel est terminé.');
+    else if (c.appel.cree_par === S.profil.id && c.salle.pairs.size === 0 && a.invites.every((x) => a.refus.includes(x))) c.terminer(`${a.invites.length > 1 ? 'Personne ne peut' : `${nomAppel(a.invites[0])} ne peut pas`} répondre pour le moment.`, true);
+  }
+}
+
+async function verifierAppelsEnAttente() {
+  try {
+    const depuis = new Date(Date.now() - 60e3).toISOString();
+    const { data } = await sb.from('appels').select('*, projets(nom)').eq('statut', 'en_cours').gte('created_at', depuis).contains('invites', [S.profil.id]);
+    const a = (data || []).find((x) => !x.participants.includes(S.profil.id) && !x.refus.includes(S.profil.id));
+    if (a) sonner(a);
+  } catch { /* table absente : rien */ }
+}
+
+function sonner(a) {
+  if (APPEL.courant || APPEL.sonnerie) return;
+  const qui = nomAppel(a.cree_par);
+  const el = document.createElement('div');
+  el.className = 'sonnerie';
+  el.innerHTML = `<div class="sonnerie-carte" role="alertdialog" aria-label="Appel entrant">
+    <div class="sonnerie-onde"><div class="sonnerie-avatar">${esc(initiales(qui))}</div></div>
+    <b>${esc(qui)}</b>
+    <span>${a.mode === 'chantier' ? (role() === 'technicien' ? '📹 veut voir le chantier en direct' : '📹 veut vous montrer le chantier') : '👥 vous invite à une réunion vidéo'}${a.titre ? `<br>« ${esc(a.titre)} »` : ''}</span>
+    <div class="sonnerie-boutons">
+      <button type="button" class="rond rouge" id="so-non" aria-label="Refuser">✕</button>
+      <button type="button" class="rond vert" id="so-oui" aria-label="Répondre">📹</button>
+    </div><div class="sonnerie-legende"><span>Refuser</span><span>Répondre</span></div></div>`;
+  document.body.appendChild(el);
+  let ctx = null;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* pas de son */ }
+  const bip = () => {
+    try { navigator.vibrate?.([400, 200, 400]); } catch { /* rien */ }
+    if (!ctx || ctx.state !== 'running') { ctx?.resume?.().catch(() => {}); if (!ctx || ctx.state !== 'running') return; }
+    [0, 0.5].forEach((t) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.type = 'sine';
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.4);
+      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.42);
+    });
+  };
+  bip();
+  const iv = setInterval(bip, 2200);
+  const fin = setTimeout(() => { arreterSonnerie(); toast(`📹 Appel manqué de ${qui}.`, 'warn', 8000); }, 45000);
+  APPEL.sonnerie = { id: a.id, el, stop: () => { clearInterval(iv); clearTimeout(fin); try { ctx?.close(); } catch { /* rien */ } el.remove(); } };
+  $('#so-non', el).onclick = async () => { arreterSonnerie(); try { await sb.rpc('repondre_appel', { p_appel: a.id, p_reponse: 'refuse' }); } catch { /* rien */ } };
+  $('#so-oui', el).onclick = () => { arreterSonnerie(); ouvrirEcranAppel(a); };
+}
+function arreterSonnerie() { APPEL.sonnerie?.stop(); APPEL.sonnerie = null; }
+
+// ─── Connexions vidéo entre les participants (maillage pair à pair) ───
+class SalleVisio {
+  constructor(appel, flux, ui) { this.a = appel; this.flux = flux; this.ui = ui; this.pid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; this.pairs = new Map(); }
+  async demarrer() {
+    this.ice = await serveursICE();
+    this.canal = sb.channel(`appel-${this.a.id}`, { config: { broadcast: { self: false }, presence: { key: this.pid } } });
+    this.canal
+      .on('broadcast', { event: 'signal' }, ({ payload }) => this.signal(payload))
+      .on('broadcast', { event: 'fin' }, () => this.ui.terminer('L’appel a été terminé par l’organisateur.'))
+      .on('presence', { event: 'sync' }, () => this.sync())
+      .on('presence', { event: 'leave' }, ({ key }) => { if (!this.canal.presenceState()[key]) this.retirer(key); })
+      .subscribe(async (st) => { if (st === 'SUBSCRIBED') await this.canal.track({ profil: S.profil.id, nom: S.profil.nom }); });
+  }
+  sync() {
+    const etat = this.canal.presenceState();
+    Object.entries(etat).forEach(([pid, metas]) => {
+      if (pid === this.pid || this.pairs.has(pid)) return;
+      if (this.pid < pid) this.creerPair(pid, metas[0], true);
+    });
+    [...this.pairs.keys()].forEach((pid) => { if (!etat[pid] && this.pairs.get(pid).vu) this.retirer(pid); });
+    this.pairs.forEach((p, pid) => { if (etat[pid]) p.vu = true; });
+    this.ui.maj();
+  }
+  creerPair(pid, meta, initiateur) {
+    const pc = new RTCPeerConnection({ iceServers: this.ice });
+    const pair = { pc, pid, nom: meta?.nom || '…', profil: meta?.profil, file: [], flux: new MediaStream(), vu: false };
+    this.pairs.set(pid, pair);
+    if (initiateur) {
+      pc.onnegotiationneeded = async () => {
+        try { await pc.setLocalDescription(await pc.createOffer()); this.envoyer(pid, 'offer', pc.localDescription.toJSON()); } catch (e) { console.warn(e); }
+      };
+    }
+    pc.ontrack = (e) => { if (e.streams[0]) pair.flux = e.streams[0]; else pair.flux.addTrack(e.track); this.ui.tuile(pair); };
+    pc.onicecandidate = (e) => { if (e.candidate) this.envoyer(pid, 'ice', e.candidate.toJSON()); };
+    pc.onconnectionstatechange = () => {
+      this.ui.etat(pair);
+      if (pc.connectionState === 'failed' && initiateur) this.relancer(pair);
+    };
+    this.flux.getTracks().forEach((t) => pc.addTrack(t, this.flux));
+    this.ui.tuile(pair);
+    this.ui.maj();
+    return pair;
+  }
+  async relancer(pair) {
+    try { await pair.pc.setLocalDescription(await pair.pc.createOffer({ iceRestart: true })); this.envoyer(pair.pid, 'offer', pair.pc.localDescription.toJSON()); } catch { /* rien */ }
+  }
+  envoyer(to, type, data) { this.canal.send({ type: 'broadcast', event: 'signal', payload: { from: this.pid, to, type, data, nom: S.profil.nom, profil: S.profil.id } }); }
+  async signal(m) {
+    if (m.to !== this.pid) return;
+    let pair = this.pairs.get(m.from);
+    if (!pair) { if (m.type !== 'offer') return; pair = this.creerPair(m.from, { nom: m.nom, profil: m.profil }, false); }
+    if (pair.nom === '…') { pair.nom = m.nom; this.ui.tuile(pair); }
+    const pc = pair.pc;
+    try {
+      if (m.type === 'offer') {
+        await pc.setRemoteDescription(m.data); await this.vider(pair);
+        await pc.setLocalDescription(await pc.createAnswer());
+        this.envoyer(m.from, 'answer', pc.localDescription.toJSON());
+      } else if (m.type === 'answer') { await pc.setRemoteDescription(m.data); await this.vider(pair); }
+      else if (m.type === 'ice') { if (pc.remoteDescription) await pc.addIceCandidate(m.data); else pair.file.push(m.data); }
+    } catch (e) { console.warn('signal', e); }
+  }
+  async vider(pair) { while (pair.file.length) { try { await pair.pc.addIceCandidate(pair.file.shift()); } catch { /* rien */ } } }
+  retirer(pid) {
+    const p = this.pairs.get(pid);
+    if (!p) return;
+    p.pc.close(); this.pairs.delete(pid);
+    this.ui.retirerTuile(pid); this.ui.maj();
+  }
+  async remplacerVideo(piste) {
+    for (const p of this.pairs.values()) {
+      const s = p.pc.getSenders().find((x) => x.track?.kind === 'video' || (!x.track && x.dtmf === null));
+      if (s) await s.replaceTrack(piste);
+    }
+  }
+  fermer(pourTous) {
+    try { if (pourTous) this.canal?.send({ type: 'broadcast', event: 'fin', payload: {} }); } catch { /* rien */ }
+    this.pairs.forEach((p) => p.pc.close()); this.pairs.clear();
+    if (this.canal) setTimeout(() => sb.removeChannel(this.canal), pourTous ? 400 : 0);
+    this.flux.getTracks().forEach((t) => t.stop());
+  }
+}
+
+// ─── Écran d'appel ───
+async function ouvrirEcranAppel(a) {
+  if (APPEL.courant) { toast('Vous êtes déjà en appel.', 'warn'); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) { toast('Ce navigateur ne permet pas les appels vidéo. Utilisez Chrome à jour.', 'err', 7000); return; }
+  APPEL.courant = { id: a.id, appel: a, terminer: () => {} };
+  const createur = a.cree_par === S.profil.id;
+  let face = a.mode === 'chantier' && role() === 'technicien' ? 'environment' : 'user';
+  const contraintes = (f) => ({ facingMode: f, width: { ideal: f === 'environment' ? 1280 : 640 }, height: { ideal: f === 'environment' ? 720 : 480 }, frameRate: { ideal: 24, max: 30 } });
+  let flux;
+  try {
+    flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: contraintes(face) });
+  } catch (e) {
+    try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); toast('Caméra indisponible : vous êtes en audio seulement.', 'warn', 6000); }
+    catch (e2) { APPEL.courant = null; toast(erreurAppel(e2), 'err', 9000); return; }
+  }
+  try { await q(sb.rpc('repondre_appel', { p_appel: a.id, p_reponse: 'rejoint' })); }
+  catch (e) { flux.getTracks().forEach((t) => t.stop()); APPEL.courant = null; toast(erreurAppel(e), 'err', 7000); return; }
+
+  const peutPhoto = a.projet_id && can('direction', 'coordinateur', 'technicien');
+  const autres = [a.cree_par, ...a.invites].filter((x) => x !== S.profil.id);
+  const el = document.createElement('div');
+  el.className = 'appel-ecran';
+  el.innerHTML = `
+    <div class="ap-haut"><div class="ap-titre"><b>${esc(titreAppel(a))}</b><span><i class="ap-point"></i><span id="ap-chrono">00:00</span> · <span id="ap-nb">1 personne</span>${a.projets?.nom ? ` · ${esc(a.projets.nom)}` : ''}</span></div>
+      <button type="button" class="ap-mini" id="ap-relancer" title="Relancer par WhatsApp">📲</button></div>
+    <div class="ap-grille" id="ap-grille" data-n="0"><div class="ap-attente" id="ap-attente"><div class="sonnerie-onde"><div class="sonnerie-avatar">${esc(initiales(nomAppel(autres[0])))}</div></div><b>${createur ? `Appel de ${esc(autres.map(nomAppel).slice(0, 3).join(', '))}…` : 'Connexion…'}</b><span>${createur ? 'Ça sonne chez eux. S’ils ne voient pas l’appel, appuyez sur 📲 pour leur envoyer le lien par WhatsApp.' : 'Connexion à l’appel en cours.'}</span></div></div>
+    <video class="ap-moi ${face === 'user' ? 'miroir' : ''}" id="ap-moi" autoplay playsinline muted></video>
+    <div class="ap-bas">
+      <button type="button" class="ap-btn" id="ap-micro" aria-label="Micro"><span>🎤</span><small>Micro</small></button>
+      <button type="button" class="ap-btn" id="ap-cam" aria-label="Caméra"><span>📷</span><small>Caméra</small></button>
+      <button type="button" class="ap-btn" id="ap-retourner" aria-label="Changer de caméra"><span>🔄</span><small>Retourner</small></button>
+      ${peutPhoto ? '<button type="button" class="ap-btn" id="ap-photo" aria-label="Photo"><span>📸</span><small>Photo</small></button>' : ''}
+      <button type="button" class="ap-btn rouge" id="ap-fin" aria-label="Raccrocher"><span>✆</span><small>${createur ? 'Terminer' : 'Quitter'}</small></button>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.classList.add('en-appel');
+  const moi = $('#ap-moi', el);
+  moi.srcObject = flux;
+  const grille = $('#ap-grille', el);
+  const debut = Date.now();
+  const chrono = setInterval(() => { const s = Math.floor((Date.now() - debut) / 1000); $('#ap-chrono', el).textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 1000);
+  let verrou = null;
+  try { verrou = await navigator.wakeLock?.request('screen'); } catch { /* rien */ }
+  let sansReponse = createur ? setTimeout(() => {
+    if (salle.pairs.size === 0) $('#ap-attente span', el).innerHTML = 'Pas encore de réponse. Envoyez le lien par WhatsApp avec 📲, ou raccrochez et réessayez plus tard.';
+  }, 40000) : null;
+
+  const ui = {
+    tuile(pair) {
+      let t = grille.querySelector(`[data-pid="${pair.pid}"]`);
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'ap-tuile'; t.dataset.pid = pair.pid;
+        t.innerHTML = '<video autoplay playsinline></video><span class="ap-nom"></span><span class="ap-etat">Connexion…</span>';
+        t.onclick = () => { const f = t.classList.toggle('focus'); $$('.ap-tuile', grille).forEach((x) => { if (x !== t) x.classList.toggle('cache', f); }); };
+        grille.appendChild(t);
+      }
+      $('.ap-nom', t).textContent = pair.nom;
+      const v = $('video', t);
+      if (v.srcObject !== pair.flux) { v.srcObject = pair.flux; v.play?.().catch(() => {}); }
+      $('#ap-attente', el)?.classList.add('hidden');
+      grille.dataset.n = grille.querySelectorAll('.ap-tuile').length;
+    },
+    etat(pair) {
+      const t = grille.querySelector(`[data-pid="${pair.pid}"] .ap-etat`);
+      if (!t) return;
+      const s = pair.pc.connectionState;
+      t.textContent = s === 'connected' ? '' : s === 'failed' ? '⚠️ Connexion difficile…' : s === 'disconnected' ? '📶 Réseau faible…' : 'Connexion…';
+      t.classList.toggle('hidden', s === 'connected');
+      if (s === 'connected') { clearTimeout(sansReponse); sansReponse = null; }
+    },
+    retirerTuile(pid) {
+      grille.querySelector(`[data-pid="${pid}"]`)?.remove();
+      grille.dataset.n = grille.querySelectorAll('.ap-tuile').length;
+      if (!grille.querySelector('.ap-tuile')) { const at = $('#ap-attente', el); at.classList.remove('hidden'); $('b', at).textContent = 'Seul dans l’appel'; $('span', at).textContent = 'Les autres participants ont quitté.'; }
+    },
+    maj() { const n = salle.pairs.size + 1; $('#ap-nb', el).textContent = `${n} personne${n > 1 ? 's' : ''}`; },
+    terminer: (msg, pourTous) => terminer(msg, pourTous),
+  };
+  const salle = new SalleVisio(a, flux, ui);
+  let fini = false;
+  async function terminer(msg, pourTous) {
+    if (fini) return;
+    fini = true;
+    const dernier = salle.pairs.size === 0;
+    salle.fermer(pourTous);
+    clearInterval(chrono); clearTimeout(sansReponse);
+    try { await verrou?.release(); } catch { /* rien */ }
+    window.removeEventListener('pagehide', surFermeture);
+    el.remove(); document.body.classList.remove('en-appel');
+    APPEL.courant = null;
+    if (pourTous || dernier) { try { await sb.rpc('repondre_appel', { p_appel: a.id, p_reponse: 'termine' }); } catch { /* rien */ } }
+    if (msg) toast(msg, 'ok', 6000);
+    if ((hashCourant() || '').startsWith('#/appels')) { if (hashCourant() !== '#/appels') location.hash = '#/appels'; else naviguer(); }
+  }
+  const surFermeture = () => terminer(null, createur);
+  window.addEventListener('pagehide', surFermeture);
+  APPEL.courant = { id: a.id, appel: a, salle, terminer: (m, t) => terminer(m, t) };
+  await salle.demarrer();
+
+  const piste = (k) => flux.getTracks().find((t) => t.kind === k);
+  $('#ap-micro', el).onclick = (e) => { const t = piste('audio'); if (!t) return; t.enabled = !t.enabled; e.currentTarget.classList.toggle('off', !t.enabled); $('span', e.currentTarget).textContent = t.enabled ? '🎤' : '🔇'; };
+  $('#ap-cam', el).onclick = (e) => { const t = piste('video'); if (!t) return; t.enabled = !t.enabled; e.currentTarget.classList.toggle('off', !t.enabled); moi.classList.toggle('hidden', !t.enabled); };
+  $('#ap-retourner', el).onclick = async (e) => {
+    const ancienne = piste('video');
+    const btn = e.currentTarget; btn.disabled = true;
+    const voulu = face === 'user' ? 'environment' : 'user';
+    try {
+      ancienne?.stop();
+      const nouveau = await navigator.mediaDevices.getUserMedia({ video: contraintes(voulu) });
+      const p = nouveau.getVideoTracks()[0];
+      if (ancienne) flux.removeTrack(ancienne);
+      flux.addTrack(p);
+      await salle.remplacerVideo(p);
+      face = voulu; moi.srcObject = flux; moi.classList.toggle('miroir', face === 'user');
+    } catch (err) {
+      toast(erreurAppel(err), 'err');
+      try { const r = await navigator.mediaDevices.getUserMedia({ video: contraintes(face) }); const p = r.getVideoTracks()[0]; if (ancienne) flux.removeTrack(ancienne); flux.addTrack(p); await salle.remplacerVideo(p); moi.srcObject = flux; } catch { /* rien */ }
+    } finally { btn.disabled = false; }
+  };
+  $('#ap-photo', el)?.addEventListener('click', async (e) => {
+    const v = grille.querySelector('.ap-tuile.focus video') || (face === 'environment' ? moi : grille.querySelector('.ap-tuile video')) || moi;
+    if (!v.videoWidth) { toast('Image pas encore disponible.', 'warn'); return; }
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext('2d').drawImage(v, 0, 0);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+      const chemin = `${S.entreprise.id}/galerie/${a.projet_id}/visio-${Date.now()}.jpg`;
+      const { error } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: 'image/jpeg' });
+      if (error) throw error;
+      await q(sb.from('projet_photos').insert({ projet_id: a.projet_id, chemin, legende: `Capture de l’appel vidéo du ${new Date().toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` }));
+      el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 300);
+      toast('📸 Photo ajoutée à la galerie du chantier.');
+    } catch (err) { toast(messageErreur(err), 'err'); } finally { btn.disabled = false; }
+  });
+  $('#ap-relancer', el).onclick = () => {
+    const cible = autres.length === 1 ? S.equipe?.find((x) => x.id === autres[0]) : null;
+    const numero = cible ? numeroAuteur(cible) : '';
+    const texte = `📹 ${S.profil.nom} vous attend dans un appel vidéo KOORDIN. Appuyez ici pour rejoindre : ${lienAppel(a.id)}`;
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texte)}`, '_blank', 'noopener');
+  };
+  $('#ap-fin', el).onclick = async () => {
+    if (createur && salle.pairs.size > 1 && !(await confirmer('Terminer la réunion pour tout le monde ?', 'Terminer'))) return;
+    terminer(null, createur);
+  };
+}
+
 // ═══════════════════════════════ STOCK ═══════════════════════════════
 
 let ongletStock = 'articles';
@@ -6513,6 +6939,9 @@ PAGES.console = async () => {
             ${F.text('paiement_wave', 'Numéro Wave', params.paiement_wave, { placeholder: '07 00 00 00 00' })}
             ${F.text('paiement_orange_money', 'Numéro Orange Money', params.paiement_orange_money, { placeholder: '07 00 00 00 00' })}
             ${F.text('paiement_beneficiaire', 'Nom du bénéficiaire', params.paiement_beneficiaire, { full: true, placeholder: 'Ex. GECREO SARL' })}
+            ${F.text('turn_url', 'Relais vidéo TURN (facultatif)', params.turn_url, { full: true, placeholder: 'turn:relais.exemple.com:3478', hint: 'Améliore les appels vidéo sur les réseaux difficiles. Laisser vide si les appels fonctionnent.' })}
+            ${F.text('turn_utilisateur', 'Relais : utilisateur', params.turn_utilisateur)}
+            ${F.text('turn_mot_de_passe', 'Relais : mot de passe', params.turn_mot_de_passe)}
           </div>
           <div class="form-actions"><button class="btn primary" type="submit">Enregistrer</button></div></form>`;
       $$('[data-save-plan]', zone).forEach((b) => (b.onclick = async () => {
