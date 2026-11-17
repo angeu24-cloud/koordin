@@ -1630,3 +1630,7 @@ body.en-appel .koko { display: none; }
 .koko.dort .koko-corps::after { content: 'z Z'; position: absolute; right: -2px; top: -8px; font: 800 14px var(--font); color: #b9c3ff; letter-spacing: 2px; animation: k-zzz 2.4s ease-in-out infinite; pointer-events: none; }
 @keyframes k-zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -14px); } }
 @media (prefers-reduced-motion: reduce) { .encart-push-ic, .koko.dort .koko-corps::after { animation: none !important; } }
+
+/* 3.3.1 : Koko se pousse au-dessus de la zone de saisie de l'assistant IA */
+.koko[data-page="ia"] { bottom: calc(190px + env(safe-area-inset-bottom)); }
+@media (min-width: 861px) { .koko[data-page="ia"] { bottom: 110px; } }

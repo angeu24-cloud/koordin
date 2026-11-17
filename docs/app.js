@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.3';
+const VERSION = '3.3.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1726,6 +1726,7 @@ function kokoNaviguer(page, forcer = false) {
   }
   if (KOKO.page !== page) kokoAnim('saute');
   KOKO.page = page;
+  KOKO.el.dataset.page = page;
   if (forcer || !KOKO.vus.has(page)) {
     KOKO.vus.add(page);
     if (KOKO.vus.size > 1 || forcer) {
@@ -1852,27 +1853,43 @@ function choisirVoix() {
 }
 if ('speechSynthesis' in window) { choisirVoix(); window.speechSynthesis.onvoiceschanged = choisirVoix; }
 
-function kokoParler(texte) {
-  if (!('speechSynthesis' in window) || !kokoVoixActive() || !KOKO.el) return;
-  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
-  const propre = String(texte).replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/«|»/g, '').replace(/\s+/g, ' ').trim();
+// Sur Android, Chrome peut perdre une phrase si on l'annule juste avant (bug connu) :
+// on garde une référence, on attend un instant après une annulation, et on vérifie que la voix démarre.
+let phraseKoko = null, essaiVoix = 0;
+function kokoParler(texte, { test = false } = {}) {
+  const synthe = window.speechSynthesis;
+  if (!synthe || !KOKO.el || (!test && !kokoVoixActive())) return;
+  if (!test && navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+  const propre = String(texte).replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').replace(/«|»/g, '').replace(/\s+/g, ' ').trim();
   if (!propre) return;
-  try {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(propre);
-    u.lang = 'fr-FR'; if (voixKoko) u.voice = voixKoko;
-    u.rate = 1.04; u.pitch = 1.3; u.volume = 1;
-    u.onstart = () => KOKO.el?.classList.add('parle');
-    u.onend = u.onerror = () => KOKO.el?.classList.remove('parle');
-    window.speechSynthesis.speak(u);
-  } catch { /* rien */ }
+  if (!voixKoko) choisirVoix();
+  const u = new SpeechSynthesisUtterance(propre);
+  u.lang = 'fr-FR'; if (voixKoko) u.voice = voixKoko;
+  u.rate = 1; u.pitch = 1.25; u.volume = 1;
+  const numero = ++essaiVoix;
+  let demarre = false;
+  u.onstart = () => { demarre = true; KOKO.el?.classList.add('parle'); };
+  u.onend = u.onerror = () => KOKO.el?.classList.remove('parle');
+  phraseKoko = u;
+  const lancer = () => { try { synthe.resume(); synthe.speak(u); } catch { /* rien */ } };
+  if (synthe.speaking || synthe.pending) { synthe.cancel(); setTimeout(lancer, 150); } else lancer();
+  // Si la voix ne démarre pas, on explique pourquoi (une seule fois par session, ou à la demande)
+  setTimeout(() => {
+    if (demarre || numero !== essaiVoix || (KOKO.aideVoix && !test)) return;
+    KOKO.aideVoix = true;
+    const aucune = !(synthe.getVoices?.() || []).some((v) => /^fr/i.test(v.lang));
+    kokoDire(aucune
+      ? 'Je n’ai pas de voix française sur ce téléphone 😕 Installez « Speech Services by Google » depuis le Play Store, puis réessayez.'
+      : 'Je n’arrive pas à parler 😕 Montez le volume des médias (touche volume puis ⋮ ou ⚙️), et vérifiez que le téléphone n’est pas en silencieux.', 9000, false);
+  }, 2500);
 }
 function kokoBasculerVoix() {
   const on = !kokoVoixActive();
   try { localStorage.setItem('koordin-koko-voix', on ? 'on' : 'off'); } catch { /* rien */ }
   if (!on) window.speechSynthesis?.cancel();
   majBoutonsKoko();
-  kokoDire(on ? 'Ma voix est activée 🔊' : 'D’accord, je me tais 🤐', 2500);
+  if (on) { kokoDire('Bonjour ! Vous m’entendez ? 🔊', 3500, false); kokoParler('Bonjour ! Vous m’entendez ?', { test: true }); }
+  else kokoDire('D’accord, je me tais 🤐', 2500, false);
 }
 function majBoutonsKoko() {
   const b = $('.koko-voix', KOKO.el || document);

@@ -1,11 +1,9 @@
 {
-  "version": "3.3",
+  "version": "3.3.1",
   "date": "2026-11-17",
   "nouveautes": [
-    "🔔 Notifications sur le téléphone, même quand KOORDIN est fermé : appels vidéo, rapports validés ou rejetés, salaires versés, contrats signés, alertes importantes.",
-    "Activez-les avec le bouton « Activer les notifications » sur l’accueil (ou avatar → 🔔).",
-    "🗣️ Koko parle ! Il lit ses conseils à voix haute (bouton 🔊 pour le faire taire).",
-    "🎤 Parlez à Koko : appuyez longtemps sur lui et dites « ouvre la compta », « nouveau rapport », « appelle Koffi » ou « combien de rapports à valider ».",
-    "😴 Koko s’endort quand vous ne touchez plus le téléphone… et se réveille dès que vous revenez."
+    "🗣️ La voix de Koko fonctionne mieux sur les téléphones Android.",
+    "Pour tester sa voix : touchez Koko, puis le bouton 🔊 de sa bulle (deux fois s’il affiche 🔇). Il dit « Bonjour ! Vous m’entendez ? ».",
+    "S’il ne peut pas parler, Koko explique maintenant pourquoi (volume des médias ou voix française à installer)."
   ]
 }
