@@ -1168,3 +1168,7 @@ body {
   color: var(--gold); background: var(--gold-dim); border: 1px solid var(--liseré-or, var(--border)); }
 .paie-mois-ligne { cursor: pointer; gap: 12px; }
 .paie-mois-ligne .paie-nom { flex: 1; }
+
+/* ═══ 2.9 Contrats et prestataires ═══ */
+.contrat-presta { display: flex; gap: 8px; align-items: center; }
+.contrat-presta select { flex: 1; min-width: 0; }

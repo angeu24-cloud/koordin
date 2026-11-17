@@ -1,9 +1,10 @@
 {
-  "version": "2.8",
-  "date": "2026-11-24",
+  "version": "2.9",
+  "date": "2026-11-17",
   "nouveautes": [
-    "👤 Mon espace (avatar en haut à droite) : chacun voit ses propres versements de salaire, confirme la réception en signant au doigt, ou signale un problème. Les autres membres ne voient rien.",
-    "💵 Salaires (Comptabilité et Direction) : enregistrez un versement ou toute la paie du mois en une fois, suivez qui a confirmé, validez, et téléchargez l'accusé de réception signé.",
-    "Contient aussi la version 2.7 : matériel et engins, sécurité chantier, réception des travaux avec PV signé, rappel du rapport du jour."
+    "📑 Nouveau menu Contrats : vos prestataires et sous-traitants, même sans KOORDIN.",
+    "Contrat signé au doigt sur le téléphone (prestataire + entreprise), PDF à envoyer par WhatsApp.",
+    "Versements avec reçu signé, reste à payer calculé, impossible de payer plus que le contrat.",
+    "Les paiements aux prestataires apparaissent dans la Trésorerie."
   ]
 }

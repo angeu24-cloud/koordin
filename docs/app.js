@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.8';
+const VERSION = '2.9';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -49,6 +49,7 @@ const MENU = [
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
+  { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'materiel', court: 'Matériel', label: 'Matériel et engins', ico: '🚜', roles: ['direction', 'coordinateur', 'magasinier', 'technicien', 'achats', 'comptable'] },
   { r: 'securite', court: 'Sécurité', label: 'Sécurité chantier', ico: '🦺', roles: ['direction', 'coordinateur', 'technicien'] },
@@ -971,12 +972,12 @@ function ecouterReseau() {
 // Une vidéo courte par métier, montrée automatiquement à la première connexion.
 
 const GUIDES = {
-  direction: { video: 'guide-direction.mp4', titre: 'Piloter vos chantiers', duree: '1 min 30' },
-  coordinateur: { video: 'guide-direction.mp4', titre: 'Piloter vos chantiers', duree: '1 min 30' },
-  technicien: { video: 'guide-technicien.mp4', titre: 'Votre rapport du jour', duree: '1 min' },
-  achats: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
-  comptable: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
-  magasinier: { video: 'guide-services.mp4', titre: 'Achats, comptabilité et magasin', duree: '1 min 15' },
+  direction: { video: 'guide-direction.mp4?v=2', titre: 'Piloter vos chantiers', duree: '1 min 25' },
+  coordinateur: { video: 'guide-direction.mp4?v=2', titre: 'Piloter vos chantiers', duree: '1 min 25' },
+  technicien: { video: 'guide-technicien.mp4?v=2', titre: 'Votre journée sur le chantier', duree: '1 min 35' },
+  achats: { video: 'guide-services.mp4?v=2', titre: 'Achats, comptabilité et magasin', duree: '1 min 35' },
+  comptable: { video: 'guide-services.mp4?v=2', titre: 'Achats, comptabilité et magasin', duree: '1 min 35' },
+  magasinier: { video: 'guide-services.mp4?v=2', titre: 'Achats, comptabilité et magasin', duree: '1 min 35' },
 };
 function ouvrirGuide({ premiereFois = false } = {}) {
   const g = GUIDES[role()] || GUIDES.direction;
@@ -1075,6 +1076,7 @@ const TRACES = {
   materiel: '<path d="M2.5 17V9.5h9l3 4.5h4a2 2 0 0 1 2 2v1"/><path d="M11.5 9.5V6h-5v3.5"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/><path d="M8.5 17.5h6.5"/>',
   securite: '<path d="M4 14a8 8 0 0 1 16 0v2H4v-2Z"/><path d="M12 6V3.5"/><path d="M9.5 6.5 9 4M14.5 6.5 15 4"/><path d="M3 16h18v1.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5V16Z"/>',
   'mon-espace': '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  contrats: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h3"/><path d="M4 7v13a1 1 0 0 0 1 1h2"/>',
   salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
   cloche: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
@@ -3894,12 +3896,14 @@ async function ongletTresorerie(zone) {
     sb.from('pointages').select('presence, tarif_jour, paye_le').eq('paye', true).gte('paye_le', debut).then((r) => r.data || []),
     chargerVentes(),
   ]);
+  const presta = await sb.from('contrat_versements').select('montant, date_versement').gte('date_versement', debut).then((r) => r.data || [], () => []);
   const mois = [...Array(6)].map((_, i) => { const x = parseDay(debut); x.setMonth(x.getMonth() + i); return x.toLocaleDateString('sv-SE').slice(0, 7); });
   const lignes = mois.map((mo) => {
     const entree = enc.filter((e) => String(e.date_encaissement).startsWith(mo)).reduce((t, e) => t + num(e.montant), 0);
     const fournisseurs = factPayees.filter((f) => String(f.date_paiement).startsWith(mo)).reduce((t, f) => t + num(f.montant), 0);
     const mainOeuvre = paie.filter((p) => String(p.paye_le).startsWith(mo)).reduce((t, p) => t + num(p.presence) * num(p.tarif_jour), 0);
-    return { mo, entree, sortie: fournisseurs + mainOeuvre, fournisseurs, mainOeuvre };
+    const prestataires = presta.filter((v) => String(v.date_versement).startsWith(mo)).reduce((t, v) => t + num(v.montant), 0);
+    return { mo, entree, sortie: fournisseurs + mainOeuvre + prestataires, fournisseurs, mainOeuvre, prestataires };
   });
   const max = Math.max(1, ...lignes.flatMap((l) => [l.entree, l.sortie]));
   const creances = Math.max(0, situations.filter((s) => s.statut === 'emise').reduce((t, s) => t + num(s.net_a_payer), 0) - encaissements.filter((e) => e.situation_id).reduce((t, e) => t + num(e.montant), 0));
@@ -3918,7 +3922,7 @@ async function ongletTresorerie(zone) {
           <div class="treso-barres"><div class="treso-in" style="width:${(l.entree / max) * 100}%"></div><div class="treso-out" style="width:${(l.sortie / max) * 100}%"></div></div>
           <span class="treso-val"><b class="ok">${l.entree ? `+${moneyShort(l.entree)}` : '—'}</b><b class="out">${l.sortie ? `−${moneyShort(l.sortie)}` : '—'}</b></span></div>`;
       }).join('')}</div>
-      <div class="legend"><span><i style="background:var(--ok)"></i>Encaissé (clients)</span><span><i style="background:var(--crit)"></i>Payé (fournisseurs + main-d’œuvre)</span></div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Encaissé (clients)</span><span><i style="background:var(--crit)"></i>Payé (fournisseurs, main-d’œuvre, prestataires)</span></div>
     </div>`;
 }
 
@@ -4913,6 +4917,362 @@ async function pdfAccuseVersement(v, pr) {
     const nom = `Accuse-${libelleVersement(v)}-${pr?.nom || ''}.pdf`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9.]+/g, '-');
     presenterPDF(doc.output('blob'), nom, `Accusé de réception : ${libelleVersement(v)} (${money(v.montant)}) - ${pr?.nom || ''}`);
   } catch (e) { console.error(e); toast(erreurVersement(e), 'err', 6000); }
+}
+
+// ═══════════════════════════════ PRESTATAIRES ET CONTRATS (2.9) ═══════════════════════════════
+// Sous-traitants et prestataires, même sans compte KOORDIN : contrat signé au doigt sur le
+// téléphone de l'entreprise, versements avec reçu signé, PDF envoyés par WhatsApp.
+
+const TYPE_CONTRAT = { forfait: 'Au forfait', tache: 'À la tâche', regie: 'En régie (au temps passé)' };
+const STATUT_CONTRAT = {
+  brouillon: ['muted', '📝 Brouillon'],
+  signe: ['ok', '✍️ Signé, en cours'],
+  termine: ['info', '🏁 Terminé'],
+  resilie: ['crit', '⛔ Résilié'],
+};
+const NATURE_VERSEMENT = { avance: 'Avance de démarrage', acompte: 'Acompte', solde: 'Solde', retenue: 'Restitution de retenue', autre: 'Autre' };
+const CONDITIONS_TYPE = `1. Le prestataire exécute les travaux décrits ci-dessus dans les règles de l’art, en respectant le planning du chantier et les consignes de sécurité.
+2. Les matériaux sont fournis par l’entreprise, sauf mention contraire.
+3. Les paiements sont faits par avances et acomptes selon l’avancement constaté, chaque versement faisant l’objet d’un reçu signé.
+4. Tout travail supplémentaire doit faire l’objet d’un avenant écrit avant exécution.
+5. En cas de manquement grave, l’entreprise peut résilier le contrat après mise en demeure ; seuls les travaux réalisés et acceptés sont dus.`;
+let ongletContrats = 'contrats';
+const erreurContrat = (e) => {
+  const m = String(e?.message || '');
+  if (/^(CONTRAT_|RECU_)/.test(m) && e?.hint) return e.hint;
+  if (/relation .*(prestataires|contrats|contrat_versements)/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Les contrats nécessitent la mise à jour 2.9 de la base de données (kit d’installation).';
+  return messageErreur(e);
+};
+const totalContrat = (c) => num(c.montant) + num(c.avenants);
+
+PAGES.contrats = async () => {
+  const p = page(`
+    ${entete('Contrats', 'Prestataires et sous-traitants : contrats signés, versements et reçus', '<button class="btn primary" id="nct">＋ Nouveau contrat</button>')}
+    <div class="tabs">${[['contrats', '📑 Contrats'], ['versements', '💵 Versements'], ['prestataires', '👷 Prestataires']].map(([k, l]) => `<button class="tab ${k === ongletContrats ? 'active' : ''}" data-o="${k}">${l}</button>`).join('')}</div>
+    <div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('📑', 'Les contrats fonctionnent dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try {
+      if (ongletContrats === 'prestataires') await listePrestataires(zone, rendre);
+      else if (ongletContrats === 'versements') await listeVersementsPrestataires(zone, rendre);
+      else await listeContrats(zone, rendre);
+    } catch (e) { zone.innerHTML = `<div class="card">${empty('📑', erreurContrat(e))}</div>`; }
+  };
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletContrats = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
+  $('#nct', p).onclick = () => nouveauContrat(rendre);
+  await rendre();
+};
+
+async function chargerContrats() {
+  const [contrats, versements] = await Promise.all([
+    q(sb.from('contrats').select('*, prestataires(nom, specialite, telephone), projets(nom)').order('created_at', { ascending: false })),
+    q(sb.from('contrat_versements').select('id, contrat_id, montant, date_versement, nature, moyen, reference, signature, nom_signataire, signe_le').order('date_versement', { ascending: false })),
+  ]);
+  contrats.forEach((c) => { c.paye = versements.filter((v) => v.contrat_id === c.id).reduce((s, v) => s + num(v.montant), 0); });
+  return { contrats, versements };
+}
+
+async function listeContrats(zone, rendre) {
+  const { contrats } = await chargerContrats();
+  const actifs = contrats.filter((c) => c.statut === 'signe');
+  const engage = actifs.reduce((s, c) => s + totalContrat(c), 0);
+  const paye = actifs.reduce((s, c) => s + c.paye, 0);
+  zone.innerHTML = `<div class="grid k4 paie-kpis">
+      ${kpi('Contrats en cours', actifs.length)}
+      ${kpi('Montant engagé', moneyShort(engage), 'contrats en cours')}
+      ${kpi('Déjà payé', moneyShort(paye), `${pct(paye, engage)} %`)}
+      ${kpi('Reste à payer', moneyShort(engage - paye), '', engage - paye > 0 ? 'warn' : '')}
+    </div>
+    <div class="card"><div class="paie-liste">${contrats.length ? contrats.map((c) => `<button type="button" class="paie-ligne vente-ligne" data-ct="${c.id}">
+      <div class="paie-nom"><b>${esc(c.prestataires?.nom || '')} · ${esc(c.objet)}</b><span>${esc([c.numero, c.projets?.nom, TYPE_CONTRAT[c.type]].filter(Boolean).join(' · '))}</span>
+        ${c.statut !== 'brouillon' ? `<span class="vente-barre"><i style="width:${Math.min(100, pct(c.paye, totalContrat(c)))}%"></i></span><span>Payé ${moneyShort(c.paye)} sur ${moneyShort(totalContrat(c))}</span>` : ''}</div>
+      <div class="paie-montant"><b>${money(totalContrat(c))}</b>${badge(STATUT_CONTRAT[c.statut])}</div></button>`).join('')
+      : empty('📑', 'Aucun contrat. Créez le premier : le prestataire signera au doigt sur votre téléphone, même s’il n’a pas KOORDIN.')}</div></div>`;
+  $$('[data-ct]', zone).forEach((b) => (b.onclick = () => ficheContrat(b.dataset.ct, rendre)));
+}
+
+async function listeVersementsPrestataires(zone, rendre) {
+  const { contrats, versements } = await chargerContrats();
+  const ct = (id) => contrats.find((c) => c.id === id);
+  const mois = todayISO().slice(0, 7);
+  const ceMois = versements.filter((v) => String(v.date_versement).startsWith(mois));
+  zone.innerHTML = `<div class="grid k3 paie-kpis">
+      ${kpi('Payé ce mois', moneyShort(ceMois.reduce((s, v) => s + num(v.montant), 0)), `${ceMois.length} versement(s)`)}
+      ${kpi('Reçus signés', versements.filter((v) => v.signature).length, `sur ${versements.length}`)}
+      ${kpi('Sans reçu signé', versements.filter((v) => !v.signature).length, 'À faire signer si possible', versements.some((v) => !v.signature) ? 'warn' : '')}
+    </div>
+    <div class="card"><div class="toolbar"><span class="muted" style="font-size:13px">${versements.length} versement(s)</span><button type="button" class="btn sm" id="cv-csv" style="margin-left:auto">⬇️ Excel</button></div>
+    <div class="paie-liste">${versements.length ? versements.map((v) => { const c = ct(v.contrat_id); return `<button type="button" class="paie-ligne vente-ligne" data-ct="${v.contrat_id}">
+      <div class="paie-nom"><b>${esc(c?.prestataires?.nom || '')}</b><span>${esc([NATURE_VERSEMENT[v.nature], c?.numero, c?.projets?.nom].filter(Boolean).join(' · '))}</span><span>${fdate(v.date_versement)} · ${esc(v.moyen)}${v.reference ? ` · ${esc(v.reference)}` : ''}</span></div>
+      <div class="paie-montant"><b>${money(v.montant)}</b>${v.signature ? badge(['ok', '✍️ Reçu signé']) : badge(['warn', 'Sans signature'])}</div></button>`; }).join('')
+      : empty('💵', 'Aucun versement à un prestataire pour le moment.')}</div></div>`;
+  $$('[data-ct]', zone).forEach((b) => (b.onclick = () => ficheContrat(b.dataset.ct, rendre)));
+  $('#cv-csv', zone).onclick = () => exporterCSV(`koordin-versements-prestataires-${todayISO()}.csv`,
+    ['Date', 'Prestataire', 'Contrat', 'Chantier', 'Nature', `Montant (${devise()})`, 'Moyen', 'Référence', 'Reçu signé'],
+    versements.map((v) => { const c = ct(v.contrat_id); return [v.date_versement, c?.prestataires?.nom || '', c?.numero || '', c?.projets?.nom || '', NATURE_VERSEMENT[v.nature], Math.round(num(v.montant)), v.moyen, v.reference || '', v.signature ? `Oui (${v.nom_signataire || ''})` : 'Non']; }));
+}
+
+async function listePrestataires(zone, rendre) {
+  const [prest, { contrats }] = await Promise.all([q(sb.from('prestataires').select('*').order('nom')), chargerContrats()]);
+  zone.innerHTML = `<div class="card"><div class="card-title">${prest.length} prestataire(s) <button type="button" class="btn sm primary" id="npr">＋ Nouveau prestataire</button></div>
+    <div class="paie-liste">${prest.length ? prest.map((x) => {
+      const cs = contrats.filter((c) => c.prestataire_id === x.id);
+      return `<button type="button" class="paie-ligne vente-ligne" data-pr="${x.id}"><div class="paie-nom"><b>${esc(x.nom)}</b><span>${esc([x.specialite, x.telephone].filter(Boolean).join(' · '))}</span></div>
+        <div class="paie-montant"><b>${cs.length} contrat(s)</b><span>payé ${moneyShort(cs.reduce((s, c) => s + c.paye, 0))}</span></div></button>`;
+    }).join('') : empty('👷', 'Ajoutez vos sous-traitants et prestataires : électricien, plombier, ferrailleur à la tâche, carreleur…')}</div></div>`;
+  $('#npr', zone).onclick = () => formulairePrestataire(null, rendre);
+  $$('[data-pr]', zone).forEach((b) => (b.onclick = () => formulairePrestataire(prest.find((x) => x.id === b.dataset.pr), rendre)));
+}
+
+function formulairePrestataire(x, apres) {
+  ouvrirModale({
+    titre: x ? `Modifier « ${x.nom} »` : 'Nouveau prestataire',
+    corps: `<div class="form-grid">
+      ${F.text('nom', 'Nom ou raison sociale', x?.nom, { required: true, full: true, placeholder: 'Ex. Kouamé Électricité, Traoré Ali' })}
+      ${F.text('specialite', 'Spécialité', x?.specialite, { placeholder: 'Ex. Électricité, ferraillage, carrelage' })}
+      ${F.text('telephone', 'Téléphone (WhatsApp)', x?.telephone, { type: 'tel', inputmode: 'tel', placeholder: '07 01 02 03 04' })}
+      ${F.text('piece', 'N° CNI, RCCM ou compte contribuable', x?.piece)}
+      ${F.text('email', 'Email (facultatif)', x?.email, { type: 'email' })}
+      ${F.text('adresse', 'Adresse', x?.adresse, { full: true })}
+    </div>`,
+    onSubmit: async (d) => {
+      const data = { nom: d.nom.trim(), specialite: d.specialite || null, telephone: d.telephone || null, piece: d.piece || null, email: d.email || null, adresse: d.adresse || null };
+      let cree = null;
+      try { if (x) await q(sb.from('prestataires').update(data).eq('id', x.id)); else cree = await q(sb.from('prestataires').insert(data).select('*').single()); }
+      catch (e) { throw new Error(erreurContrat(e)); }
+      toast(x ? 'Prestataire mis à jour.' : `${data.nom} ajouté ✅`);
+      apres?.(cree);
+    },
+  });
+}
+
+async function nouveauContrat(rendre) {
+  const [prest, projets] = await Promise.all([q(sb.from('prestataires').select('id, nom, specialite').eq('actif', true).order('nom')), q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'))]);
+  ouvrirModale({
+    titre: 'Nouveau contrat',
+    large: true,
+    boutonOk: 'Créer et faire signer',
+    corps: `<div class="form-grid">
+      <label class="field full">Prestataire *<span class="contrat-presta"><select name="prestataire_id" required><option value="">— Choisir —</option>${prest.map((x) => `<option value="${x.id}">${esc(x.nom)}${x.specialite ? ` (${esc(x.specialite)})` : ''}</option>`).join('')}</select><button type="button" class="btn sm" id="ct-np">＋ Nouveau</button></span></label>
+      ${F.select('projet_id', 'Chantier', [['', '— Aucun / plusieurs —'], ...projets.map((x) => [x.id, x.nom])], projets.length === 1 ? projets[0].id : '')}
+      ${F.select('type', 'Type de contrat', Object.entries(TYPE_CONTRAT), 'forfait')}
+      ${F.text('objet', 'Objet des travaux', '', { required: true, full: true, placeholder: 'Ex. Électricité complète de la villa R+1 (fourniture du câblage par l’entreprise)' })}
+      ${F.text('montant', `Montant total (${devise()})`, '', { type: 'number', min: 1, required: true, inputmode: 'numeric' })}
+      ${F.text('retenue_pct', 'Retenue de garantie (%)', 0, { type: 'number', min: 0, max: 20, step: 'any', hint: 'Facultatif : part gardée jusqu’à la réception' })}
+      ${F.text('date_debut', 'Début', todayISO(), { type: 'date' })}
+      ${F.text('date_fin', 'Fin prévue', '', { type: 'date' })}
+      ${F.area('conditions', 'Conditions du contrat', CONDITIONS_TYPE)}
+    </div>`,
+    onOpen: (el) => {
+      $('#ct-np', el).onclick = () => formulairePrestataire(null, (cree) => {
+        if (!cree) return;
+        const s = $('[name="prestataire_id"]', el);
+        s.insertAdjacentHTML('beforeend', `<option value="${cree.id}">${esc(cree.nom)}</option>`);
+        s.value = cree.id;
+      });
+    },
+    onSubmit: async (d) => {
+      let c;
+      try {
+        c = await q(sb.from('contrats').insert({ prestataire_id: d.prestataire_id, projet_id: d.projet_id || null, type: d.type, objet: d.objet, montant: num(d.montant), retenue_pct: num(d.retenue_pct), date_debut: d.date_debut || null, date_fin: d.date_fin || null, conditions: d.conditions || null }).select('id').single());
+      } catch (e) { throw new Error(erreurContrat(e)); }
+      setTimeout(() => ficheContrat(c.id, rendre), 50);
+      rendre();
+    },
+  });
+}
+
+async function ficheContrat(id, rendre) {
+  const [c, versements] = await Promise.all([
+    q(sb.from('contrats').select('*, prestataires(*), projets(nom, localisation)').eq('id', id).single()),
+    q(sb.from('contrat_versements').select('*').eq('contrat_id', id).order('date_versement').order('created_at')),
+  ]);
+  const paye = versements.reduce((s, v) => s + num(v.montant), 0);
+  const total = totalContrat(c);
+  const payeur = can('direction', 'comptable');
+  const brouillon = c.statut === 'brouillon';
+  const numero = numeroAuteur({ telephone: c.prestataires?.telephone });
+  const m = ouvrirModale({ titre: `${c.numero} · ${c.prestataires?.nom || ''}`, large: true, corps: `
+    <div class="split" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><span class="muted">${esc([c.projets?.nom, TYPE_CONTRAT[c.type]].filter(Boolean).join(' · '))}</span>${badge(STATUT_CONTRAT[c.statut])}</div>
+    <p style="margin-bottom:12px"><b>${esc(c.objet)}</b></p>
+    <div class="detail-grid">
+      <div><span>Montant</span><b>${money(c.montant)}</b></div>
+      <div><span>Avenants</span><b>${money(c.avenants)}</b></div>
+      <div><span>Déjà payé</span><b>${money(paye)}</b></div>
+      <div><span>Reste à payer</span><b style="color:var(--gold)">${money(total - paye)}</b></div>
+    </div>
+    ${c.statut !== 'brouillon' ? `<div class="vente-barre" style="max-width:none;height:8px;margin:4px 0 14px"><i style="width:${Math.min(100, pct(paye, total))}%"></i></div>` : ''}
+    ${brouillon ? `<div class="detail-block"><h4>Signatures (sur ce téléphone)</h4>
+      <div class="signatures">
+        <div><label class="field">Nom du prestataire (signataire)<input name="nom_signataire" class="input" value="${esc(c.nom_signataire || c.prestataires?.nom || '')}"></label><div class="sig" id="sig-pr"></div></div>
+        <div><label class="field">Pour l’entreprise</label><div class="sig" id="sig-ent"></div></div>
+      </div><p class="hint">Le prestataire signe avec le doigt, puis vous signez pour l’entreprise.</p></div>`
+      : `<div class="detail-block"><h4>Signé le ${new Date(c.signe_le).toLocaleDateString('fr-FR')} par ${esc(c.nom_signataire || '')}</h4></div>`}
+    ${!brouillon ? `<div class="detail-block"><h4>Versements (${versements.length})</h4>${versements.length ? `<div class="paie-liste">${versements.map((v) => `<div class="paie-ligne">
+      <div class="paie-nom"><b>${esc(NATURE_VERSEMENT[v.nature])}</b><span>${fdate(v.date_versement)} · ${esc(v.moyen)}${v.reference ? ` · ${esc(v.reference)}` : ''}</span></div>
+      <div class="paie-montant"><b>${money(v.montant)}</b>${v.signature ? badge(['ok', '✍️ Signé']) : badge(['warn', 'Sans signature'])}<button type="button" class="btn sm" data-recu="${v.id}">📄 Reçu</button>${!v.signature && payeur ? `<button type="button" class="btn sm ghost" data-suppr-cv="${v.id}">✕</button>` : ''}</div></div>`).join('')}</div>` : '<p class="muted" style="font-size:13px">Aucun versement.</p>'}</div>` : ''}
+    <div class="rc-boutons mt">
+      ${brouillon ? '<button type="button" class="btn primary" id="ct-signer">✍️ Signer le contrat</button><button type="button" class="btn danger" id="ct-suppr">Supprimer</button>' : ''}
+      ${['signe', 'resilie'].includes(c.statut) && payeur && total - paye > 0 ? '<button type="button" class="btn primary" id="ct-verser">💵 Nouveau versement</button>' : ''}
+      ${!brouillon && numero ? `<a class="btn" target="_blank" rel="noopener" id="ct-wa" href="https://wa.me/${numero}?text=${encodeURIComponent(`Bonjour ${String(c.prestataires?.nom || '').split(' ')[0]}, point sur votre contrat ${c.numero} (${c.objet}) : montant ${money(total)}, déjà payé ${money(paye)}, reste à payer ${money(total - paye)}. ${S.entreprise?.nom || ''}`)}">💬 WhatsApp</a>` : ''}
+      <button type="button" class="btn" id="ct-pdf">📄 Contrat en PDF</button>
+      ${c.statut === 'signe' && can('direction') ? '<button type="button" class="btn" id="ct-avenant">➕ Avenant</button>' : ''}
+      ${c.statut === 'signe' ? '<button type="button" class="btn ghost" id="ct-terminer">🏁 Terminé</button><button type="button" class="btn ghost" id="ct-resilier">⛔ Résilier</button>' : ''}
+    </div>` });
+  const el = m.el;
+  const sigP = brouillon ? padSignature($('#sig-pr', el)) : null;
+  const sigE = brouillon ? padSignature($('#sig-ent', el)) : null;
+  const rouvrir = () => { m.fermer(); rendre(); ficheContrat(id, rendre); };
+  $('#ct-signer', el)?.addEventListener('click', async () => {
+    const nom = $('[name="nom_signataire"]', el).value.trim();
+    const sp = sigP.valeur(), se = sigE.valeur();
+    if (!nom || !sp || !se) { toast('Il faut le nom du prestataire et les deux signatures.', 'warn'); return; }
+    if (!(await confirmer('Signer le contrat ? Une fois signé, il ne pourra plus être modifié (sauf par avenant).', 'Signer'))) return;
+    try {
+      await q(sb.from('contrats').update({ statut: 'signe', nom_signataire: nom, signature_prestataire: sp, signature_entreprise: se }).eq('id', id));
+      toast('Contrat signé ✅'); m.fermer(); rendre(); pdfContrat(id);
+    } catch (e) { toast(erreurContrat(e), 'err', 6000); }
+  });
+  $('#ct-suppr', el)?.addEventListener('click', async () => {
+    if (!(await confirmer('Supprimer ce brouillon de contrat ?', 'Supprimer'))) return;
+    try { await q(sb.from('contrats').delete().eq('id', id)); toast('Brouillon supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurContrat(e), 'err'); }
+  });
+  $('#ct-pdf', el).onclick = () => pdfContrat(id);
+  $('#ct-verser', el)?.addEventListener('click', () => { m.fermer(); formulaireVersementContrat(c, total - paye, numero, rendre); });
+  $('#ct-avenant', el)?.addEventListener('click', () => ouvrirModale({
+    titre: 'Avenant au contrat',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Ajoutez le montant des travaux supplémentaires acceptés. Total actuel : <b>${money(total)}</b>.</p><div class="form-grid">${F.text('ajout', `Montant ajouté (${devise()})`, '', { type: 'number', min: 1, required: true, inputmode: 'numeric', full: true })}</div>`,
+    onSubmit: async (d) => {
+      try { await q(sb.from('contrats').update({ avenants: num(c.avenants) + num(d.ajout) }).eq('id', id)); } catch (e) { throw new Error(erreurContrat(e)); }
+      toast('Avenant ajouté ✅'); rouvrir();
+    },
+  }));
+  const changer = async (statut, texte) => {
+    if (!(await confirmer(texte, 'Confirmer'))) return;
+    try { await q(sb.from('contrats').update({ statut }).eq('id', id)); toast('Contrat mis à jour.'); rouvrir(); } catch (e) { toast(erreurContrat(e), 'err'); }
+  };
+  $('#ct-terminer', el)?.addEventListener('click', () => changer('termine', 'Marquer ce contrat comme terminé ?'));
+  $('#ct-resilier', el)?.addEventListener('click', () => changer('resilie', 'Résilier ce contrat ? Seul un solde pourra encore être versé.'));
+  $$('[data-recu]', el).forEach((b) => (b.onclick = () => pdfRecuPrestataire(c, versements, b.dataset.recu)));
+  $$('[data-suppr-cv]', el).forEach((b) => (b.onclick = async () => {
+    if (!(await confirmer('Supprimer ce versement non signé ?', 'Supprimer'))) return;
+    try { await q(sb.from('contrat_versements').delete().eq('id', b.dataset.supprCv)); toast('Versement supprimé.'); rouvrir(); } catch (e) { toast(erreurContrat(e), 'err'); }
+  }));
+}
+
+function formulaireVersementContrat(c, reste, numero, rendre) {
+  const m = ouvrirModale({
+    titre: `💵 Versement · ${c.prestataires?.nom || ''}`,
+    large: true,
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">${esc(c.numero)} · reste à payer <b>${money(reste)}</b></p>
+      <form class="form-grid" id="cv-form" onsubmit="return false">
+        ${F.select('nature', 'Nature', c.statut === 'resilie' ? [['solde', NATURE_VERSEMENT.solde]] : Object.entries(NATURE_VERSEMENT), c.statut === 'resilie' ? 'solde' : 'acompte')}
+        ${F.text('montant', `Montant (${devise()})`, '', { type: 'number', min: 1, max: reste, required: true, inputmode: 'numeric' })}
+        ${F.select('moyen', 'Moyen de paiement', MOYENS_ENCAISSEMENT.map((x) => [x, x]), 'Wave')}
+        ${F.text('date_versement', 'Date', todayISO(), { type: 'date', required: true })}
+        ${F.text('reference', 'Référence (n° de transaction…)', '')}
+        ${F.text('note', 'Note (facultatif)', '', { placeholder: 'Ex. Acompte après pose des gaines' })}
+      </form>
+      <div class="detail-block mt"><h4>Reçu signé par le prestataire (recommandé)</h4>
+        <label class="field">Nom de la personne qui reçoit<input class="input" id="cv-nom" value="${esc(c.nom_signataire || c.prestataires?.nom || '')}"></label>
+        <div class="sig" id="sig-cv"></div><p class="hint">S’il n’est pas là, laissez vide : le versement sera noté « sans signature ».</p></div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Annuler</button><button type="button" class="btn primary" id="cv-ok">💾 Enregistrer le versement</button></div>`,
+  });
+  const sig = padSignature($('#sig-cv', m.el));
+  $('#cv-ok', m.el).onclick = async () => {
+    const form = $('#cv-form', m.el);
+    if (!form.reportValidity()) return;
+    const d = lireFormulaire(form);
+    const s = sig.valeur();
+    const nom = $('#cv-nom', m.el).value.trim();
+    if (s && !nom) { toast('Indiquez le nom de la personne qui signe.', 'warn'); return; }
+    try {
+      const v = await q(sb.from('contrat_versements').insert({ contrat_id: c.id, nature: d.nature, montant: num(d.montant), moyen: d.moyen, date_versement: d.date_versement, reference: d.reference || null, note: d.note || null, signature: s, nom_signataire: s ? nom : null }).select('*').single());
+      m.fermer(); rendre();
+      toast('Versement enregistré ✅');
+      const versements = await q(sb.from('contrat_versements').select('*').eq('contrat_id', c.id).order('date_versement').order('created_at'));
+      pdfRecuPrestataire(c, versements, v.id);
+    } catch (e) { toast(erreurContrat(e), 'err', 7000); }
+  };
+}
+
+async function pdfContrat(id) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const c = await q(sb.from('contrats').select('*, prestataires(*), projets(nom, localisation)').eq('id', id).single());
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, 'CONTRAT DE PRESTATION', `N° ${c.numero}`, c.signe_le ? `signé le ${new Date(c.signe_le).toLocaleDateString('fr-FR')}` : 'BROUILLON');
+    let y = 46;
+    const bloc = (titre, lignes, x) => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(100, 108, 128); doc.text(textePDF(titre), x, y);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(17, 21, 33);
+      lignes.filter(Boolean).forEach((l, i) => doc.text(doc.splitTextToSize(textePDF(l), 84)[0], x, y + 5.5 + i * 4.8));
+    };
+    bloc('ENTRE L’ENTREPRISE', [S.entreprise?.nom, S.entreprise?.pays], 16);
+    bloc('ET LE PRESTATAIRE', [c.prestataires?.nom, c.prestataires?.specialite, c.prestataires?.piece && `Pièce / RCCM : ${c.prestataires.piece}`, c.prestataires?.telephone && `Tél. ${c.prestataires.telephone}`, c.prestataires?.adresse], 110);
+    y += 32;
+    const para = (titre, texte) => {
+      if (!texte) return;
+      if (y > 255) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(17, 21, 33); doc.text(textePDF(titre), 16, y); y += 5;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.splitTextToSize(textePDF(texte), 178).forEach((l) => { if (y > 272) { doc.addPage(); y = 20; } doc.text(l, 16, y); y += 4.8; });
+      y += 3;
+    };
+    para('Article 1 — Objet', `${c.objet}${c.projets?.nom ? `\nChantier : ${c.projets.nom}${c.projets.localisation ? ` (${c.projets.localisation})` : ''}.` : ''}`);
+    para('Article 2 — Prix et mode de rémunération', `${TYPE_CONTRAT[c.type]}. Montant total : ${money(c.montant)}${num(c.avenants) ? `, porté à ${money(totalContrat(c))} par avenant(s)` : ''}.${num(c.retenue_pct) ? ` Une retenue de garantie de ${num(c.retenue_pct)} % est appliquée jusqu’à la réception des travaux.` : ''}`);
+    para('Article 3 — Délais', [c.date_debut && `Début des travaux : ${fdate(c.date_debut)}.`, c.date_fin && `Fin prévue : ${fdate(c.date_fin)}.`].filter(Boolean).join(' ') || 'Selon le planning du chantier.');
+    para('Article 4 — Conditions', c.conditions);
+    if (y > 225) { doc.addPage(); y = 25; }
+    y += 4;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(17, 21, 33);
+    doc.text(textePDF(`Le prestataire : ${c.nom_signataire || c.prestataires?.nom || ''}`), 16, y); doc.text(textePDF(`Pour ${S.entreprise?.nom || ''}`), 110, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 84, 32); doc.rect(110, y + 3, 84, 32);
+    if (c.signature_prestataire) doc.addImage(c.signature_prestataire, 'PNG', 18, y + 5, 80, 28);
+    if (c.signature_entreprise) doc.addImage(c.signature_entreprise, 'PNG', 112, y + 5, 80, 28);
+    y += 42;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 108, 128);
+    doc.text(textePDF(c.signe_le ? `Lu et approuvé, signé électroniquement le ${new Date(c.signe_le).toLocaleString('fr-FR')}.` : 'BROUILLON - document non signé.'), 16, y);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Contrat ${c.numero}`);
+    const prenom = String(c.prestataires?.nom || '').split(' ')[0];
+    presenterPDF(doc.output('blob'), `Contrat-${c.numero}.pdf`, `Bonjour ${prenom}, voici votre contrat ${c.numero} (${c.objet}). Cordialement, ${S.entreprise?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurContrat(e), 'err', 6000); }
+}
+
+async function pdfRecuPrestataire(c, versements, idVersement) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const v = versements.find((x) => x.id === idVersement);
+    const avant = versements.slice(0, versements.findIndex((x) => x.id === idVersement) + 1).reduce((s, x) => s + num(x.montant), 0);
+    const total = totalContrat(c);
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, 'REÇU DE PAIEMENT', `Contrat ${c.numero}`, `du ${fdate(v.date_versement)}`);
+    let y = 50;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(17, 21, 33);
+    const texte = `Je soussigné(e) ${v.nom_signataire || c.prestataires?.nom || '…'}, pour ${c.prestataires?.nom || ''}, reconnais avoir reçu de ${S.entreprise?.nom || ''} la somme de ${money(v.montant)} (${NATURE_VERSEMENT[v.nature].toLowerCase()}) au titre du contrat ${c.numero} : ${c.objet}, versée le ${fdate(v.date_versement)} par ${v.moyen}${v.reference ? ` (référence ${v.reference})` : ''}.`;
+    doc.splitTextToSize(textePDF(texte), 178).forEach((l) => { doc.text(l, 16, y); y += 6; });
+    y += 4;
+    doc.setFillColor(244, 245, 249); doc.roundedRect(16, y, 178, 18, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(textePDF(money(v.montant)), 105, y + 11.5, { align: 'center' });
+    y += 26;
+    y = tableauPDF(doc, y, [{ titre: 'Situation du contrat', x: 16, l: 110 }, { titre: 'Montant', x: 130, l: 64, align: 'right' }], [
+      { cells: ['Montant du contrat (avec avenants)', money(total)] },
+      { cells: ['Total payé à ce jour (ce versement inclus)', money(avant)] },
+      { gras: true, cells: ['Reste à payer', money(total - avant)] },
+    ]);
+    y += 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(textePDF(`Signature de ${v.nom_signataire || 'la personne qui reçoit'}`), 16, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 90, 34);
+    if (v.signature) doc.addImage(v.signature, 'PNG', 18, y + 5, 86, 30);
+    y += 44;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 108, 128);
+    doc.text(textePDF(v.signature ? `Signé électroniquement le ${new Date(v.signe_le).toLocaleString('fr-FR')}.` : 'Reçu non signé par le prestataire.'), 16, y);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Reçu - Contrat ${c.numero}`);
+    const prenom = String(c.prestataires?.nom || '').split(' ')[0];
+    presenterPDF(doc.output('blob'), `Recu-${c.numero}-${v.date_versement}.pdf`, `Bonjour ${prenom}, voici le reçu de votre paiement de ${money(v.montant)} (contrat ${c.numero}). Reste à payer : ${money(total - avant)}. ${S.entreprise?.nom || ''}`);
+  } catch (e) { console.error(e); toast(erreurContrat(e), 'err', 6000); }
 }
 
 // ═══════════════════════════════ STOCK ═══════════════════════════════
