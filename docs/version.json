@@ -1,11 +1,10 @@
 {
-  "version": "3.1",
+  "version": "3.2",
   "date": "2026-11-17",
   "nouveautes": [
-    "✨ Nouveau design : un accueil « cockpit » animé, avec une jauge d’avancement, l’heure en direct et vos alertes en un coup d’œil.",
-    "⚡ Actions rapides : rapport, appel vidéo, pointage, facture, contrat… en un geste depuis l’accueil.",
-    "🏗️ Vos chantiers en grandes cartes photo à faire défiler.",
-    "➕ Nouveau bouton doré au centre du menu du bas pour tout créer rapidement.",
-    "🎨 Toutes les rubriques rangées par couleur (Pilotage, Terrain, Argent, Logistique, Équipe) avec une recherche."
+    "👷🏾 Voici Koko, votre petit assistant de chantier ! Il vous suit de page en page et change de tenue : casque et gilet sur le terrain, costume et lunettes pour l’argent, casque audio pour les appels…",
+    "Touchez-le pour un conseil (sur l’accueil, il vous signale les alertes du jour). Glissez-le pour le mettre à gauche ou à droite.",
+    "Il vous suit du regard, se pousse quand vous faites défiler, applaudit vos réussites et s’inquiète des erreurs.",
+    "Pour le masquer ou le faire revenir : avatar en haut à droite → 👷🏾 Koko."
   ]
 }

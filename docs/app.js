@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.1';
+const VERSION = '3.2';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -193,6 +193,7 @@ function messageErreur(e) {
 }
 
 function toast(msg, type = 'ok', duree = 4200) {
+  try { kokoReagir(type, msg); } catch { /* Koko absent */ }
   const t = document.createElement('div');
   t.className = `toast ${type}`;
   const ico = document.createElement('span');
@@ -1160,6 +1161,7 @@ function construireInterface() {
   </div>`;
   $('#nav-plus')?.addEventListener('click', ouvrirFeuilleMenu);
   $('#nav-fab')?.addEventListener('click', ouvrirFeuilleCreer);
+  initKoko();
   $('#reseau')?.addEventListener('click', ouvrirBoiteEnvois);
   $('#btn-user').onclick = ouvrirMenuUtilisateur;
   $('#btn-notif').onclick = ouvrirNotifications;
@@ -1183,6 +1185,7 @@ function ouvrirMenuUtilisateur(e) {
     ${S.installPrompt ? '<button id="m-install">📲 Installer l’application</button>' : ''}
     ${DEMO ? '' : '<button id="m-espace">👤 Mon espace</button>'}
     ${DEMO ? '' : '<button id="m-guide">🎓 Guide vidéo</button>'}
+    <button id="m-koko">👷🏾 ${KOKO.el ? 'Masquer Koko' : 'Afficher Koko'}</button>
     ${DEMO ? '' : `<button id="m-news">✨ Nouveautés <span class="muted" style="margin-left:auto">v${VERSION}</span></button>`}
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
   document.body.appendChild(m);
@@ -1197,8 +1200,9 @@ function ouvrirMenuUtilisateur(e) {
   $('#m-install', m)?.addEventListener('click', async () => { S.installPrompt.prompt(); S.installPrompt = null; fermerPanneaux(); });
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
   $('#m-guide', m)?.addEventListener('click', () => { fermerPanneaux(); ouvrirGuide(); });
+  $('#m-koko', m).onclick = () => { fermerPanneaux(); if (KOKO.el) masquerKoko(false); else afficherKoko(); };
   $('#m-espace', m)?.addEventListener('click', () => { fermerPanneaux(); allerA('#/mon-espace'); });
-  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); if (S.canalAppels) sb.removeChannel(S.canalAppels); await sb.auth.signOut(); };
+  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); if (S.canalAppels) sb.removeChannel(S.canalAppels); KOKO.el?.remove(); KOKO.el = null; KOKO.vus.clear(); await sb.auth.signOut(); };
 }
 
 function fermerPanneaux() {
@@ -1297,6 +1301,7 @@ async function naviguer() {
   try {
     await PAGES[cible](id);
     animerPage($('#main'));
+    kokoNaviguer(cible);
     banniereEnvois(cible);
   } catch (e) {
     console.error(e);
@@ -1523,6 +1528,217 @@ function ouvrirFeuilleCreer() {
   const fermer = () => { ov.classList.add('sortie'); setTimeout(() => ov.remove(), 180); };
   ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.ar-tuile')) fermer(); });
   document.body.appendChild(ov);
+}
+
+// ═══════════════════════════════ 3.2 : KOKO, LA MASCOTTE ═══════════════════════════════
+// Petit chef de chantier dessiné : il change de tenue selon la rubrique, suit le doigt du regard,
+// donne des conseils, réagit aux réussites et aux erreurs. Masquable dans le menu de l'avatar.
+const KOKO = { el: null, page: null, vus: new Set(), minuterieBulle: null, minuterieDefile: null, cote: 'droite' };
+const KOKO_TENUES = { pilotage: 'chef', terrain: 'terrain', argent: 'costume', logistique: 'magasin', equipe: 'polo', compte: 'polo' };
+const KOKO_PAGES = { appels: 'casque-audio', ia: 'ia', 'nouveau-rapport': 'terrain', pointage: 'terrain' };
+const KOKO_NOMS = { chef: 'chef de chantier', terrain: 'tenue de chantier', costume: 'costume', magasin: 'tenue de magasinier', polo: 'polo de l’équipe', 'casque-audio': 'casque d’appel', ia: 'mode IA' };
+const KOKO_CONSEILS = {
+  dashboard: ['Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.'],
+  projets: ['Touchez un chantier pour voir son planning, ses photos et son budget.', 'Une photo de couverture rend vos chantiers bien plus faciles à reconnaître 📸'],
+  rapports: ['Les rapports du terrain arrivent ici, avec leurs photos.', 'Quand un rapport est validé ou rejeté, son auteur est prévenu tout de suite.'],
+  'nouveau-rapport': ['Deux ou trois photos valent mieux qu’un long texte 📸', 'Pas de réseau ? Pas de souci : j’enverrai le rapport dès que ça revient.'],
+  pointage: ['Cochez les présents : je calcule la paie tout seul 💪', 'Le pointage marche même sans réseau.'],
+  securite: ['La sécurité d’abord ! Signalez même les presque-accidents ⛑️', 'Une causerie sécurité de 5 minutes le matin, ça sauve des vies.'],
+  materiel: ['Notez qui a quel engin : plus rien ne se perd 🚜', 'Pensez aux visites d’entretien avant les pannes.'],
+  compta: ['Prenez une facture en photo : je la lis pour vous 🧾', 'Le bouton Excel prépare un vrai tableau pour votre comptable.'],
+  ventes: ['Devis, situations, encaissements : tout pour être payé à temps 💼', 'La Trésorerie montre ce que le client vous doit.'],
+  contrats: ['Remplissez les cases : je rédige le contrat pour vous ✍️', 'Chaque paiement au prestataire a son reçu signé.'],
+  salaires: ['Chaque salaire est confirmé et signé par celui qui le reçoit ✅'],
+  achats: ['Une commande passée ici est suivie jusqu’à la livraison 🚚'],
+  stock: ['Je vous préviens quand un article passe sous le seuil 📦'],
+  equipe: ['Invitez votre équipe avec un simple numéro de téléphone 📱'],
+  appels: ['Appelez un technicien pour voir le chantier en direct 📹', 'Pendant l’appel, le bouton 📸 met une photo dans la galerie du chantier.'],
+  ia: ['Posez n’importe quelle question sur vos chantiers 🧠'],
+  communiques: ['Un communiqué ici, et toute l’équipe est informée 📢'],
+  'mon-espace': ['Votre espace personnel : vos salaires et vos signatures 🔒'],
+  abonnement: ['Votre formule KOORDIN se gère ici.'],
+  parametres: ['Les réglages de votre entreprise sont ici ⚙️'],
+};
+const KOKO_BRAVO = ['Bravo ! 🎉', 'Super travail ! 💪', 'C’est noté ✅', 'Parfait ! 👌'];
+const kokoActif = () => { try { return localStorage.getItem('koordin-koko') !== 'off'; } catch { return true; } };
+
+function svgKoko() {
+  return `<svg class="koko-svg" viewBox="0 0 100 124" aria-hidden="true">
+    <ellipse class="k-ombre" cx="50" cy="118" rx="22" ry="4"/>
+    <g class="k-tout">
+      <g class="k-jambes"><rect x="38" y="94" width="9" height="18" rx="4"/><rect x="53" y="94" width="9" height="18" rx="4"/>
+        <ellipse class="k-chaussure" cx="42" cy="113" rx="7" ry="3.6"/><ellipse class="k-chaussure" cx="58" cy="113" rx="7" ry="3.6"/></g>
+      <rect class="k-torse" x="29" y="62" width="42" height="38" rx="15"/>
+      <g class="k-t k-t-terrain"><path class="k-gilet" d="M31 70 Q31 63 41 63 L45 63 L45 99 L37 99 Q31 99 31 92 Z"/><path class="k-gilet" d="M69 70 Q69 63 59 63 L55 63 L55 99 L63 99 Q69 99 69 92 Z"/>
+        <rect class="k-bande" x="31" y="82" width="14" height="3.5"/><rect class="k-bande" x="55" y="82" width="14" height="3.5"/></g>
+      <g class="k-t k-t-costume"><path class="k-veste" d="M30 72 Q30 63 42 63 L50 80 L50 100 L37 100 Q30 100 30 92 Z"/><path class="k-veste" d="M70 72 Q70 63 58 63 L50 80 L50 100 L63 100 Q70 100 70 92 Z"/>
+        <path class="k-cravate" d="M48 64 L52 64 L53.5 68 L51.5 86 L50 89 L48.5 86 L46.5 68 Z"/></g>
+      <g class="k-t k-t-magasin"><rect class="k-salopette" x="38" y="74" width="24" height="26" rx="4"/><rect class="k-salopette" x="38" y="63" width="4" height="13"/><rect class="k-salopette" x="58" y="63" width="4" height="13"/><circle class="k-bouton" cx="40" cy="76" r="1.6"/><circle class="k-bouton" cx="60" cy="76" r="1.6"/></g>
+      <g class="k-t k-t-polo"><path class="k-col" d="M42 62 L50 70 L58 62 Z"/><rect class="k-badge" x="54" y="74" width="9" height="11" rx="2"/></g>
+      <g class="k-t k-t-chef"><path class="k-col-blanc" d="M42 62 L50 69 L58 62 L55 62 L50 66 L45 62 Z"/></g>
+      <g class="k-bras-g"><path class="k-manche" d="M31 68 Q22 76 24 88" /><circle class="k-peau" cx="24.5" cy="89" r="5"/></g>
+      <g class="k-bras-d"><path class="k-manche" d="M69 68 Q78 76 76 88" /><circle class="k-peau" cx="75.5" cy="89" r="5"/>
+        <g class="k-t k-t-chef"><rect class="k-tablette" x="70" y="80" width="15" height="19" rx="2.5"/><rect class="k-ecran" x="72" y="82.5" width="11" height="12" rx="1"/></g>
+        <g class="k-t k-t-magasin"><rect class="k-carton" x="68" y="81" width="18" height="15" rx="1.5"/><path class="k-scotch" d="M68 86 H86"/></g>
+        <g class="k-t k-t-costume"><rect class="k-calc" x="70" y="81" width="12" height="16" rx="2"/><rect class="k-ecran-calc" x="72" y="83" width="8" height="4" rx="1"/></g>
+      </g>
+      <rect class="k-peau" x="45" y="56" width="10" height="9" rx="3"/>
+      <g class="k-tete">
+        <circle class="k-peau" cx="28.5" cy="44" r="4.5"/><circle class="k-peau" cx="71.5" cy="44" r="4.5"/>
+        <circle class="k-peau" cx="50" cy="40" r="22"/>
+        <path class="k-cheveux" d="M29 36 Q31 18 50 18 Q69 18 71 36 Q66 26 50 26 Q34 26 29 36 Z"/>
+        <g class="k-sourcils"><path d="M38 33 Q42 31 46 33"/><path d="M54 33 Q58 31 62 33"/></g>
+        <g class="k-yeux"><ellipse class="k-blanc" cx="42" cy="41" rx="4.6" ry="5.4"/><ellipse class="k-blanc" cx="58" cy="41" rx="4.6" ry="5.4"/>
+          <g class="k-pupilles"><circle cx="42" cy="41.5" r="2.5"/><circle cx="58" cy="41.5" r="2.5"/><circle class="k-reflet" cx="43" cy="40.3" r=".8"/><circle class="k-reflet" cx="59" cy="40.3" r=".8"/></g></g>
+        <circle class="k-joue" cx="36" cy="49" r="3.4"/><circle class="k-joue" cx="64" cy="49" r="3.4"/>
+        <path class="k-bouche k-b-sourire" d="M43 50 Q50 56.5 57 50"/>
+        <path class="k-bouche-pleine k-b-rire" d="M42.5 49.5 Q50 59 57.5 49.5 Z"/>
+        <ellipse class="k-bouche-pleine k-b-o" cx="50" cy="52" rx="3" ry="3.6"/>
+        <g class="k-t k-t-costume"><rect class="k-lunette" x="36.5" y="36.5" width="11" height="9" rx="3.5"/><rect class="k-lunette" x="52.5" y="36.5" width="11" height="9" rx="3.5"/><path class="k-lunette-p" d="M47.5 40 H52.5"/></g>
+        <g class="k-t k-t-terrain k-t-magasin"><path class="k-casque" d="M26 33 Q27 13 50 12 Q73 13 74 33 Z"/><rect class="k-casque" x="22" y="31" width="56" height="5" rx="2.5"/><path class="k-casque-arete" d="M50 12.5 V31"/></g>
+        <g class="k-t k-t-chef"><path class="k-casque-blanc" d="M26 33 Q27 13 50 12 Q73 13 74 33 Z"/><rect class="k-casque-blanc" x="22" y="31" width="56" height="5" rx="2.5"/><circle class="k-logo" cx="50" cy="24" r="3.2"/></g>
+        <g class="k-t k-t-casque-audio"><path class="k-arceau" d="M27 42 Q27 16 50 16 Q73 16 73 42"/><rect class="k-ecouteur" x="22" y="37" width="9" height="14" rx="4"/><rect class="k-ecouteur" x="69" y="37" width="9" height="14" rx="4"/><path class="k-arceau" d="M27 49 Q30 58 40 57"/><circle class="k-micro" cx="41" cy="57" r="2.2"/></g>
+        <g class="k-t k-t-ia"><path class="k-antenne" d="M50 18 V8"/><path class="k-etoile" d="M50 1 L52 6 L57 8 L52 10 L50 15 L48 10 L43 8 L48 6 Z"/></g>
+      </g>
+    </g>
+  </svg>`;
+}
+
+function initKoko() {
+  if (KOKO.el || !kokoActif()) return;
+  try { KOKO.cote = localStorage.getItem('koordin-koko-cote') || 'droite'; } catch { /* rien */ }
+  const el = document.createElement('div');
+  el.className = `koko koko-${KOKO.cote}`;
+  el.dataset.humeur = 'sourire';
+  el.innerHTML = `<div class="koko-bulle hidden" role="status" aria-live="polite"><span class="koko-texte"></span><button type="button" class="koko-masquer" aria-label="Masquer Koko">Masquer</button></div>
+    <button type="button" class="koko-corps" aria-label="Koko, votre assistant : touchez pour un conseil">${svgKoko()}<span class="koko-pouf" aria-hidden="true"></span></button>`;
+  document.body.appendChild(el);
+  KOKO.el = el;
+  const corps = $('.koko-corps', el);
+  // Le regard suit le doigt ou la souris
+  const regarder = (x, y) => {
+    const r = corps.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height * 0.33;
+    const a = Math.atan2(y - cy, x - cx), d = Math.min(1, Math.hypot(x - cx, y - cy) / 220);
+    $('.k-pupilles', el).setAttribute('transform', `translate(${(Math.cos(a) * 1.8 * d).toFixed(2)} ${(Math.sin(a) * 2 * d).toFixed(2)})`);
+  };
+  document.addEventListener('pointermove', (e) => regarder(e.clientX, e.clientY), { passive: true });
+  document.addEventListener('pointerdown', (e) => regarder(e.clientX, e.clientY), { passive: true });
+  // Clignement des yeux
+  const cligner = () => { el.classList.add('cligne'); setTimeout(() => el.classList.remove('cligne'), 160); setTimeout(cligner, 2500 + Math.random() * 3500); };
+  setTimeout(cligner, 2000);
+  // Toucher : conseil ; glisser : changer de côté
+  let depart = null, glisse = false;
+  corps.addEventListener('pointerdown', (e) => { depart = { x: e.clientX, y: e.clientY }; glisse = false; corps.setPointerCapture(e.pointerId); });
+  corps.addEventListener('pointermove', (e) => {
+    if (!depart) return;
+    const dx = e.clientX - depart.x;
+    if (Math.abs(dx) > 10) { glisse = true; el.classList.add('glisse'); el.style.setProperty('--dx', `${dx}px`); }
+  });
+  corps.addEventListener('pointerup', (e) => {
+    if (!depart) return;
+    const dx = e.clientX - depart.x;
+    depart = null;
+    el.classList.remove('glisse'); el.style.removeProperty('--dx');
+    if (glisse) {
+      const cote = e.clientX < window.innerWidth / 2 ? 'gauche' : 'droite';
+      if (cote !== KOKO.cote) { KOKO.cote = cote; el.classList.remove('koko-gauche', 'koko-droite'); el.classList.add(`koko-${cote}`); try { localStorage.setItem('koordin-koko-cote', cote); } catch { /* rien */ } }
+      return;
+    }
+    if (Math.abs(dx) < 10) kokoToucher();
+  });
+  corps.addEventListener('pointercancel', () => { depart = null; el.classList.remove('glisse'); });
+  $('.koko-masquer', el).onclick = () => masquerKoko(true);
+  // Il se pousse quand on fait défiler la page
+  document.addEventListener('scroll', () => {
+    if (!KOKO.el) return;
+    KOKO.el.classList.add('cache');
+    clearTimeout(KOKO.minuterieDefile);
+    KOKO.minuterieDefile = setTimeout(() => KOKO.el?.classList.remove('cache'), 1100);
+  }, { capture: true, passive: true });
+  let premiere = false;
+  try { premiere = !localStorage.getItem('koordin-koko-presente'); localStorage.setItem('koordin-koko-presente', '1'); } catch { /* rien */ }
+  setTimeout(() => {
+    const h = new Date().getHours();
+    const salut = `${h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir'} ${String(S.profil?.nom || '').split(' ')[0]} !`;
+    kokoHumeur('rire', 1600); kokoAnim('saute');
+    kokoDire(premiere ? `${salut} Moi c’est Koko 👷🏾, votre assistant de chantier. Touchez-moi pour un conseil, glissez-moi pour me déplacer.` : `${salut} 👋`, premiere ? 9000 : 3500);
+  }, 900);
+}
+
+function masquerKoko(avecMessage) {
+  try { localStorage.setItem('koordin-koko', 'off'); } catch { /* rien */ }
+  KOKO.el?.remove(); KOKO.el = null;
+  if (avecMessage) toast('Koko est parti se reposer. Pour le faire revenir : avatar en haut à droite → 👷🏾 Afficher Koko.', 'ok', 7000);
+}
+function afficherKoko() {
+  try { localStorage.setItem('koordin-koko', 'on'); } catch { /* rien */ }
+  initKoko();
+  kokoNaviguer(hashCourant().replace(/^#\//, '').split('/')[0] || 'dashboard', true);
+}
+
+function kokoAnim(nom) {
+  const el = KOKO.el;
+  if (!el || reduireAnimations()) return;
+  el.classList.remove('saute', 'salue', 'tourne', 'secoue');
+  void el.offsetWidth;
+  el.classList.add(nom);
+  setTimeout(() => el.classList.remove(nom), 1200);
+}
+function kokoHumeur(h, duree = 1800) {
+  if (!KOKO.el) return;
+  KOKO.el.dataset.humeur = h;
+  clearTimeout(KOKO.minuterieHumeur);
+  KOKO.minuterieHumeur = setTimeout(() => { if (KOKO.el) KOKO.el.dataset.humeur = 'sourire'; }, duree);
+}
+function kokoDire(texte, duree = 5000) {
+  const el = KOKO.el;
+  if (!el) return;
+  const b = $('.koko-bulle', el);
+  $('.koko-texte', b).textContent = texte;
+  b.classList.remove('hidden', 'sort');
+  clearTimeout(KOKO.minuterieBulle);
+  KOKO.minuterieBulle = setTimeout(() => { b.classList.add('sort'); setTimeout(() => b.classList.add('hidden'), 250); }, duree);
+}
+
+function kokoNaviguer(page, forcer = false) {
+  if (!KOKO.el) return;
+  const tenue = KOKO_PAGES[page] || KOKO_TENUES[groupeDe(page)] || 'chef';
+  const change = KOKO.el.dataset.tenue !== tenue;
+  if (change) {
+    if (KOKO.el.dataset.tenue && !reduireAnimations()) { KOKO.el.classList.remove('pouf'); void KOKO.el.offsetWidth; KOKO.el.classList.add('pouf'); setTimeout(() => KOKO.el?.classList.remove('pouf'), 700); }
+    setTimeout(() => { if (KOKO.el) KOKO.el.dataset.tenue = tenue; }, KOKO.el.dataset.tenue ? 220 : 0);
+  }
+  if (KOKO.page !== page) kokoAnim('saute');
+  KOKO.page = page;
+  if (forcer || !KOKO.vus.has(page)) {
+    KOKO.vus.add(page);
+    if (KOKO.vus.size > 1 || forcer) {
+      const c = KOKO_CONSEILS[page];
+      if (c) setTimeout(() => kokoDire(c[0], 4500), 450);
+    }
+  }
+}
+
+function kokoToucher() {
+  const page = KOKO.page || 'dashboard';
+  kokoAnim(Math.random() < .5 ? 'salue' : 'saute');
+  kokoHumeur('rire', 1400);
+  try { navigator.vibrate?.(12); } catch { /* rien */ }
+  // Sur l'accueil, Koko signale d'abord les alertes du cockpit
+  const alertes = page === 'dashboard' ? $$('.cockpit-puces .puce.crit, .cockpit-puces .puce.warn').map((x) => x.textContent.trim()) : [];
+  KOKO.compteur = (KOKO.compteur || 0) + 1;
+  if (alertes.length && KOKO.compteur % 3 === 1) { kokoDire(`À regarder aujourd’hui : ${alertes.join(' · ')}. Touchez une pastille pour y aller.`, 6000); return; }
+  const liste = [...(KOKO_CONSEILS[page] || []), `Aujourd’hui je porte ma ${KOKO_NOMS[KOKO.el.dataset.tenue] || 'tenue'} 😎`, ...KOKO_CONSEILS.dashboard.slice(1)];
+  kokoDire(liste[KOKO.compteur % liste.length], 5000);
+}
+
+function kokoReagir(type, msg) {
+  if (!KOKO.el || $('.appel-ecran')) return;
+  if (type === 'ok' && /✅|enregistr|envoy|valid|sign|ajout|créé|cré/i.test(String(msg))) {
+    kokoHumeur('rire', 2000); kokoAnim('saute');
+    if (Math.random() < .45) kokoDire(KOKO_BRAVO[Math.floor(Math.random() * KOKO_BRAVO.length)], 2200);
+  } else if (type === 'err') { kokoHumeur('o', 2200); kokoAnim('secoue'); }
 }
 
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
