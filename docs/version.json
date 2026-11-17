@@ -1,11 +1,11 @@
 {
-  "version": "3.0",
+  "version": "3.1",
   "date": "2026-11-17",
   "nouveautes": [
-    "📹 Nouveau : Appels et réunions vidéo dans KOORDIN.",
-    "Voir un chantier en direct : le technicien répond, sa caméra arrière filme le chantier, vous voyez et vous vous parlez.",
-    "Réunions vidéo jusqu’à 8 personnes de l’équipe.",
-    "Le téléphone sonne quand on vous appelle (KOORDIN ouvert). Sinon, le lien de l’appel s’envoie par WhatsApp en un geste.",
-    "📸 Pendant l’appel, une photo du chantier peut être ajoutée à la galerie."
+    "✨ Nouveau design : un accueil « cockpit » animé, avec une jauge d’avancement, l’heure en direct et vos alertes en un coup d’œil.",
+    "⚡ Actions rapides : rapport, appel vidéo, pointage, facture, contrat… en un geste depuis l’accueil.",
+    "🏗️ Vos chantiers en grandes cartes photo à faire défiler.",
+    "➕ Nouveau bouton doré au centre du menu du bas pour tout créer rapidement.",
+    "🎨 Toutes les rubriques rangées par couleur (Pilotage, Terrain, Argent, Logistique, Équipe) avec une recherche."
   ]
 }

@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.0';
+const VERSION = '3.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -632,7 +632,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
       ${F.text('password', 'Choisissez un mot de passe (8 caractères minimum)', '', { type: 'password', required: true, autocomplete: 'new-password' })}
       <button class="btn primary block" type="submit">Rejoindre mon équipe</button>`,
   };
-  $('#root').innerHTML = `<div class="auth-wrap auth-split">
+  $('#root').innerHTML = `<div class="auth-wrap auth-split"><div class="aurore aurore-auth" aria-hidden="true"><i></i><i></i><i></i></div>
     <aside class="auth-visual" aria-hidden="true">
       <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
       <div class="auth-illu">${sceneChantier(11)}</div>
@@ -1064,7 +1064,7 @@ const TRACES = {
   communiques: '<path d="M3 10.5v3a1.5 1.5 0 0 0 1.5 1.5H7l6 4V5L7 9H4.5A1.5 1.5 0 0 0 3 10.5Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/>',
   'nouveau-rapport': '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
   rapports: '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5V3h6v1.5"/><path d="M9 10h6M9 14h6M9 18h3"/>',
-  pointage: '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 7V4"/><path d="M9 7.5 8 5M15 7.5l1-2.5"/><path d="M3 15h18v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2Z"/>',
+  pointage: '<circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/>',
   achats: '<path d="M3 4h2.2l2.3 11.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.1L21 8H6.3"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
   compta: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><path d="M16 14.5h2"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>',
   ventes: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7"/><path d="M3 12.5h18"/><path d="M11 12.5v2h2v-2"/>',
@@ -1080,6 +1080,7 @@ const TRACES = {
   appels: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/>',
   contrats: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h3"/><path d="M4 7v13a1 1 0 0 0 1 1h2"/>',
   salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
+  ajouter: '<path d="M12 5v14M5 12h14"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
   cloche: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
   tendance: '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/>',
@@ -1094,30 +1095,40 @@ const ICONE_EMOJI = { '🏗️': 'projets', '📈': 'tendance', '💰': 'compta'
 const NAV_PRIORITE = {
   direction: ['dashboard', 'projets', 'rapports', 'compta'],
   coordinateur: ['dashboard', 'projets', 'rapports', 'pointage'],
-  technicien: ['dashboard', 'nouveau-rapport', 'rapports', 'pointage'],
+  technicien: ['dashboard', 'rapports', 'pointage', 'nouveau-rapport'],
   achats: ['dashboard', 'achats', 'stock', 'projets'],
   comptable: ['dashboard', 'compta', 'ventes', 'pointage'],
   magasinier: ['dashboard', 'stock', 'achats', 'projets'],
 };
 function separerNavigation(items) {
-  if (items.length <= 5) return { principaux: items, autres: [] };
+  if (items.length <= 4) return { principaux: items, autres: [] };
   const voulus = (NAV_PRIORITE[role()] || []).filter((r) => items.some((m) => m.r === r));
-  const principaux = [...voulus, ...items.map((m) => m.r).filter((r) => !voulus.includes(r))].slice(0, 4).map((r) => items.find((m) => m.r === r));
+  const principaux = [...voulus, ...items.map((m) => m.r).filter((r) => !voulus.includes(r))].slice(0, 3).map((r) => items.find((m) => m.r === r));
   return { principaux, autres: items.filter((m) => !principaux.includes(m)) };
 }
 function ouvrirFeuilleMenu() {
-  const { autres } = separerNavigation(menuVisible());
+  const items = menuVisible();
   const actif = hashCourant().replace(/^#\//, '').split('/')[0];
   const ov = document.createElement('div');
   ov.className = 'feuille-fond';
-  ov.innerHTML = `<div class="feuille" role="dialog" aria-modal="true" aria-label="Toutes les rubriques">
+  const groupes = GROUPES_MENU.map(([k, t]) => [k, t, items.filter((m) => groupeDe(m.r) === k)]).filter((g) => g[2].length);
+  let n = 0;
+  ov.innerHTML = `<div class="feuille feuille-lanceur" role="dialog" aria-modal="true" aria-label="Toutes les rubriques">
     <div class="feuille-poignee"></div>
-    <div class="feuille-titre">Toutes les rubriques</div>
-    <div class="feuille-grille">${autres.map((m) => `<a class="feuille-item ${m.r === actif ? 'active' : ''}" href="#/${m.r}"><span class="feuille-ic">${icone(m.r, 24)}</span><span>${esc(m.court)}</span></a>`).join('')}</div>
+    <div class="lanceur-tete"><div class="feuille-titre">Toutes les rubriques</div>
+      <label class="lanceur-recherche">${icone('oeil', 16)}<input type="search" placeholder="Rechercher une rubrique…" aria-label="Rechercher une rubrique"></label></div>
+    <div class="lanceur-corps">${groupes.map(([k, t, l]) => `<div class="lanceur-groupe"><div class="lanceur-titre">${esc(t)}</div>
+      <div class="feuille-grille">${l.map((m) => `<a class="feuille-item g-${k} ${m.r === actif ? 'active' : ''}" href="#/${m.r}" data-cherche="${esc(`${m.label} ${m.court}`.toLowerCase())}" style="--i:${n++}"><span class="feuille-ic">${icone(m.r, 24) || m.ico}</span><span>${esc(m.court)}</span></a>`).join('')}</div></div>`).join('')}</div>
   </div>`;
   const fermer = () => { ov.classList.add('sortie'); setTimeout(() => ov.remove(), 180); };
   ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.feuille-item')) fermer(); });
   document.body.appendChild(ov);
+  const champ = $('input', ov);
+  champ.addEventListener('input', () => {
+    const t = champ.value.trim().toLowerCase();
+    $$('.feuille-item', ov).forEach((a) => a.classList.toggle('hidden', !!t && !a.dataset.cherche.includes(t)));
+    $$('.lanceur-groupe', ov).forEach((g) => g.classList.toggle('hidden', !$$('.feuille-item:not(.hidden)', g).length));
+  });
 }
 
 function menuVisible() {
@@ -1126,7 +1137,7 @@ function menuVisible() {
 
 function construireInterface() {
   const items = menuVisible();
-  const lien = (m) => `<a class="nav-item" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${icone(m.r) || m.ico}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
+  const lien = (m) => `<a class="nav-item g-${groupeDe(m.r)}" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${icone(m.r) || m.ico}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
   const { principaux, autres } = separerNavigation(items);
   const p = S.profil;
   $('#root').innerHTML = `<div class="app">
@@ -1143,11 +1154,12 @@ function construireInterface() {
         </button>
       </div>
     </header>
-    <nav class="sidebar">${items.map(lien).join('')}</nav>
+    <nav class="sidebar">${GROUPES_MENU.map(([k, t]) => [t, items.filter((m) => groupeDe(m.r) === k)]).filter(([, l]) => l.length).map(([t, l]) => `<div class="nav-groupe">${esc(t)}</div>${l.map(lien).join('')}`).join('')}</nav>
     <main class="main" id="main"></main>
-    <nav class="bottom-nav">${principaux.map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icone('plus')}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
+    <nav class="bottom-nav"><span class="nav-bulle" aria-hidden="true"></span>${principaux.slice(0, 2).map(lien).join('')}<button type="button" class="nav-fab" id="nav-fab" aria-label="Créer : actions rapides"><span>${icone('ajouter', 26)}</span></button>${principaux.slice(2).map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icone('plus')}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
   </div>`;
   $('#nav-plus')?.addEventListener('click', ouvrirFeuilleMenu);
+  $('#nav-fab')?.addEventListener('click', ouvrirFeuilleCreer);
   $('#reseau')?.addEventListener('click', ouvrirBoiteEnvois);
   $('#btn-user').onclick = ouvrirMenuUtilisateur;
   $('#btn-notif').onclick = ouvrirNotifications;
@@ -1275,6 +1287,7 @@ async function naviguer() {
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (cible === 'projet' ? 'projets' : cible)));
   const plus = $('#nav-plus');
   if (plus) plus.classList.toggle('active', !$$('.bottom-nav [data-nav]').some((a) => a.classList.contains('active')));
+  placerBulle();
   fermerPanneaux();
   detruireGraphiques();
   const main = $('#main');
@@ -1283,6 +1296,7 @@ async function naviguer() {
   if (!DEMO && !navigator.onLine && !['nouveau-rapport', 'pointage'].includes(cible)) { pageHorsLigne(); return; }
   try {
     await PAGES[cible](id);
+    animerPage($('#main'));
     banniereEnvois(cible);
   } catch (e) {
     console.error(e);
@@ -1349,6 +1363,168 @@ function bonjour() {
   return `${h < 18 ? 'Bonjour' : 'Bonsoir'} ${esc(S.profil.nom.split(' ')[0])}`;
 }
 
+// ═══════════════════════════════ 3.1 : NOUVEAU DESIGN ═══════════════════════════════
+const GROUPES_MENU = [
+  ['pilotage', 'Pilotage', ['dashboard', 'projets', 'rapports', 'communiques', 'appels', 'ia']],
+  ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'securite', 'materiel']],
+  ['argent', 'Argent', ['compta', 'ventes', 'contrats', 'salaires', 'achats']],
+  ['logistique', 'Logistique', ['stock']],
+  ['equipe', 'Équipe', ['equipe', 'mon-espace']],
+  ['compte', 'Compte', ['abonnement', 'parametres', 'console']],
+];
+const groupeDe = (r) => GROUPES_MENU.find((g) => g[2].includes(r))?.[0] || 'compte';
+const reduireAnimations = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+function actionsDisponibles() {
+  const visibles = new Set(menuVisible().map((m) => m.r));
+  return [
+    { r: 'nouveau-rapport', ic: 'nouveau-rapport', t: 'Rapport du jour', s: 'Travaux et photos', ok: can(...ROLES_RAPPORT) },
+    { r: 'appels', ic: 'appels', t: 'Appel vidéo', s: 'Chantier en direct' },
+    { r: 'pointage', ic: 'pointage', t: 'Pointage', s: 'Présences du jour' },
+    { r: 'projets', ic: 'projets', t: 'Nouveau projet', s: 'Créer un chantier', attr: 'data-nouveau-projet', ok: can('direction', 'coordinateur') },
+    { r: 'compta', ic: 'compta', t: 'Facture', s: 'Scanner ou saisir', attr: 'data-nouvelle-facture' },
+    { r: 'achats', ic: 'achats', t: 'Commande', s: 'Achat fournisseur', attr: 'data-nouvelle-commande', ok: can('direction', 'coordinateur', 'achats') },
+    { r: 'contrats', ic: 'contrats', t: 'Contrat', s: 'Prestataire' },
+    { r: 'securite', ic: 'securite', t: 'Sécurité', s: 'Signaler un risque' },
+    { r: 'stock', ic: 'stock', t: 'Stock', s: 'Entrées et sorties' },
+    { r: 'ia', ic: 'ia', t: 'Assistant IA', s: 'Poser une question' },
+  ].filter((a) => (a.ok ?? true) && (visibles.has(a.r) || (a.r === 'nouveau-rapport' && can(...ROLES_RAPPORT))));
+}
+const tuileAction = (a, i = 0) => `<a class="ar-tuile g-${groupeDe(a.r)}" href="#/${a.r}" ${a.attr || ''} style="--i:${i}"><span class="ar-ic">${icone(a.ic, 22)}</span><b>${esc(a.t)}</b><small>${esc(a.s)}</small></a>`;
+
+function jauge(valeur, libelle, prevu = null) {
+  const v = Math.max(0, Math.min(100, Math.round(num(valeur))));
+  const r = 52, c = 2 * Math.PI * r;
+  const id = `jg${Math.random().toString(36).slice(2, 7)}`;
+  const repere = prevu != null ? (() => { const a = (Math.max(0, Math.min(100, prevu)) / 100) * 2 * Math.PI - Math.PI / 2; return `<circle cx="${64 + r * Math.cos(a)}" cy="${64 + r * Math.sin(a)}" r="4.5" class="jauge-prevu"><title>Prévu : ${prevu} %</title></circle>`; })() : '';
+  return `<div class="jauge" data-val="${v}"><svg viewBox="0 0 128 128" role="img" aria-label="${esc(libelle)} : ${v} %">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe29a"/><stop offset=".55" stop-color="#f0a92a"/><stop offset="1" stop-color="#c47a0c"/></linearGradient></defs>
+    <circle cx="64" cy="64" r="${r}" class="jauge-fond"/>
+    <circle cx="64" cy="64" r="${r}" class="jauge-val" stroke="url(#${id})" stroke-dasharray="${c}" stroke-dashoffset="${reduireAnimations() ? c * (1 - v / 100) : c}" data-cible="${c * (1 - v / 100)}" transform="rotate(-90 64 64)"/>
+    ${repere}</svg><div class="jauge-txt"><b class="jauge-n">${v} %</b><span>${esc(libelle)}</span></div></div>`;
+}
+
+function heroAccueil({ resume = '', jaugeVal = null, jaugeLib = '', prevu = null, puces = [], actions = '' } = {}) {
+  const h = new Date().getHours();
+  const [salut, emoji] = h < 12 ? ['Bonjour', '☀️'] : h < 18 ? ['Bon après-midi', '🌤️'] : ['Bonsoir', '🌙'];
+  const heure = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const actionsRap = actionsDisponibles();
+  return `<section class="cockpit">
+    <div class="aurore" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="cockpit-trame" aria-hidden="true"></div>
+    <div class="cockpit-corps">
+      <div class="cockpit-txt">
+        <p class="cockpit-date"><span class="point-direct"></span>${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} · <span data-horloge>${heure}</span></p>
+        <h1 class="cockpit-titre">${salut}<br><span class="texte-or">${esc(String(S.profil.nom).split(' ')[0])}</span> <span class="cockpit-salut" aria-hidden="true">${emoji}</span></h1>
+        ${resume ? `<p class="cockpit-resume">${esc(resume)}</p>` : ''}
+      </div>
+      ${jaugeVal != null ? `<div class="cockpit-jauge">${jauge(jaugeVal, jaugeLib, prevu)}</div>` : ''}
+    </div>
+    ${puces.length ? `<div class="cockpit-puces">${puces.map(([t, lien, cls]) => `<a class="puce ${cls || ''}" href="${lien}">${t}</a>`).join('')}</div>` : ''}
+    ${actions ? `<div class="cockpit-actions">${actions}</div>` : ''}
+  </section>
+  ${actionsRap.length ? `<section class="actions-rapides" aria-label="Actions rapides"><div class="section-tete"><h2>Actions rapides</h2><span>Glissez →</span></div>
+    <div class="ar-rail">${actionsRap.map(tuileAction).join('')}</div></section>` : ''}`;
+}
+
+function railChantiers(projets, url) {
+  if (!projets.length) return '';
+  return `<section class="section rail-chantiers"><div class="section-tete"><h2>Vos chantiers</h2><a href="#/projets">Tout voir →</a></div>
+    <div class="ch-rail">${projets.map((p, i) => `<a class="ch-carte" href="#/projet/${p.id}" style="--i:${i}">
+      ${visuelProjet(p, url(couvertureDe(p)), { classe: 'ch-photo' })}
+      <div class="ch-haut">${badge(SANTE[p.sante])}</div>
+      <div class="ch-bas"><div class="ch-info"><b>${esc(p.nom)}</b><span>${esc(p.localisation || p.client || '')}</span>
+        <span class="ch-fin">Fin ${fdate(p.date_fin_prevue)}${p.rapports_en_attente ? ` · <i>${p.rapports_en_attente} rapport${p.rapports_en_attente > 1 ? 's' : ''}</i>` : ''}</span></div>
+        ${anneau(p.avancement, p.avancement_attendu, 54)}</div>
+    </a>`).join('')}</div></section>`;
+}
+
+// Animation des chiffres, des jauges, horloge
+function animerPage(racine = document) {
+  $$('.jauge-val', racine).forEach((c) => requestAnimationFrame(() => requestAnimationFrame(() => { c.style.strokeDashoffset = c.dataset.cible; })));
+  if (reduireAnimations()) return;
+  $$('.kpi-value, .jauge-n', racine).forEach(compteur);
+}
+function compteur(el) {
+  if (el.children.length || el.dataset.anime) return;
+  const txt = el.textContent;
+  const m = /^(\D*?)(-?\d[\d\s  ]*(?:,\d+)?)(.*)$/s.exec(txt);
+  if (!m) return;
+  const cible = parseFloat(m[2].replace(/[\s  ]/g, '').replace(',', '.'));
+  if (!isFinite(cible) || cible === 0) return;
+  el.dataset.anime = '1';
+  const dec = (m[2].split(',')[1] || '').length;
+  const fmt = (v) => m[1] + v.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + m[3];
+  const t0 = performance.now(), duree = 1000;
+  const pas = (t) => {
+    const k = Math.min(1, (t - t0) / duree);
+    el.textContent = k < 1 ? fmt(cible * (1 - Math.pow(1 - k, 3))) : txt;
+    if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
+}
+setInterval(() => {
+  const h = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  $$('[data-horloge]').forEach((x) => { if (x.textContent !== h) x.textContent = h; });
+}, 15000);
+
+// Bulle dorée qui glisse sous l'onglet actif du menu du bas
+function placerBulle() {
+  const nav = $('.bottom-nav');
+  const bulle = $('.nav-bulle', nav || document);
+  if (!nav || !bulle) return;
+  const actif = $('.nav-item.active', nav);
+  if (!actif) { bulle.style.opacity = '0'; return; }
+  bulle.style.opacity = '1';
+  bulle.style.transform = `translateX(${actif.offsetLeft}px)`;
+  bulle.style.width = `${actif.offsetWidth}px`;
+}
+window.addEventListener('resize', () => placerBulle());
+
+// Effet d'onde au toucher + petite vibration sur le menu
+document.addEventListener('pointerdown', (e) => {
+  const cible = e.target.closest('.btn, .nav-item, .nav-fab, .feuille-item, .ar-tuile, .appel-gros, .ch-carte, .puce');
+  if (!cible || reduireAnimations()) return;
+  const r = cible.getBoundingClientRect();
+  const o = document.createElement('span');
+  const t = Math.max(r.width, r.height) * 2;
+  o.className = 'onde';
+  o.style.cssText = `width:${t}px;height:${t}px;left:${e.clientX - r.left - t / 2}px;top:${e.clientY - r.top - t / 2}px`;
+  if (getComputedStyle(cible).position === 'static') cible.style.position = 'relative';
+  const zone = document.createElement('span');
+  zone.className = 'onde-zone';
+  zone.appendChild(o);
+  cible.appendChild(zone);
+  setTimeout(() => zone.remove(), 650);
+  if (cible.matches('.nav-item, .nav-fab')) { try { navigator.vibrate?.(8); } catch { /* rien */ } }
+}, { passive: true });
+
+// Halo lumineux qui suit la souris sur les cartes (ordinateur)
+if (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) {
+  document.addEventListener('pointermove', (e) => {
+    const c = e.target.closest?.('.card, .kpi, .ar-tuile, .ch-carte, .cockpit');
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    c.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    c.style.setProperty('--my', `${e.clientY - r.top}px`);
+  }, { passive: true });
+}
+
+// Feuille « Créer » (bouton doré central)
+function ouvrirFeuilleCreer() {
+  const actions = actionsDisponibles();
+  const ov = document.createElement('div');
+  ov.className = 'feuille-fond';
+  ov.innerHTML = `<div class="feuille feuille-creer" role="dialog" aria-modal="true" aria-label="Que voulez-vous faire ?">
+    <div class="feuille-poignee"></div>
+    <div class="feuille-titre">Que voulez-vous faire ?</div>
+    <div class="creer-grille">${actions.map(tuileAction).join('')}</div>
+  </div>`;
+  const fermer = () => { ov.classList.add('sortie'); setTimeout(() => ov.remove(), 180); };
+  ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.ar-tuile')) fermer(); });
+  document.body.appendChild(ov);
+}
+
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
@@ -1395,20 +1571,18 @@ async function dashDirection() {
   const resume = !actifs.length ? 'Aucun chantier en cours pour le moment.'
     : critiques || attente ? [critiques ? `${critiques} chantier${critiques > 1 ? 's' : ''} à surveiller de près` : '', attente ? `${attente} rapport${attente > 1 ? 's' : ''} à valider` : ''].filter(Boolean).join(' · ')
     : `${actifs.length} chantier${actifs.length > 1 ? 's' : ''} en cours, tout est sous contrôle.`;
+  const urlCouv = await urlsPhotos(actifs.map(couvertureDe));
   page(`
-    <section class="hero">
-      <div class="hero-illu">${sceneChantier(empreinte(S.entreprise.id))}</div>
-      <div class="hero-txt">
-        <p class="hero-date">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${esc(S.entreprise.nom)}</p>
-        <h1 class="page-title">${bonjour()}</h1>
-        <p class="hero-resume">${esc(resume)}</p>
-      </div>
-      <div class="hero-actions">
-        ${can('direction', 'coordinateur') ? '<a class="btn primary" href="#/projets" data-nouveau-projet>＋ Nouveau projet</a>' : ''}
-        ${attente ? `<a class="btn" href="#/rapports">📋 Valider ${attente} rapport${attente > 1 ? 's' : ''}</a>` : ''}
-        ${can(...ROLES_IA) ? '<a class="btn ghost" href="#/ia">🧠 Demander à l’IA</a>' : ''}
-      </div>
-    </section>
+    ${heroAccueil({
+      resume,
+      jaugeVal: actifs.length ? avMoyen : null, jaugeLib: 'avancement moyen', prevu: prevuMoyen,
+      puces: [
+        actifs.length && [`🏗️ ${actifs.length} chantier${actifs.length > 1 ? 's' : ''}`, '#/projets'],
+        critiques && [`🚨 ${critiques} critique${critiques > 1 ? 's' : ''}`, '#/projets', 'crit'],
+        attente && [`📋 ${attente} à valider`, '#/rapports', 'warn'],
+        alertesStock && [`📦 ${alertesStock} sous le seuil`, '#/stock', 'warn'],
+      ].filter(Boolean),
+    })}
     ${!projets.length && can('direction') ? `<div class="notice">Bienvenue ! Créez votre premier projet, ou chargez des <b>données de démonstration</b> depuis <a href="#/parametres">Paramètres</a> pour découvrir KOORDIN.</div>` : ''}
     <div class="grid k4">
       ${kpi('Projets actifs', actifs.length, critiques ? `<span style="color:var(--crit)">🚨 ${critiques} en situation critique</span>` : '✅ Aucun projet critique', critiques ? 'alert' : '', '🏗️')}
@@ -1416,6 +1590,7 @@ async function dashDirection() {
       ${kpi('Budget consommé', `${pct(engage, budget)} %`, `${moneyShort(engage)} sur ${moneyShort(budget)}`, pct(engage, budget) > 100 ? 'alert' : '', '💰')}
       ${kpi('Rapports à valider', attente, alertesStock ? `📦 ${alertesStock} article(s) sous le seuil` : 'Stock : aucune alerte', attente ? 'warn' : '', '📋')}
     </div>
+    ${railChantiers(actifs, urlCouv)}
     ${actifs.length ? `<div class="grid c2 section">
       <div class="card"><div class="card-title">Avancement réel et prévu</div>
         ${legende([['Réel', '--series-1'], ['Prévu à date', '--series-ref']])}
@@ -1425,7 +1600,7 @@ async function dashDirection() {
         <div class="chart-box"><canvas id="ch-bud"></canvas></div></div>
     </div>` : ''}
     <div class="grid c21 section">
-      <div class="card"><div class="card-title">Tous les projets <small>Cliquez pour le détail</small></div>${tableauProjets(projets)}</div>
+      <div class="card"><div class="card-title">Tableau détaillé des projets <small>Cliquez pour le détail</small></div>${tableauProjets(projets)}</div>
       <div class="col-droite"><div id="zone-annonce"></div><div class="card"><div class="card-title">Activité récente</div>${feedHTML(activites)}</div></div>
     </div>`);
 
@@ -1461,7 +1636,11 @@ async function dashTechnicien() {
   setTimeout(() => rappelRapportTechnicien(aujourdhui, projets.length > 0), 900);
   const url = await urlsPhotos(projets.map(couvertureDe));
   page(`
-    ${entete(bonjour(), 'Votre journée sur le terrain')}
+    ${heroAccueil({
+      resume: !projets.length ? 'Votre journée sur le terrain.' : aujourdhui ? 'Rapport du jour envoyé ✅ Bon travail !' : 'Pensez à envoyer votre rapport du jour.',
+      jaugeVal: projets.length ? Math.round(projets.reduce((t, x) => t + num(x.avancement), 0) / projets.length) : null, jaugeLib: projets.length > 1 ? 'avancement moyen' : 'avancement',
+      puces: [projets.length && [`🏗️ ${projets.length} chantier${projets.length > 1 ? 's' : ''}`, '#/projets'], !aujourdhui && projets.length && ['⏰ Rapport à faire', '#/nouveau-rapport', 'warn']].filter(Boolean),
+    })}
     ${!projets.length ? '<div class="notice warn">Vous n’êtes affecté à aucun chantier pour le moment. Demandez à votre coordinateur de vous ajouter à un projet.</div>' : ''}
     ${projets.length ? `<a class="btn primary block" style="padding:16px;font-size:15px;margin-bottom:16px" href="#/nouveau-rapport">➕ ${aujourdhui ? 'Faire un autre rapport' : 'Faire mon rapport du jour'}</a>` : ''}
     ${!aujourdhui && projets.length ? '<div class="notice warn">⏰ Vous n’avez pas encore envoyé de rapport aujourd’hui.</div>' : ''}
@@ -1500,7 +1679,7 @@ async function dashAchats() {
   const demandes = commandes.filter((c) => c.statut === 'demandee');
   const lotsHors = lots.filter((l) => num(l.budget) > 0 && num(l.engage) > num(l.budget));
   page(`
-    ${entete(bonjour(), 'Achats et suivi budgétaire', '<a class="btn primary" href="#/achats" data-nouvelle-commande>＋ Nouvelle commande</a>')}
+    ${heroAccueil({ resume: 'Achats et suivi budgétaire.', puces: [demandes.length && [`🛒 ${demandes.length} demande${demandes.length > 1 ? 's' : ''} à traiter`, '#/achats', 'warn'], enCours.length && [`🚚 ${enCours.length} en livraison`, '#/achats']].filter(Boolean) })}
     <div class="grid k4">
       ${kpi('Total engagé', moneyShort(totalEngage), `${projets.length} projet(s) actif(s)`)}
       ${kpi('Commandes en cours', enCours.length, 'En attente de livraison')}
@@ -1535,7 +1714,7 @@ async function dashComptable() {
   const aPayer = factures.filter((f) => f.statut === 'a_payer');
   const echues = aPayer.filter((f) => f.date_echeance && f.date_echeance < todayISO());
   page(`
-    ${entete(bonjour(), 'Situation financière des chantiers', '<a class="btn primary" href="#/compta" data-nouvelle-facture>＋ Saisir une facture</a>')}
+    ${heroAccueil({ resume: 'Situation financière des chantiers.' })}
     <div class="grid k4">
       ${kpi('Total facturé', moneyShort(total), `${factures.length} pièce(s)`)}
       ${kpi('Payé', moneyShort(paye), `${pct(paye, total)} % du facturé`)}
@@ -1559,7 +1738,7 @@ async function dashMagasinier() {
   const alertes = stock.filter((a) => a.alerte);
   const valeur = stock.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0);
   page(`
-    ${entete(bonjour(), 'Magasin et approvisionnement', '<a class="btn primary" href="#/stock">📦 Gérer le stock</a>')}
+    ${heroAccueil({ resume: 'Magasin et approvisionnement.' })}
     <div class="grid k4">
       ${kpi('Articles suivis', stock.length)}
       ${kpi('Sous le seuil', alertes.length, alertes.length ? 'À réapprovisionner' : '✅ Aucun', alertes.length ? 'alert' : '')}
