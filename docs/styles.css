@@ -1604,3 +1604,29 @@ body.en-appel .koko { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .k-tout, .k-tete, .k-ombre, .k-etoile { animation: none !important; }
 }
+
+/* ═══ 3.3 : notifications, Koko parle et écoute ═══ */
+.encart-push { display: flex; gap: 14px; align-items: flex-start; padding: 16px; margin-bottom: 18px; border-radius: 22px; position: relative; overflow: hidden;
+  background: linear-gradient(135deg, rgba(90, 167, 255, .16), rgba(122, 92, 240, .12) 60%, transparent), var(--surface); border: 1px solid rgba(90, 167, 255, .35); animation: monte .5s var(--doux) both; }
+.encart-push-ic { font-size: 26px; width: 50px; height: 50px; flex-shrink: 0; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(145deg, #8cc6ff, #2f7ae6); box-shadow: 0 8px 20px rgba(47, 122, 230, .4); animation: cloche 2.4s ease-in-out infinite; transform-origin: 50% 20%; }
+@keyframes cloche { 0%, 70%, 100% { transform: rotate(0); } 75% { transform: rotate(14deg); } 82% { transform: rotate(-12deg); } 89% { transform: rotate(7deg); } }
+.encart-push-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.encart-push-txt b { font-size: 15px; }
+.encart-push-txt span { font-size: 13px; color: var(--text-2); line-height: 1.45; }
+.encart-push-boutons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.koko-outils { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 7px; }
+.koko-outils button { padding: 0; border: 0; background: none; color: var(--text-3); font: 600 11.5px var(--font); cursor: pointer; }
+.koko-outils .koko-micro { color: var(--gold); padding: 4px 9px; border-radius: 999px; background: var(--gold-dim); border: 1px solid var(--liseré-or, var(--border)); margin-right: auto; }
+.koko-outils .koko-voix { font-size: 15px; }
+.koko-outils .koko-masquer { margin: 0; }
+.koko.parle .k-b-sourire { display: none; }
+.koko.parle .k-b-o { display: block; animation: k-parle .28s ease-in-out infinite alternate; transform-origin: 50px 52px; }
+@keyframes k-parle { from { transform: scaleY(.35); } to { transform: scaleY(1.1); } }
+.koko.ecoute .koko-corps::before { content: ''; position: absolute; left: 50%; top: 38%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; border: 3px solid #2ee6a0; box-shadow: 0 0 24px rgba(46, 230, 160, .55); animation: k-ecoute 1.1s ease-out infinite; pointer-events: none; }
+@keyframes k-ecoute { from { transform: scale(.75); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
+.koko.ecoute .k-sourcils { transform: translateY(-2px); }
+.koko.dort .k-yeux { transform: scaleY(.1); }
+.koko.dort .k-tout { animation-duration: 5s; }
+.koko.dort .koko-corps::after { content: 'z Z'; position: absolute; right: -2px; top: -8px; font: 800 14px var(--font); color: #b9c3ff; letter-spacing: 2px; animation: k-zzz 2.4s ease-in-out infinite; pointer-events: none; }
+@keyframes k-zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -14px); } }
+@media (prefers-reduced-motion: reduce) { .encart-push-ic, .koko.dort .koko-corps::after { animation: none !important; } }

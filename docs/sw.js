@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v27';
-const FICHIERS = ['./', 'index.html', 'styles.css?v=27', 'app.js?v=27', 'config.js?v=27', 'vendor/supabase.js', 'vendor/chart.umd.js', 'icon.svg', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v28';
+const FICHIERS = ['./', 'index.html', 'styles.css?v=28', 'app.js?v=28', 'config.js?v=28', 'vendor/supabase.js', 'vendor/chart.umd.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
@@ -32,4 +32,37 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request).then((r) => r || caches.match('index.html')))
   );
+});
+
+// ─── Notifications (même quand KOORDIN est fermé) ───
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { corps: e.data && e.data.text() }; }
+  e.waitUntil((async () => {
+    const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // KOORDIN est ouvert et visible : l'application affiche déjà l'alerte (ou fait sonner l'appel)
+    if (fenetres.some((c) => c.visibilityState === 'visible')) return;
+    await self.registration.showNotification(d.titre || 'KOORDIN', {
+      body: d.corps || '',
+      icon: 'icon-192.png',
+      badge: 'badge-96.png',
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      requireInteraction: !!d.urgent,
+      vibrate: d.urgent ? [400, 200, 400, 200, 800] : [120, 60, 120],
+      data: { lien: d.lien || '#/dashboard' },
+      lang: 'fr',
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const lien = (e.notification.data && e.notification.data.lien) || '#/dashboard';
+  e.waitUntil((async () => {
+    const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const ouverte = fenetres.find((c) => c.url.startsWith(self.registration.scope));
+    if (ouverte) { await ouverte.focus(); ouverte.postMessage({ type: 'koordin-aller', lien }); return; }
+    await self.clients.openWindow(new URL(lien, self.registration.scope).href);
+  })());
 });

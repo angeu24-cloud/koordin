@@ -1,10 +1,11 @@
 {
-  "version": "3.2",
+  "version": "3.3",
   "date": "2026-11-17",
   "nouveautes": [
-    "👷🏾 Voici Koko, votre petit assistant de chantier ! Il vous suit de page en page et change de tenue : casque et gilet sur le terrain, costume et lunettes pour l’argent, casque audio pour les appels…",
-    "Touchez-le pour un conseil (sur l’accueil, il vous signale les alertes du jour). Glissez-le pour le mettre à gauche ou à droite.",
-    "Il vous suit du regard, se pousse quand vous faites défiler, applaudit vos réussites et s’inquiète des erreurs.",
-    "Pour le masquer ou le faire revenir : avatar en haut à droite → 👷🏾 Koko."
+    "🔔 Notifications sur le téléphone, même quand KOORDIN est fermé : appels vidéo, rapports validés ou rejetés, salaires versés, contrats signés, alertes importantes.",
+    "Activez-les avec le bouton « Activer les notifications » sur l’accueil (ou avatar → 🔔).",
+    "🗣️ Koko parle ! Il lit ses conseils à voix haute (bouton 🔊 pour le faire taire).",
+    "🎤 Parlez à Koko : appuyez longtemps sur lui et dites « ouvre la compta », « nouveau rapport », « appelle Koffi » ou « combien de rapports à valider ».",
+    "😴 Koko s’endort quand vous ne touchez plus le téléphone… et se réveille dès que vous revenez."
   ]
 }

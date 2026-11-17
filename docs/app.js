@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.2';
+const VERSION = '3.3';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -776,6 +776,7 @@ async function ouvrirApplication(session) {
     ecouterTempsReel();
     if (!DEMO) window.onhashchange = naviguer;
     await naviguer();
+    if (!DEMO && notificationsActives()) activerNotifications({ silencieux: true });
     if (!DEMO) { suivreMisesAJour(); ecouterReseau(); majIndicateurReseau(); setTimeout(() => { synchroniser(); prechargerHorsLigne(); }, 1200); }
     let guideVu = '1';
     try { guideVu = localStorage.getItem(`koordin-guide-vu-${S.profil.id}`); } catch { /* rien */ }
@@ -1186,6 +1187,7 @@ function ouvrirMenuUtilisateur(e) {
     ${DEMO ? '' : '<button id="m-espace">👤 Mon espace</button>'}
     ${DEMO ? '' : '<button id="m-guide">🎓 Guide vidéo</button>'}
     <button id="m-koko">👷🏾 ${KOKO.el ? 'Masquer Koko' : 'Afficher Koko'}</button>
+    ${DEMO ? '' : `<button id="m-push">${notificationsActives() ? '🔕 Couper les notifications' : '🔔 Activer les notifications'}</button>`}
     ${DEMO ? '' : `<button id="m-news">✨ Nouveautés <span class="muted" style="margin-left:auto">v${VERSION}</span></button>`}
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
   document.body.appendChild(m);
@@ -1201,8 +1203,9 @@ function ouvrirMenuUtilisateur(e) {
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
   $('#m-guide', m)?.addEventListener('click', () => { fermerPanneaux(); ouvrirGuide(); });
   $('#m-koko', m).onclick = () => { fermerPanneaux(); if (KOKO.el) masquerKoko(false); else afficherKoko(); };
+  $('#m-push', m)?.addEventListener('click', () => { fermerPanneaux(); if (notificationsActives()) desactiverNotifications(); else activerNotifications(); });
   $('#m-espace', m)?.addEventListener('click', () => { fermerPanneaux(); allerA('#/mon-espace'); });
-  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); if (S.canalAppels) sb.removeChannel(S.canalAppels); KOKO.el?.remove(); KOKO.el = null; KOKO.vus.clear(); await sb.auth.signOut(); };
+  $('#m-out', m).onclick = async () => { fermerPanneaux(); S.canal?.unsubscribe(); if (S.canalAppels) sb.removeChannel(S.canalAppels); KOKO.el?.remove(); KOKO.el = null; KOKO.vus.clear(); await oublierAbonnementPush(); await sb.auth.signOut(); };
 }
 
 function fermerPanneaux() {
@@ -1538,7 +1541,7 @@ const KOKO_TENUES = { pilotage: 'chef', terrain: 'terrain', argent: 'costume', l
 const KOKO_PAGES = { appels: 'casque-audio', ia: 'ia', 'nouveau-rapport': 'terrain', pointage: 'terrain' };
 const KOKO_NOMS = { chef: 'chef de chantier', terrain: 'tenue de chantier', costume: 'costume', magasin: 'tenue de magasinier', polo: 'polo de l’équipe', 'casque-audio': 'casque d’appel', ia: 'mode IA' };
 const KOKO_CONSEILS = {
-  dashboard: ['Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.'],
+  dashboard: ['Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.', 'Appuyez longtemps sur moi et dites « ouvre la compta » ou « appelle Koffi » 🎤'],
   projets: ['Touchez un chantier pour voir son planning, ses photos et son budget.', 'Une photo de couverture rend vos chantiers bien plus faciles à reconnaître 📸'],
   rapports: ['Les rapports du terrain arrivent ici, avec leurs photos.', 'Quand un rapport est validé ou rejeté, son auteur est prévenu tout de suite.'],
   'nouveau-rapport': ['Deux ou trois photos valent mieux qu’un long texte 📸', 'Pas de réseau ? Pas de souci : j’enverrai le rapport dès que ça revient.'],
@@ -1610,7 +1613,7 @@ function initKoko() {
   const el = document.createElement('div');
   el.className = `koko koko-${KOKO.cote}`;
   el.dataset.humeur = 'sourire';
-  el.innerHTML = `<div class="koko-bulle hidden" role="status" aria-live="polite"><span class="koko-texte"></span><button type="button" class="koko-masquer" aria-label="Masquer Koko">Masquer</button></div>
+  el.innerHTML = `<div class="koko-bulle hidden" role="status" aria-live="polite"><span class="koko-texte"></span><div class="koko-outils">${Reconnaissance ? '<button type="button" class="koko-micro" aria-label="Parler à Koko">🎤 Me parler</button>' : ''}<button type="button" class="koko-voix" aria-label="Voix de Koko">🔊</button><button type="button" class="koko-masquer" aria-label="Masquer Koko">Masquer</button></div></div>
     <button type="button" class="koko-corps" aria-label="Koko, votre assistant : touchez pour un conseil">${svgKoko()}<span class="koko-pouf" aria-hidden="true"></span></button>`;
   document.body.appendChild(el);
   KOKO.el = el;
@@ -1629,16 +1632,23 @@ function initKoko() {
   setTimeout(cligner, 2000);
   // Toucher : conseil ; glisser : changer de côté
   let depart = null, glisse = false;
-  corps.addEventListener('pointerdown', (e) => { depart = { x: e.clientX, y: e.clientY }; glisse = false; corps.setPointerCapture(e.pointerId); });
+  let appuiLong = null, ecouteLancee = false;
+  corps.addEventListener('pointerdown', (e) => {
+    depart = { x: e.clientX, y: e.clientY }; glisse = false; ecouteLancee = false; corps.setPointerCapture(e.pointerId);
+    clearTimeout(appuiLong);
+    appuiLong = setTimeout(() => { if (depart && !glisse) { ecouteLancee = true; kokoEcouter(); } }, 650);
+  });
   corps.addEventListener('pointermove', (e) => {
     if (!depart) return;
     const dx = e.clientX - depart.x;
-    if (Math.abs(dx) > 10) { glisse = true; el.classList.add('glisse'); el.style.setProperty('--dx', `${dx}px`); }
+    if (Math.abs(dx) > 10) { glisse = true; clearTimeout(appuiLong); el.classList.add('glisse'); el.style.setProperty('--dx', `${dx}px`); }
   });
   corps.addEventListener('pointerup', (e) => {
     if (!depart) return;
     const dx = e.clientX - depart.x;
     depart = null;
+    clearTimeout(appuiLong);
+    if (ecouteLancee) return;
     el.classList.remove('glisse'); el.style.removeProperty('--dx');
     if (glisse) {
       const cote = e.clientX < window.innerWidth / 2 ? 'gauche' : 'droite';
@@ -1647,8 +1657,12 @@ function initKoko() {
     }
     if (Math.abs(dx) < 10) kokoToucher();
   });
-  corps.addEventListener('pointercancel', () => { depart = null; el.classList.remove('glisse'); });
+  corps.addEventListener('pointercancel', () => { depart = null; clearTimeout(appuiLong); el.classList.remove('glisse'); });
+  corps.addEventListener('contextmenu', (e) => e.preventDefault());
   $('.koko-masquer', el).onclick = () => masquerKoko(true);
+  $('.koko-voix', el).onclick = kokoBasculerVoix;
+  $('.koko-micro', el)?.addEventListener('click', kokoEcouter);
+  majBoutonsKoko();
   // Il se pousse quand on fait défiler la page
   document.addEventListener('scroll', () => {
     if (!KOKO.el) return;
@@ -1662,7 +1676,7 @@ function initKoko() {
     const h = new Date().getHours();
     const salut = `${h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir'} ${String(S.profil?.nom || '').split(' ')[0]} !`;
     kokoHumeur('rire', 1600); kokoAnim('saute');
-    kokoDire(premiere ? `${salut} Moi c’est Koko 👷🏾, votre assistant de chantier. Touchez-moi pour un conseil, glissez-moi pour me déplacer.` : `${salut} 👋`, premiere ? 9000 : 3500);
+    kokoDire(premiere ? `${salut} Moi c’est Koko 👷🏾, votre assistant de chantier. Touchez-moi pour un conseil, appuyez longtemps pour me parler, glissez-moi pour me déplacer.` : `${salut} 👋`, premiere ? 10000 : 3500);
   }, 900);
 }
 
@@ -1691,9 +1705,10 @@ function kokoHumeur(h, duree = 1800) {
   clearTimeout(KOKO.minuterieHumeur);
   KOKO.minuterieHumeur = setTimeout(() => { if (KOKO.el) KOKO.el.dataset.humeur = 'sourire'; }, duree);
 }
-function kokoDire(texte, duree = 5000) {
+function kokoDire(texte, duree = 5000, parler = true) {
   const el = KOKO.el;
   if (!el) return;
+  if (parler) kokoParler(texte);
   const b = $('.koko-bulle', el);
   $('.koko-texte', b).textContent = texte;
   b.classList.remove('hidden', 'sort');
@@ -1737,9 +1752,222 @@ function kokoReagir(type, msg) {
   if (!KOKO.el || $('.appel-ecran')) return;
   if (type === 'ok' && /✅|enregistr|envoy|valid|sign|ajout|créé|cré/i.test(String(msg))) {
     kokoHumeur('rire', 2000); kokoAnim('saute');
-    if (Math.random() < .45) kokoDire(KOKO_BRAVO[Math.floor(Math.random() * KOKO_BRAVO.length)], 2200);
+    if (Math.random() < .45) kokoDire(KOKO_BRAVO[Math.floor(Math.random() * KOKO_BRAVO.length)], 2200, false);
   } else if (type === 'err') { kokoHumeur('o', 2200); kokoAnim('secoue'); }
 }
+
+// ═══════════════════════════════ 3.3 : NOTIFICATIONS SUR LE TÉLÉPHONE ═══════════════════════════════
+const PUSH_FONCTION = () => `${CFG.SUPABASE_URL}/functions/v1/koordin-push`;
+const pushPossible = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const estInstallee = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const estIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const octetsCle = (b64) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64.length + 3) % 4)), (c) => c.charCodeAt(0));
+
+async function activerNotifications({ silencieux = false } = {}) {
+  if (DEMO) return false;
+  if (!pushPossible()) {
+    if (!silencieux) toast(estIOS() && !estInstallee() ? 'Sur iPhone : ajoutez d’abord KOORDIN à l’écran d’accueil (bouton Partager ⬆️ → « Sur l’écran d’accueil »), puis ouvrez KOORDIN depuis son icône.' : 'Ce téléphone ou ce navigateur ne permet pas les notifications. Utilisez Chrome à jour.', 'warn', 10000);
+    return false;
+  }
+  try {
+    const perm = silencieux ? Notification.permission : await Notification.requestPermission();
+    if (perm !== 'granted') {
+      if (!silencieux) toast(perm === 'denied' ? 'Les notifications sont bloquées pour KOORDIN. Ouvrez les réglages du site (🔒 à côté de l’adresse) → Notifications → Autoriser.' : 'Notifications non activées.', 'warn', 9000);
+      return false;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const adresse = (await sb.rpc('url_fonction_push')).data || PUSH_FONCTION();
+    const rep = await fetch(adresse, { method: 'GET' });
+    const { cle } = await rep.json().catch(() => ({}));
+    if (!rep.ok || !cle) throw new Error('PUSH_FONCTION');
+    let abo = await reg.pushManager.getSubscription();
+    const actuelle = abo?.options?.applicationServerKey ? btoa(String.fromCharCode(...new Uint8Array(abo.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : null;
+    if (abo && actuelle && actuelle !== cle) { await abo.unsubscribe(); abo = null; }
+    if (!abo) abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: octetsCle(cle) });
+    const j = abo.toJSON();
+    await q(sb.rpc('enregistrer_push', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_appareil: navigator.userAgent.slice(0, 200) }));
+    try { localStorage.setItem('koordin-push', 'on'); } catch { /* rien */ }
+    if (!silencieux) { toast('🔔 Notifications activées ! Vous serez prévenu même quand KOORDIN est fermé.', 'ok', 7000); kokoDire('Je vous préviendrai même quand KOORDIN est fermé 🔔', 4000); }
+    $('#encart-push')?.remove();
+    return true;
+  } catch (e) {
+    console.warn('notifications', e);
+    if (!silencieux) {
+      const m = String(e?.message || '');
+      toast(m === 'PUSH_FONCTION' || /Failed to fetch|NetworkError/i.test(m) ? 'Les notifications ne sont pas encore installées côté serveur (fonction « koordin-push » du kit d’installation).' : /enregistrer_push|schema cache|does not exist/i.test(m) ? 'Les notifications nécessitent la mise à jour 3.3 de la base de données.' : `Impossible d’activer les notifications : ${messageErreur(e)}`, 'err', 9000);
+    }
+    return false;
+  }
+}
+
+async function desactiverNotifications() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const abo = await reg.pushManager.getSubscription();
+    if (abo) { await sb.rpc('supprimer_push', { p_endpoint: abo.endpoint }); await abo.unsubscribe(); }
+  } catch { /* rien */ }
+  try { localStorage.setItem('koordin-push', 'off'); } catch { /* rien */ }
+  toast('🔕 Notifications désactivées sur ce téléphone.');
+}
+async function oublierAbonnementPush() {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const abo = await reg?.pushManager?.getSubscription();
+    if (abo) await sb.rpc('supprimer_push', { p_endpoint: abo.endpoint });
+  } catch { /* rien */ }
+}
+const notificationsActives = () => pushPossible() && Notification.permission === 'granted' && (() => { try { return localStorage.getItem('koordin-push') !== 'off'; } catch { return true; } })();
+
+function encartNotifications() {
+  if (DEMO || $('#encart-push')) return;
+  const ios = estIOS() && !estInstallee();
+  if (!ios && (!pushPossible() || Notification.permission !== 'default')) return;
+  try { if (Date.now() - Number(localStorage.getItem('koordin-push-plus-tard') || 0) < 3 * 864e5) return; } catch { /* rien */ }
+  const cible = $('#main .actions-rapides') || $('#main .cockpit');
+  if (!cible) return;
+  const el = document.createElement('div');
+  el.id = 'encart-push';
+  el.className = 'encart-push';
+  el.innerHTML = `<div class="encart-push-ic">🔔</div><div class="encart-push-txt"><b>Ne manquez plus rien</b><span>${ios ? 'Sur iPhone, ajoutez d’abord KOORDIN à l’écran d’accueil : bouton Partager ⬆️ → « Sur l’écran d’accueil ». Ouvrez-le ensuite depuis l’icône pour activer les notifications.' : 'Appels, rapports validés, salaires, alertes : recevez-les même quand KOORDIN est fermé.'}</span>
+    <div class="encart-push-boutons">${ios ? '' : '<button type="button" class="btn sm primary" id="push-oui">Activer les notifications</button>'}<button type="button" class="btn sm ghost" id="push-tard">Plus tard</button></div></div>`;
+  cible.insertAdjacentElement('beforebegin', el);
+  $('#push-oui', el)?.addEventListener('click', () => activerNotifications());
+  $('#push-tard', el).onclick = () => { try { localStorage.setItem('koordin-push-plus-tard', String(Date.now())); } catch { /* rien */ } el.remove(); };
+}
+
+// Clic sur une notification alors que KOORDIN est déjà ouvert
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'koordin-aller' && e.data.lien) allerA(e.data.lien);
+});
+
+// ═══════════════════════════════ 3.3 : KOKO PARLE ET ÉCOUTE ═══════════════════════════════
+const Reconnaissance = window.SpeechRecognition || window.webkitSpeechRecognition;
+const kokoVoixActive = () => { try { return localStorage.getItem('koordin-koko-voix') !== 'off'; } catch { return true; } };
+let voixKoko = null;
+function choisirVoix() {
+  const voix = window.speechSynthesis?.getVoices?.() || [];
+  const fr = voix.filter((v) => /^fr/i.test(v.lang));
+  voixKoko = fr.find((v) => /fr-FR/i.test(v.lang) && /Thomas|Paul|Henri|Mathieu|Nicolas|Daniel|male|homme/i.test(v.name))
+    || fr.find((v) => /Google/i.test(v.name) && /fr-FR/i.test(v.lang)) || fr.find((v) => /fr-FR/i.test(v.lang)) || fr[0] || null;
+}
+if ('speechSynthesis' in window) { choisirVoix(); window.speechSynthesis.onvoiceschanged = choisirVoix; }
+
+function kokoParler(texte) {
+  if (!('speechSynthesis' in window) || !kokoVoixActive() || !KOKO.el) return;
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+  const propre = String(texte).replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/«|»/g, '').replace(/\s+/g, ' ').trim();
+  if (!propre) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(propre);
+    u.lang = 'fr-FR'; if (voixKoko) u.voice = voixKoko;
+    u.rate = 1.04; u.pitch = 1.3; u.volume = 1;
+    u.onstart = () => KOKO.el?.classList.add('parle');
+    u.onend = u.onerror = () => KOKO.el?.classList.remove('parle');
+    window.speechSynthesis.speak(u);
+  } catch { /* rien */ }
+}
+function kokoBasculerVoix() {
+  const on = !kokoVoixActive();
+  try { localStorage.setItem('koordin-koko-voix', on ? 'on' : 'off'); } catch { /* rien */ }
+  if (!on) window.speechSynthesis?.cancel();
+  majBoutonsKoko();
+  kokoDire(on ? 'Ma voix est activée 🔊' : 'D’accord, je me tais 🤐', 2500);
+}
+function majBoutonsKoko() {
+  const b = $('.koko-voix', KOKO.el || document);
+  if (b) { b.textContent = kokoVoixActive() ? '🔊' : '🔇'; b.setAttribute('aria-label', kokoVoixActive() ? 'Couper la voix de Koko' : 'Activer la voix de Koko'); }
+}
+
+const sansAccents = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’']/g, ' ');
+const KOKO_ROUTES = [
+  [/nouveau rapport|faire (mon|un) rapport|rapport du jour|ecrire un rapport/, 'nouveau-rapport'],
+  [/valider|rapports?/, 'rapports'],
+  [/compta|comptabilite|factures? fournisseur|depense/, 'compta'],
+  [/devis|situation|encaissement|tresorerie|facturation|client/, 'ventes'],
+  [/contrat|prestataire|sous.?traitant/, 'contrats'],
+  [/salaire|paie|paye/, 'salaires'],
+  [/pointage|presence|appel des ouvriers/, 'pointage'],
+  [/achat|commande|fournisseur/, 'achats'],
+  [/stock|magasin|article/, 'stock'],
+  [/materiel|engin|machine/, 'materiel'],
+  [/securite|accident|danger/, 'securite'],
+  [/reunion|visio|appels?/, 'appels'],
+  [/equipe|membre|inviter/, 'equipe'],
+  [/communique|annonce|info/, 'communiques'],
+  [/intelligence|assistant|\bia\b/, 'ia'],
+  [/mon espace|mes salaires|mon profil/, 'mon-espace'],
+  [/parametre|reglage/, 'parametres'],
+  [/abonnement|formule|licence/, 'abonnement'],
+  [/chantiers?|projets?/, 'projets'],
+  [/accueil|tableau de bord|cockpit|maison/, 'dashboard'],
+];
+
+async function kokoComprendre(phrase) {
+  const t = sansAccents(phrase);
+  const visibles = new Set(menuVisible().map((m) => m.r));
+  const repondre = (txt) => kokoDire(txt, 5500);
+  if (/^(bonjour|salut|bonsoir|coucou|hello)/.test(t)) return repondre(`Bonjour ${String(S.profil.nom).split(' ')[0]} ! Que puis-je faire pour vous ?`);
+  if (/merci/.test(t)) return repondre('Avec plaisir ! 😊');
+  if (/quelle heure|l heure/.test(t)) return repondre(`Il est ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`);
+  if (/aide|que sais.tu|tu sais faire|comment ca marche/.test(t)) return repondre('Dites par exemple : « ouvre la compta », « nouveau rapport », « appelle Koffi », « combien de rapports à valider ».');
+  // Appeler quelqu'un
+  const appel = /(appelle|appeler|telephone a|lance un appel avec|visio avec)\s+(.+)/.exec(t);
+  if (appel) {
+    const nom = appel[2].replace(/^(le |la |l |monsieur |madame |m )/, '').trim();
+    const qui = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id).find((x) => sansAccents(x.nom).split(/\s+/).some((m) => m.length > 1 && nom.split(/\s+/).includes(m)) || sansAccents(x.nom).includes(nom));
+    if (qui) { repondre(`J’appelle ${qui.nom} 📹`); setTimeout(() => lancerAppel({ mode: role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return; }
+    repondre(`Je ne trouve pas « ${nom} » dans votre équipe.`); return;
+  }
+  if (/combien/.test(t) && /rapport/.test(t) && !DEMO) {
+    try {
+      const p = await q(sb.from('v_projets').select('rapports_en_attente'));
+      const n = p.reduce((s, x) => s + num(x.rapports_en_attente), 0);
+      return repondre(n ? `Vous avez ${n} rapport${n > 1 ? 's' : ''} à valider.` : 'Aucun rapport en attente. Tout est à jour ✅');
+    } catch { return repondre('Je n’arrive pas à compter les rapports pour le moment.'); }
+  }
+  if (/combien/.test(t) && /chantier|projet/.test(t) && !DEMO) {
+    try { const p = await q(sb.from('projets').select('id').neq('statut', 'termine')); return repondre(`Vous avez ${p.length} chantier${p.length > 1 ? 's' : ''} en cours.`); } catch { /* rien */ }
+  }
+  for (const [motif, r] of KOKO_ROUTES) {
+    if (motif.test(t) && (visibles.has(r) || (r === 'nouveau-rapport' && can(...ROLES_RAPPORT)))) {
+      const nom = menuVisible().find((m) => m.r === r)?.label || 'Nouveau rapport';
+      repondre(`J’ouvre ${nom} 👍`);
+      setTimeout(() => allerA(`#/${r}`), 700);
+      return;
+    }
+  }
+  repondre(`Je n’ai pas compris « ${phrase} ». Dites par exemple « ouvre la compta » ou « appelle Koffi ».`);
+}
+
+function kokoEcouter() {
+  if (!KOKO.el) return;
+  if (!Reconnaissance) { kokoDire('Votre téléphone ne me permet pas d’écouter. Essayez avec Chrome 🙏', 4500); return; }
+  if (KOKO.reco) { KOKO.reco.abort(); return; }
+  window.speechSynthesis?.cancel();
+  const rec = new Reconnaissance();
+  rec.lang = 'fr-FR'; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
+  KOKO.reco = rec;
+  KOKO.el.classList.add('ecoute');
+  kokoDire('Je vous écoute… 👂', 8000);
+  try { navigator.vibrate?.(20); } catch { /* rien */ }
+  rec.onresult = (e) => { const p = e.results?.[0]?.[0]?.transcript || ''; if (p) { kokoDire(`« ${p} »`, 1500); setTimeout(() => kokoComprendre(p), 600); } };
+  rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') kokoDire('Autorisez le micro pour que je puisse vous écouter 🎤', 5000); else if (e.error === 'no-speech') kokoDire('Je n’ai rien entendu. Réessayez 🎤', 3500); };
+  rec.onend = () => { KOKO.reco = null; KOKO.el?.classList.remove('ecoute'); };
+  try { rec.start(); } catch { KOKO.reco = null; KOKO.el.classList.remove('ecoute'); }
+}
+
+// Koko s'endort quand personne ne touche le téléphone
+(() => {
+  let minuterie;
+  const reveil = () => {
+    if (KOKO.el?.classList.contains('dort')) { KOKO.el.classList.remove('dort'); kokoAnim('saute'); }
+    clearTimeout(minuterie);
+    minuterie = setTimeout(() => { if (KOKO.el && !KOKO.reco && !$('.appel-ecran')) KOKO.el.classList.add('dort'); }, 60000);
+  };
+  ['pointerdown', 'keydown', 'scroll'].forEach((ev) => document.addEventListener(ev, reveil, { passive: true, capture: true }));
+  reveil();
+})();
 
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
@@ -1749,6 +1977,7 @@ PAGES.dashboard = async () => {
   await encartRapportsDuJour();
   await encartVersementsAConfirmer().catch(() => {});
   placerAnnonce($('#zone-annonce'));
+  encartNotifications();
   await encartCommuniques();
 };
 
