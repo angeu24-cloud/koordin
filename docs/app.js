@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '2.9';
+const VERSION = '2.9.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -49,7 +49,7 @@ const MENU = [
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
-  { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur'] },
+  { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur', 'technicien'] },
   { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'materiel', court: 'Matériel', label: 'Matériel et engins', ico: '🚜', roles: ['direction', 'coordinateur', 'magasinier', 'technicien', 'achats', 'comptable'] },
   { r: 'securite', court: 'Sécurité', label: 'Sécurité chantier', ico: '🦺', roles: ['direction', 'coordinateur', 'technicien'] },
@@ -4945,6 +4945,268 @@ const erreurContrat = (e) => {
 };
 const totalContrat = (c) => num(c.montant) + num(c.avenants);
 
+// ─── Rédaction automatique du contrat (2.9.1) ───
+function nombreEnLettres(valeur) {
+  const U = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize'];
+  const D = { 2: 'vingt', 3: 'trente', 4: 'quarante', 5: 'cinquante', 6: 'soixante' };
+  const m100 = (n, fin) => {
+    if (n < 17) return U[n];
+    if (n < 20) return `dix-${U[n - 10]}`;
+    if (n < 70) { const u = n % 10; return D[Math.floor(n / 10)] + (u === 0 ? '' : u === 1 ? ' et un' : `-${U[u]}`); }
+    if (n < 80) return n === 71 ? 'soixante et onze' : `soixante-${m100(n - 60)}`;
+    return n === 80 ? (fin ? 'quatre-vingts' : 'quatre-vingt') : `quatre-vingt-${m100(n - 80)}`;
+  };
+  const m1000 = (n, fin) => {
+    const c = Math.floor(n / 100), r = n % 100;
+    let s = c === 1 ? 'cent' : c > 1 ? `${U[c]} cent${r === 0 && fin ? 's' : ''}` : '';
+    if (r) s += (s ? ' ' : '') + m100(r, fin);
+    return s;
+  };
+  let n = Math.round(Math.abs(Number(valeur) || 0));
+  if (!n) return 'zéro';
+  const parts = [];
+  const mds = Math.floor(n / 1e9); n %= 1e9;
+  const mns = Math.floor(n / 1e6); n %= 1e6;
+  const mil = Math.floor(n / 1e3); n %= 1e3;
+  if (mds) parts.push(`${m1000(mds, true)} milliard${mds > 1 ? 's' : ''}`);
+  if (mns) parts.push(`${m1000(mns, true)} million${mns > 1 ? 's' : ''}`);
+  if (mil) parts.push(mil === 1 ? 'mille' : `${m1000(mil, false)} mille`);
+  if (n) parts.push(m1000(n, true));
+  return parts.join(' ');
+}
+const montantEnLettres = (v) => `${nombreEnLettres(v)} ${devise() === 'FCFA' ? 'francs CFA' : devise()}`;
+
+const QUALITE_ROLE = { direction: 'Directeur Général', coordinateur: 'Coordinateur des travaux', comptable: 'Responsable administratif et financier', technicien: 'Chef de chantier' };
+const MATERIAUX = { entreprise: 'Fournis par l’entreprise (le prestataire apporte la main-d’œuvre)', prestataire: 'Fournis par le prestataire (main-d’œuvre et matériaux)', partage: 'Partagés (préciser)' };
+const PAIEMENT = { avancement: 'Acomptes selon l’avancement des travaux', fin: 'Tout à la fin, après réception', echeancier: 'Échéancier personnalisé' };
+
+// Rédige le contrat complet à partir des informations saisies.
+// Format du texte : 1re ligne = titre ; « # » article ; « > » ligne centrée ; « - » puce ; sinon paragraphe.
+function redigerContrat(d, presta, projet) {
+  const V = (x, def = '[à compléter]') => (x != null && String(x).trim() !== '' ? String(x).trim() : def);
+  const m = num(d.montant);
+  const prix = m ? `${money(m)} (${montantEnLettres(m)})` : '[montant à compléter]';
+  const civ = /ivoire/i.test(S.entreprise?.pays || '');
+  const ville = V(d.ville, civ ? 'Abidjan' : '[ville]');
+  const L = [];
+  const art = [];
+  const article = (titre, ...lignes) => art.push([titre, lignes.flat().filter(Boolean)]);
+  L.push(d.type === 'regie' ? 'CONTRAT DE PRESTATION DE TRAVAUX EN RÉGIE' : 'CONTRAT DE SOUS-TRAITANCE DE TRAVAUX');
+  L.push('> ENTRE LES SOUSSIGNÉS :');
+  L.push(`${V(S.entreprise?.nom)}, dont le siège est situé à ${V(d.ent_adresse, '[adresse du siège]')}${d.ent_rccm ? `, immatriculée au Registre du Commerce et du Crédit Mobilier sous le n° ${d.ent_rccm}` : ''}, représentée par ${V(d.rep_nom, '[nom du représentant]')}, en qualité de ${V(d.rep_qualite, '[fonction]')}, dûment habilité(e) aux fins des présentes,`);
+  L.push('ci-après dénommée « l’Entreprise »,');
+  L.push('> D’UNE PART,');
+  L.push('> ET');
+  L.push(`${V(presta?.nom, '[nom du prestataire]')}${presta?.specialite ? `, ${presta.specialite}` : ''}${presta?.adresse ? `, demeurant à ${presta.adresse}` : ''}${presta?.piece ? `, titulaire de la pièce / du registre n° ${presta.piece}` : ''}${presta?.telephone ? `, joignable au ${presta.telephone}` : ''},`);
+  L.push('ci-après dénommé « le Prestataire »,');
+  L.push('> D’AUTRE PART,');
+  L.push('Ci-après désignés ensemble « les Parties ».');
+  L.push('> PRÉAMBULE');
+  L.push(`L’Entreprise réalise ${projet ? `les travaux du chantier « ${projet.nom} »${projet.localisation ? ` situé à ${projet.localisation}` : ''}` : 'des travaux de bâtiment et de génie civil'}. Pour l’exécution de certaines prestations, elle a souhaité faire appel au Prestataire, qui déclare disposer des compétences, du personnel et des moyens nécessaires${presta?.specialite ? ` en ${presta.specialite.toLowerCase()}` : ''}. Les Parties se sont rapprochées et ont convenu de ce qui suit :`);
+
+  article('OBJET DU CONTRAT',
+    `Le présent contrat a pour objet de définir les conditions dans lesquelles le Prestataire exécute, pour le compte de l’Entreprise, les travaux suivants : ${V(d.objet, '[description des travaux]')}.`,
+    `Lieu d’exécution : ${V(d.lieu || projet?.localisation, '[lieu des travaux]')}.`);
+  const taches = String(d.taches || '').split('\n').map((x) => x.replace(/^[-•*\s]+/, '').trim()).filter(Boolean);
+  const mat = d.materiaux === 'prestataire'
+    ? 'Le Prestataire fournit la main-d’œuvre, les matériaux, l’outillage et les équipements nécessaires. Les matériaux doivent être neufs, conformes aux normes en vigueur et acceptés par l’Entreprise avant leur mise en œuvre.'
+    : d.materiaux === 'partage'
+      ? `La fourniture des matériaux est répartie comme suit : ${V(d.materiaux_detail, '[préciser ce que fournit chaque Partie]')}. Le Prestataire fournit dans tous les cas la main-d’œuvre, son outillage et les équipements de protection de son personnel.`
+      : 'Les matériaux et fournitures sont mis à disposition par l’Entreprise. Le Prestataire fournit la main-d’œuvre, son petit outillage et les équipements de protection de son personnel. Il est responsable de la bonne utilisation des matériaux qui lui sont confiés et signale sans délai toute perte, casse ou anomalie.';
+  article('CONSISTANCE DES TRAVAUX',
+    taches.length ? ['Les prestations comprennent notamment :', ...taches.map((t) => `- ${t}`)] : 'Les prestations comprennent l’ensemble des travaux nécessaires à la parfaite réalisation de l’objet décrit à l’article 1, conformément aux plans et aux instructions de l’Entreprise.',
+    mat);
+  article('DOCUMENTS CONTRACTUELS',
+    'Le contrat est constitué, par ordre de priorité décroissant :',
+    '- le présent contrat et ses éventuels avenants ;',
+    '- les plans, descriptifs et devis remis par l’Entreprise ;',
+    '- les consignes écrites données par l’Entreprise en cours de chantier.');
+  const pu = num(d.prix_unitaire) ? `${money(d.prix_unitaire)} par ${V(d.unite, 'unité')}` : '';
+  article('PRIX',
+    d.type === 'tache'
+      ? `Les travaux sont rémunérés à la tâche${pu ? `, sur la base de ${pu}` : ''}, pour un montant total de ${prix}. Le montant dû est calculé sur les quantités réellement exécutées et constatées contradictoirement, dans la limite de ce montant sauf avenant.`
+      : d.type === 'regie'
+        ? `Les travaux sont rémunérés en régie${pu ? `, au taux de ${pu}` : ''}, sur la base des temps réellement passés et constatés contradictoirement, dans la limite d’un montant maximum de ${prix}, sauf avenant.`
+        : `Les travaux sont rémunérés à prix global et forfaitaire de ${prix}. Ce prix est ferme et non révisable ; il comprend toutes les sujétions nécessaires à l’exécution complète des travaux.`,
+    'Aucun travail supplémentaire ne sera payé s’il n’a pas fait l’objet, avant son exécution, d’un avenant écrit signé par les deux Parties.');
+  const av = num(d.avance_pct), ret = num(d.retenue_pct), delai = num(d.delai_paiement);
+  article('MODALITÉS DE PAIEMENT',
+    av > 0 ? `Une avance de démarrage de ${av} % du montant, soit ${m ? money((m * av) / 100) : '[montant]'}, est versée à la signature du présent contrat. Elle est imputée sur les paiements suivants.` : '',
+    d.mode_paiement === 'fin'
+      ? `${av > 0 ? 'Le solde est payé' : 'Le prix est payé'} à l’achèvement des travaux, après leur réception sans réserve ou la levée des réserves.`
+      : d.mode_paiement === 'echeancier'
+        ? `${av > 0 ? 'Le solde est payé' : 'Le prix est payé'} selon l’échéancier suivant : ${V(d.echeancier, '[échéancier à préciser]')}.`
+        : `${av > 0 ? 'Le solde est payé' : 'Le prix est payé'} par acomptes successifs, en fonction de l’avancement des travaux constaté contradictoirement par l’Entreprise.`,
+    ret > 0 ? `Une retenue de garantie de ${ret} % est appliquée sur chaque paiement. Elle est restituée au Prestataire à la fin du délai de garantie prévu à l’article 11, sous réserve de la levée de toutes les réserves.` : '',
+    `Chaque paiement intervient dans un délai de ${delai > 0 ? `${delai} jour${delai > 1 ? 's' : ''}` : 'sept (7) jours'} à compter de la constatation des travaux, par ${V(d.moyens, 'virement, Mobile Money ou espèces')}. Chaque paiement donne lieu à un reçu daté et signé par le Prestataire.`);
+  const jours = d.date_debut && d.date_fin ? Math.round((parseDay(d.date_fin) - parseDay(d.date_debut)) / 864e5) + 1 : 0;
+  article('DÉLAIS D’EXÉCUTION',
+    d.date_debut || d.date_fin
+      ? `Les travaux commencent le ${d.date_debut ? fdate(d.date_debut) : '[date de début]'} et doivent être entièrement achevés au plus tard le ${d.date_fin ? fdate(d.date_fin) : '[date de fin]'}${jours > 0 ? `, soit un délai de ${jours} jours calendaires` : ''}.`
+      : 'Les travaux sont exécutés selon le planning général du chantier communiqué par l’Entreprise.',
+    'Le Prestataire informe l’Entreprise par écrit, sans délai, de toute cause susceptible de retarder les travaux.');
+  const pen = num(d.penalite);
+  article('PÉNALITÉS DE RETARD',
+    pen > 0
+      ? `En cas de retard imputable au Prestataire, une pénalité de ${money(pen)} par jour calendaire de retard est appliquée, après mise en demeure restée sans effet, dans la limite de dix pour cent (10 %) du montant du contrat. Elle est déduite des sommes dues au Prestataire.`
+      : 'En cas de retard imputable au Prestataire, l’Entreprise peut, après mise en demeure restée sans effet pendant huit (8) jours, faire exécuter les travaux restants par un tiers, aux frais du Prestataire.');
+  article('OBLIGATIONS DU PRESTATAIRE',
+    'Le Prestataire s’engage à :',
+    '- exécuter les travaux dans les règles de l’art, conformément aux plans, aux normes en vigueur et aux instructions de l’Entreprise ;',
+    '- respecter le planning, les horaires et le règlement du chantier ;',
+    '- fournir à son personnel les équipements de protection individuelle (casque, chaussures de sécurité, gants, gilet…) et faire respecter les consignes de sécurité et d’hygiène ;',
+    '- employer un personnel qualifié, dont il demeure le seul employeur et pour lequel il assume l’ensemble des obligations sociales et fiscales ;',
+    '- ne pas confier tout ou partie des travaux à un tiers sans l’accord écrit de l’Entreprise ;',
+    '- maintenir sa zone de travail propre et évacuer ses déchets ;',
+    '- signaler sans délai toute erreur, anomalie ou risque constaté sur le chantier.');
+  article('OBLIGATIONS DE L’ENTREPRISE',
+    'L’Entreprise s’engage à :',
+    '- mettre la zone de travail à disposition du Prestataire et en permettre l’accès ;',
+    `- fournir les plans et informations${d.materiaux === 'prestataire' ? '' : ', ainsi que les matériaux prévus à l’article 2,'} nécessaires à l’exécution des travaux ;`,
+    '- payer les sommes dues dans les conditions prévues à l’article 5 ;',
+    `- désigner un interlocuteur sur le chantier : ${V(d.rep_nom, '[nom]')}.`);
+  const g = num(d.garantie_mois) || 12;
+  article('RÉCEPTION DES TRAVAUX',
+    'À l’achèvement des travaux, le Prestataire en informe l’Entreprise. Une visite de réception est organisée en présence des deux Parties ; elle donne lieu à un procès-verbal, avec ou sans réserves.',
+    'Le Prestataire lève les réserves dans le délai fixé au procès-verbal. À défaut, l’Entreprise peut les faire lever par un tiers, aux frais du Prestataire.');
+  article('GARANTIE',
+    `Le Prestataire garantit la bonne exécution de ses travaux pendant ${g} mois à compter de la réception. Pendant ce délai, il répare à ses frais tout désordre ou malfaçon qui lui est imputable, dans les sept (7) jours suivant le signalement par l’Entreprise.`);
+  article('RESPONSABILITÉ',
+    'Le Prestataire est responsable des dommages causés par lui-même ou par son personnel aux ouvrages, aux matériaux, aux biens et aux personnes à l’occasion de l’exécution des travaux. Il déclare être couvert par une assurance de responsabilité civile adaptée, ou accepte d’en supporter seul les conséquences.');
+  article('RÉSILIATION',
+    'En cas de manquement grave de l’une des Parties à ses obligations, l’autre Partie peut résilier le contrat par écrit, huit (8) jours après une mise en demeure restée sans effet.',
+    'En cas de résiliation, seuls les travaux réalisés, constatés et acceptés sont payés, déduction faite des sommes déjà versées et des éventuelles pénalités.');
+  article('FORCE MAJEURE',
+    'Aucune des Parties n’est responsable d’un retard ou d’une inexécution causé par un cas de force majeure (catastrophe naturelle, intempéries exceptionnelles, décision des autorités…). La Partie concernée en informe l’autre sans délai ; les délais sont alors prolongés d’autant.');
+  if (String(d.conditions || '').trim()) article('CLAUSES PARTICULIÈRES', String(d.conditions).trim().split('\n').map((x) => x.trim()).filter(Boolean));
+  article('LITIGES',
+    `Le présent contrat est soumis au ${civ ? 'droit ivoirien et aux Actes uniformes de l’OHADA' : 'droit applicable au lieu d’exécution des travaux'}. En cas de différend, les Parties recherchent d’abord une solution amiable. À défaut d’accord dans un délai de trente (30) jours, le litige est porté devant le tribunal compétent de ${ville}.`);
+  article('DISPOSITIONS FINALES',
+    'Le présent contrat entre en vigueur à la date de sa signature par les deux Parties. Toute modification fait l’objet d’un avenant écrit signé par les deux Parties.',
+    'Il est signé électroniquement sur KOORDIN ; chaque Partie en reçoit un exemplaire au format PDF.');
+  art.forEach(([titre, lignes], i) => { L.push(`# ARTICLE ${i + 1} – ${titre}`); L.push(...lignes); });
+  L.push(`> Fait à ${ville}, le ${d.date_signature ? fdate(d.date_signature) : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`);
+  return L.join('\n');
+}
+
+function texteContratHTML(texte) {
+  const lignes = String(texte || '').split('\n');
+  const fmt = (x) => esc(x).replace(/\[[^\]]+\]/g, (s) => `<mark class="manque">${s}</mark>`);
+  return `<h3 class="cp-titre">${fmt(lignes[0] || '')}</h3>${lignes.slice(1).map((l) => {
+    if (l.startsWith('# ')) return `<h4>${fmt(l.slice(2))}</h4>`;
+    if (l.startsWith('> ')) return `<p class="cp-centre">${fmt(l.slice(2))}</p>`;
+    if (l.startsWith('- ')) return `<p class="cp-puce">${fmt(l.slice(2))}</p>`;
+    return `<p>${fmt(l)}</p>`;
+  }).join('')}`;
+}
+
+function lireContrat(c) {
+  ouvrirModale({ titre: `📖 ${c.numero}`, large: true, corps: `<div class="contrat-papier">${texteContratHTML(c.texte)}</div><div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" id="lc-pdf">📄 PDF</button></div>` });
+  $('#lc-pdf').onclick = () => pdfContrat(c.id);
+}
+
+async function editeurContrat(c, rendre) {
+  const gestion = can('direction', 'comptable', 'coordinateur');
+  const [prest, projets, dernier] = await Promise.all([
+    q(sb.from('prestataires').select('*').eq('actif', true).order('nom')),
+    q(sb.from('projets').select('id, nom, localisation').neq('statut', 'termine').order('nom')),
+    sb.from('contrats').select('clauses').order('created_at', { ascending: false }).limit(1).then((r) => r.data?.[0]?.clauses || {}),
+  ]);
+  const k = c?.clauses || {};
+  const civ = /ivoire/i.test(S.entreprise?.pays || '');
+  const val = (x, def = '') => (x != null && x !== '' ? x : def);
+  const d0 = {
+    prestataire_id: c?.prestataire_id || '', projet_id: c?.projet_id || (projets.length === 1 ? projets[0].id : ''), type: c?.type || 'forfait',
+    objet: c?.objet || '', montant: c?.montant || '', retenue_pct: c?.retenue_pct ?? 0, date_debut: c?.date_debut || todayISO(), date_fin: c?.date_fin || '', conditions: c?.conditions || '',
+    rep_nom: val(k.rep_nom, S.profil.nom), rep_qualite: val(k.rep_qualite, QUALITE_ROLE[role()] || ''), ent_adresse: val(k.ent_adresse, dernier.ent_adresse || ''), ent_rccm: val(k.ent_rccm, dernier.ent_rccm || ''),
+    ville: val(k.ville, dernier.ville || (civ ? 'Abidjan' : '')), lieu: val(k.lieu), taches: val(k.taches), materiaux: val(k.materiaux, 'entreprise'), materiaux_detail: val(k.materiaux_detail),
+    prix_unitaire: val(k.prix_unitaire), unite: val(k.unite), avance_pct: val(k.avance_pct, 0), mode_paiement: val(k.mode_paiement, 'avancement'), echeancier: val(k.echeancier),
+    delai_paiement: val(k.delai_paiement, 7), moyens: val(k.moyens, 'virement, Mobile Money ou espèces'), penalite: val(k.penalite), garantie_mois: val(k.garantie_mois, 12),
+  };
+  const sec = (n, titre, html) => `<fieldset class="ce-section"><legend><span>${n}</span>${titre}</legend><div class="form-grid">${html}</div></fieldset>`;
+  const m = ouvrirModale({
+    titre: c ? `✏️ Modifier ${c.numero}` : '📑 Nouveau contrat',
+    large: true,
+    corps: `<p class="ce-intro">Remplissez les informations : <b>le contrat se rédige tout seul</b>, article par article, en bas de la page. Les parties surlignées restent à compléter.</p>
+    <button type="button" class="btn sm ce-voir" id="ce-voir">📄 Voir le contrat rédigé ↓</button>
+    <form id="ce-form" onsubmit="return false">
+      ${sec(1, 'Les parties', `
+        <label class="field full">Prestataire *<span class="contrat-presta"><select name="prestataire_id" required><option value="">— Choisir —</option>${prest.map((x) => `<option value="${x.id}" ${x.id === d0.prestataire_id ? 'selected' : ''}>${esc(x.nom)}${x.specialite ? ` (${esc(x.specialite)})` : ''}</option>`).join('')}</select><button type="button" class="btn sm" id="ct-np">＋ Nouveau</button></span></label>
+        ${F.text('rep_nom', 'Représentant de l’entreprise', d0.rep_nom, { required: true })}
+        ${F.text('rep_qualite', 'Sa fonction', d0.rep_qualite, { placeholder: 'Ex. Directeur Général' })}
+        ${F.text('ent_adresse', 'Siège de l’entreprise', d0.ent_adresse, { placeholder: 'Ex. Abidjan, Cocody Angré' })}
+        ${F.text('ent_rccm', 'N° RCCM de l’entreprise', d0.ent_rccm, { placeholder: 'Ex. CI-ABJ-2020-B-12345' })}`)}
+      ${sec(2, 'Les travaux', `
+        ${F.select('projet_id', 'Chantier', [...(gestion ? [['', '— Aucun / plusieurs —']] : []), ...projets.map((x) => [x.id, x.nom])], d0.projet_id, { required: !gestion })}
+        ${F.text('lieu', 'Lieu des travaux', d0.lieu, { placeholder: 'Par défaut : l’adresse du chantier' })}
+        ${F.text('objet', 'Objet des travaux', d0.objet, { required: true, full: true, placeholder: 'Ex. Électricité complète de la villa R+1' })}
+        ${F.area('taches', 'Détail des travaux (une tâche par ligne)', d0.taches, { placeholder: 'Pose des gaines et boîtiers\nTirage des câbles\nPose de l’appareillage\nRaccordement au tableau et essais' })}
+        ${F.select('materiaux', 'Matériaux', Object.entries(MATERIAUX), d0.materiaux)}
+        ${F.text('materiaux_detail', 'Si partagés : qui fournit quoi ?', d0.materiaux_detail)}`)}
+      ${sec(3, 'Le prix et les paiements', `
+        ${F.select('type', 'Type de contrat', Object.entries(TYPE_CONTRAT), d0.type)}
+        ${F.text('montant', `Montant total (${devise()})`, d0.montant, { type: 'number', min: 1, required: true, inputmode: 'numeric' })}
+        ${F.text('prix_unitaire', `Prix unitaire (${devise()}) — à la tâche ou en régie`, d0.prix_unitaire, { type: 'number', min: 0, inputmode: 'numeric' })}
+        ${F.text('unite', 'Unité', d0.unite, { placeholder: 'Ex. m², point lumineux, jour' })}
+        ${F.text('avance_pct', 'Avance au démarrage (%)', d0.avance_pct, { type: 'number', min: 0, max: 100, step: 'any' })}
+        ${F.select('mode_paiement', 'Paiement du reste', Object.entries(PAIEMENT), d0.mode_paiement)}
+        ${F.text('echeancier', 'Échéancier (si personnalisé)', d0.echeancier, { full: true, placeholder: 'Ex. 30 % à la pose des gaines, 40 % au tirage des câbles, 30 % à la réception' })}
+        ${F.text('retenue_pct', 'Retenue de garantie (%)', d0.retenue_pct, { type: 'number', min: 0, max: 20, step: 'any' })}
+        ${F.text('delai_paiement', 'Délai de paiement (jours)', d0.delai_paiement, { type: 'number', min: 0 })}
+        ${F.text('moyens', 'Moyens de paiement', d0.moyens, { full: true })}`)}
+      ${sec(4, 'Délais et garanties', `
+        ${F.text('date_debut', 'Début des travaux', d0.date_debut, { type: 'date' })}
+        ${F.text('date_fin', 'Fin au plus tard', d0.date_fin, { type: 'date' })}
+        ${F.text('penalite', `Pénalité par jour de retard (${devise()})`, d0.penalite, { type: 'number', min: 0, inputmode: 'numeric', hint: 'Laisser vide : pas de pénalité chiffrée' })}
+        ${F.text('garantie_mois', 'Garantie après réception (mois)', d0.garantie_mois, { type: 'number', min: 0, max: 120 })}
+        ${F.text('ville', 'Ville (signature et tribunal)', d0.ville)}
+        ${F.area('conditions', 'Clauses particulières (facultatif)', d0.conditions, { placeholder: 'Ex. Le prestataire doit être présent sur le chantier tous les jours de 7 h 30 à 17 h.' })}`)}
+    </form>
+    <div class="ce-apercu-tete" id="ce-apercu-tete"><b>📄 Votre contrat, rédigé automatiquement</b><span id="ce-reste"></span></div>
+    <div class="contrat-papier" id="ce-apercu"></div>
+    <div class="form-actions"><button type="button" class="btn ghost" data-close>Annuler</button><button type="button" class="btn primary" id="ce-ok">💾 Enregistrer le contrat</button></div>`,
+  });
+  const el = m.el, form = $('#ce-form', el);
+  const lire = () => { const d = lireFormulaire(form); return d; };
+  const rediger = () => {
+    const d = lire();
+    const texte = redigerContrat(d, prest.find((x) => x.id === d.prestataire_id), projets.find((x) => x.id === d.projet_id));
+    $('#ce-apercu', el).innerHTML = texteContratHTML(texte);
+    const manque = (texte.match(/\[[^\]]+\]/g) || []).length;
+    $('#ce-reste', el).textContent = manque ? `${manque} élément(s) à compléter` : '✅ Complet';
+    $('#ce-reste', el).className = manque ? 'manque-txt' : 'ok-txt';
+    return { d, texte };
+  };
+  let minuteur;
+  form.addEventListener('input', () => { clearTimeout(minuteur); minuteur = setTimeout(rediger, 120); });
+  form.addEventListener('change', rediger);
+  rediger();
+  $('#ce-voir', el).onclick = () => $('#ce-apercu-tete', el).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#ct-np', el).onclick = () => formulairePrestataire(null, (cree) => {
+    if (!cree) return;
+    prest.push(cree);
+    const s = $('[name="prestataire_id"]', el);
+    s.insertAdjacentHTML('beforeend', `<option value="${cree.id}">${esc(cree.nom)}</option>`);
+    s.value = cree.id; rediger();
+  });
+  $('#ce-ok', el).onclick = async () => {
+    if (!form.reportValidity()) return;
+    const { d, texte } = rediger();
+    const clauses = {};
+    ['rep_nom', 'rep_qualite', 'ent_adresse', 'ent_rccm', 'ville', 'lieu', 'taches', 'materiaux', 'materiaux_detail', 'prix_unitaire', 'unite', 'avance_pct', 'mode_paiement', 'echeancier', 'delai_paiement', 'moyens', 'penalite', 'garantie_mois'].forEach((x) => { if (d[x] != null) clauses[x] = d[x]; });
+    const ligne = { prestataire_id: d.prestataire_id, projet_id: d.projet_id || null, type: d.type, objet: d.objet, montant: num(d.montant), retenue_pct: num(d.retenue_pct), date_debut: d.date_debut || null, date_fin: d.date_fin || null, conditions: d.conditions || null, clauses, texte };
+    const btn = $('#ce-ok', el); btn.disabled = true;
+    try {
+      let id = c?.id;
+      if (c) await q(sb.from('contrats').update(ligne).eq('id', c.id));
+      else id = (await q(sb.from('contrats').insert(ligne).select('id').single())).id;
+      toast(c ? 'Contrat mis à jour ✅' : 'Contrat rédigé et enregistré ✅ Faites-le signer.');
+      m.fermer(); rendre(); ficheContrat(id, rendre);
+    } catch (e) { toast(erreurContrat(e), 'err', 7000); } finally { btn.disabled = false; }
+  };
+}
+
+
 PAGES.contrats = async () => {
   const p = page(`
     ${entete('Contrats', 'Prestataires et sous-traitants : contrats signés, versements et reçus', '<button class="btn primary" id="nct">＋ Nouveau contrat</button>')}
@@ -4961,7 +5223,7 @@ PAGES.contrats = async () => {
     } catch (e) { zone.innerHTML = `<div class="card">${empty('📑', erreurContrat(e))}</div>`; }
   };
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletContrats = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
-  $('#nct', p).onclick = () => nouveauContrat(rendre);
+  $('#nct', p).onclick = () => editeurContrat(null, rendre);
   await rendre();
 };
 
@@ -5048,42 +5310,6 @@ function formulairePrestataire(x, apres) {
   });
 }
 
-async function nouveauContrat(rendre) {
-  const [prest, projets] = await Promise.all([q(sb.from('prestataires').select('id, nom, specialite').eq('actif', true).order('nom')), q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'))]);
-  ouvrirModale({
-    titre: 'Nouveau contrat',
-    large: true,
-    boutonOk: 'Créer et faire signer',
-    corps: `<div class="form-grid">
-      <label class="field full">Prestataire *<span class="contrat-presta"><select name="prestataire_id" required><option value="">— Choisir —</option>${prest.map((x) => `<option value="${x.id}">${esc(x.nom)}${x.specialite ? ` (${esc(x.specialite)})` : ''}</option>`).join('')}</select><button type="button" class="btn sm" id="ct-np">＋ Nouveau</button></span></label>
-      ${F.select('projet_id', 'Chantier', [['', '— Aucun / plusieurs —'], ...projets.map((x) => [x.id, x.nom])], projets.length === 1 ? projets[0].id : '')}
-      ${F.select('type', 'Type de contrat', Object.entries(TYPE_CONTRAT), 'forfait')}
-      ${F.text('objet', 'Objet des travaux', '', { required: true, full: true, placeholder: 'Ex. Électricité complète de la villa R+1 (fourniture du câblage par l’entreprise)' })}
-      ${F.text('montant', `Montant total (${devise()})`, '', { type: 'number', min: 1, required: true, inputmode: 'numeric' })}
-      ${F.text('retenue_pct', 'Retenue de garantie (%)', 0, { type: 'number', min: 0, max: 20, step: 'any', hint: 'Facultatif : part gardée jusqu’à la réception' })}
-      ${F.text('date_debut', 'Début', todayISO(), { type: 'date' })}
-      ${F.text('date_fin', 'Fin prévue', '', { type: 'date' })}
-      ${F.area('conditions', 'Conditions du contrat', CONDITIONS_TYPE)}
-    </div>`,
-    onOpen: (el) => {
-      $('#ct-np', el).onclick = () => formulairePrestataire(null, (cree) => {
-        if (!cree) return;
-        const s = $('[name="prestataire_id"]', el);
-        s.insertAdjacentHTML('beforeend', `<option value="${cree.id}">${esc(cree.nom)}</option>`);
-        s.value = cree.id;
-      });
-    },
-    onSubmit: async (d) => {
-      let c;
-      try {
-        c = await q(sb.from('contrats').insert({ prestataire_id: d.prestataire_id, projet_id: d.projet_id || null, type: d.type, objet: d.objet, montant: num(d.montant), retenue_pct: num(d.retenue_pct), date_debut: d.date_debut || null, date_fin: d.date_fin || null, conditions: d.conditions || null }).select('id').single());
-      } catch (e) { throw new Error(erreurContrat(e)); }
-      setTimeout(() => ficheContrat(c.id, rendre), 50);
-      rendre();
-    },
-  });
-}
-
 async function ficheContrat(id, rendre) {
   const [c, versements] = await Promise.all([
     q(sb.from('contrats').select('*, prestataires(*), projets(nom, localisation)').eq('id', id).single()),
@@ -5107,19 +5333,20 @@ async function ficheContrat(id, rendre) {
     ${brouillon ? `<div class="detail-block"><h4>Signatures (sur ce téléphone)</h4>
       <div class="signatures">
         <div><label class="field">Nom du prestataire (signataire)<input name="nom_signataire" class="input" value="${esc(c.nom_signataire || c.prestataires?.nom || '')}"></label><div class="sig" id="sig-pr"></div></div>
-        <div><label class="field">Pour l’entreprise</label><div class="sig" id="sig-ent"></div></div>
-      </div><p class="hint">Le prestataire signe avec le doigt, puis vous signez pour l’entreprise.</p></div>`
+        <div><label class="field">Pour l’entreprise : ${esc(c.clauses?.rep_nom || S.profil.nom)}</label><div class="sig" id="sig-ent"></div></div>
+      </div><p class="hint">Faites d’abord lire le contrat au prestataire (bouton 📖 Lire le contrat). En signant avec le doigt, il reconnaît l’avoir lu et accepté ; vous signez ensuite pour l’entreprise.</p></div>`
       : `<div class="detail-block"><h4>Signé le ${new Date(c.signe_le).toLocaleDateString('fr-FR')} par ${esc(c.nom_signataire || '')}</h4></div>`}
     ${!brouillon ? `<div class="detail-block"><h4>Versements (${versements.length})</h4>${versements.length ? `<div class="paie-liste">${versements.map((v) => `<div class="paie-ligne">
       <div class="paie-nom"><b>${esc(NATURE_VERSEMENT[v.nature])}</b><span>${fdate(v.date_versement)} · ${esc(v.moyen)}${v.reference ? ` · ${esc(v.reference)}` : ''}</span></div>
       <div class="paie-montant"><b>${money(v.montant)}</b>${v.signature ? badge(['ok', '✍️ Signé']) : badge(['warn', 'Sans signature'])}<button type="button" class="btn sm" data-recu="${v.id}">📄 Reçu</button>${!v.signature && payeur ? `<button type="button" class="btn sm ghost" data-suppr-cv="${v.id}">✕</button>` : ''}</div></div>`).join('')}</div>` : '<p class="muted" style="font-size:13px">Aucun versement.</p>'}</div>` : ''}
     <div class="rc-boutons mt">
-      ${brouillon ? '<button type="button" class="btn primary" id="ct-signer">✍️ Signer le contrat</button><button type="button" class="btn danger" id="ct-suppr">Supprimer</button>' : ''}
+      ${c.texte ? '<button type="button" class="btn" id="ct-lire">📖 Lire le contrat</button>' : ''}
+      ${brouillon ? '<button type="button" class="btn primary" id="ct-signer">✍️ Signer le contrat</button><button type="button" class="btn" id="ct-modif">✏️ Modifier</button><button type="button" class="btn danger" id="ct-suppr">Supprimer</button>' : ''}
       ${['signe', 'resilie'].includes(c.statut) && payeur && total - paye > 0 ? '<button type="button" class="btn primary" id="ct-verser">💵 Nouveau versement</button>' : ''}
       ${!brouillon && numero ? `<a class="btn" target="_blank" rel="noopener" id="ct-wa" href="https://wa.me/${numero}?text=${encodeURIComponent(`Bonjour ${String(c.prestataires?.nom || '').split(' ')[0]}, point sur votre contrat ${c.numero} (${c.objet}) : montant ${money(total)}, déjà payé ${money(paye)}, reste à payer ${money(total - paye)}. ${S.entreprise?.nom || ''}`)}">💬 WhatsApp</a>` : ''}
       <button type="button" class="btn" id="ct-pdf">📄 Contrat en PDF</button>
       ${c.statut === 'signe' && can('direction') ? '<button type="button" class="btn" id="ct-avenant">➕ Avenant</button>' : ''}
-      ${c.statut === 'signe' ? '<button type="button" class="btn ghost" id="ct-terminer">🏁 Terminé</button><button type="button" class="btn ghost" id="ct-resilier">⛔ Résilier</button>' : ''}
+      ${c.statut === 'signe' && can('direction', 'comptable', 'coordinateur') ? '<button type="button" class="btn ghost" id="ct-terminer">🏁 Terminé</button><button type="button" class="btn ghost" id="ct-resilier">⛔ Résilier</button>' : ''}
     </div>` });
   const el = m.el;
   const sigP = brouillon ? padSignature($('#sig-pr', el)) : null;
@@ -5140,6 +5367,8 @@ async function ficheContrat(id, rendre) {
     try { await q(sb.from('contrats').delete().eq('id', id)); toast('Brouillon supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurContrat(e), 'err'); }
   });
   $('#ct-pdf', el).onclick = () => pdfContrat(id);
+  $('#ct-lire', el)?.addEventListener('click', () => lireContrat(c));
+  $('#ct-modif', el)?.addEventListener('click', () => { m.fermer(); editeurContrat(c, rendre); });
   $('#ct-verser', el)?.addEventListener('click', () => { m.fermer(); formulaireVersementContrat(c, total - paye, numero, rendre); });
   $('#ct-avenant', el)?.addEventListener('click', () => ouvrirModale({
     titre: 'Avenant au contrat',
@@ -5203,8 +5432,28 @@ async function pdfContrat(id) {
     const JsPDF = await chargerJsPDF();
     const c = await q(sb.from('contrats').select('*, prestataires(*), projets(nom, localisation)').eq('id', id).single());
     const doc = new JsPDF({ unit: 'mm', format: 'a4' });
-    await enteteDocumentPDF(doc, 'CONTRAT DE PRESTATION', `N° ${c.numero}`, c.signe_le ? `signé le ${new Date(c.signe_le).toLocaleDateString('fr-FR')}` : 'BROUILLON');
+    await enteteDocumentPDF(doc, c.texte ? 'CONTRAT' : 'CONTRAT DE PRESTATION', `N° ${c.numero}`, c.signe_le ? `signé le ${new Date(c.signe_le).toLocaleDateString('fr-FR')}` : 'BROUILLON');
     let y = 46;
+    if (c.texte) {
+      const lignes = String(c.texte).split('\n');
+      const saut = (h) => { if (y + h > 272) { doc.addPage(); y = 20; } };
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(17, 21, 33);
+      doc.splitTextToSize(textePDF(lignes[0]), 170).forEach((l) => { doc.text(l, 105, y, { align: 'center' }); y += 6; });
+      y += 3;
+      lignes.slice(1).forEach((l) => {
+        if (l.startsWith('# ')) { saut(14); y += 2.5; doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(17, 21, 33); doc.text(textePDF(l.slice(2)), 16, y); y += 5.5; return; }
+        const centre = l.startsWith('> '), puce = l.startsWith('- ');
+        const t = centre || puce ? l.slice(2) : l;
+        doc.setFont('helvetica', centre ? 'bold' : 'normal'); doc.setFontSize(9.8); doc.setTextColor(30, 34, 46);
+        doc.splitTextToSize(textePDF(t), puce ? 170 : 178).forEach((x, i) => {
+          saut(5);
+          if (centre) doc.text(x, 105, y, { align: 'center' });
+          else { if (puce && i === 0) doc.text('•', 18, y); doc.text(x, puce ? 24 : 16, y); }
+          y += 4.7;
+        });
+        y += 1.6;
+      });
+    } else {
     const bloc = (titre, lignes, x) => {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(100, 108, 128); doc.text(textePDF(titre), x, y);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(17, 21, 33);
@@ -5225,10 +5474,11 @@ async function pdfContrat(id) {
     para('Article 2 — Prix et mode de rémunération', `${TYPE_CONTRAT[c.type]}. Montant total : ${money(c.montant)}${num(c.avenants) ? `, porté à ${money(totalContrat(c))} par avenant(s)` : ''}.${num(c.retenue_pct) ? ` Une retenue de garantie de ${num(c.retenue_pct)} % est appliquée jusqu’à la réception des travaux.` : ''}`);
     para('Article 3 — Délais', [c.date_debut && `Début des travaux : ${fdate(c.date_debut)}.`, c.date_fin && `Fin prévue : ${fdate(c.date_fin)}.`].filter(Boolean).join(' ') || 'Selon le planning du chantier.');
     para('Article 4 — Conditions', c.conditions);
+    }
     if (y > 225) { doc.addPage(); y = 25; }
     y += 4;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(17, 21, 33);
-    doc.text(textePDF(`Le prestataire : ${c.nom_signataire || c.prestataires?.nom || ''}`), 16, y); doc.text(textePDF(`Pour ${S.entreprise?.nom || ''}`), 110, y);
+    doc.text(textePDF(`Le Prestataire : ${c.nom_signataire || c.prestataires?.nom || ''}`), 16, y); doc.text(textePDF(`Pour l'Entreprise : ${c.clauses?.rep_nom || S.entreprise?.nom || ''}`), 110, y);
     doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 84, 32); doc.rect(110, y + 3, 84, 32);
     if (c.signature_prestataire) doc.addImage(c.signature_prestataire, 'PNG', 18, y + 5, 80, 28);
     if (c.signature_entreprise) doc.addImage(c.signature_entreprise, 'PNG', 112, y + 5, 80, 28);

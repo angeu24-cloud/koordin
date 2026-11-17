@@ -1172,3 +1172,21 @@ body {
 /* ═══ 2.9 Contrats et prestataires ═══ */
 .contrat-presta { display: flex; gap: 8px; align-items: center; }
 .contrat-presta select { flex: 1; min-width: 0; }
+
+/* ═══ 2.9.1 Contrat rédigé ═══ */
+.ce-intro { font-size: 13.5px; color: var(--text-2); margin-bottom: 8px; }
+.ce-voir { margin-bottom: 12px; }
+.ce-section { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px 4px; margin: 0 0 14px; }
+.ce-section legend { font-weight: 700; font-size: 14px; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
+.ce-section legend span { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: #111; font-size: 12px; }
+.ce-apercu-tete { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; scroll-margin-top: 10px; }
+.ce-apercu-tete .manque-txt { color: var(--gold); font-size: 12.5px; }
+.ce-apercu-tete .ok-txt { color: var(--ok); font-size: 12.5px; }
+.contrat-papier { background: #fffdf8; color: #1b1e27; border-radius: 10px; padding: 22px 20px; font-family: Georgia, 'Times New Roman', serif; font-size: 13.5px; line-height: 1.55; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-height: none; }
+.contrat-papier .cp-titre { text-align: center; font-size: 16px; letter-spacing: .5px; margin: 0 0 14px; color: #111; border-bottom: 2px solid #c9972b; padding-bottom: 10px; }
+.contrat-papier h4 { font-size: 13.5px; margin: 16px 0 6px; color: #111; text-transform: none; letter-spacing: 0; }
+.contrat-papier p { margin: 0 0 7px; text-align: justify; }
+.contrat-papier .cp-centre { text-align: center; font-weight: 700; margin: 10px 0; }
+.contrat-papier .cp-puce { padding-left: 16px; position: relative; }
+.contrat-papier .cp-puce::before { content: '•'; position: absolute; left: 4px; }
+.contrat-papier mark.manque { background: #fde7b0; color: #7a4b00; border-radius: 3px; padding: 0 2px; }

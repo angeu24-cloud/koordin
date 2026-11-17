@@ -1,10 +1,9 @@
 {
-  "version": "2.9",
+  "version": "2.9.1",
   "date": "2026-11-17",
   "nouveautes": [
-    "📑 Nouveau menu Contrats : vos prestataires et sous-traitants, même sans KOORDIN.",
-    "Contrat signé au doigt sur le téléphone (prestataire + entreprise), PDF à envoyer par WhatsApp.",
-    "Versements avec reçu signé, reste à payer calculé, impossible de payer plus que le contrat.",
-    "Les paiements aux prestataires apparaissent dans la Trésorerie."
+    "📑 Le contrat se rédige tout seul : remplissez les informations, un contrat complet (parties, prix, paiements, délais, pénalités, garantie, résiliation, litiges…) s’écrit article par article.",
+    "👷 Les techniciens peuvent enregistrer des prestataires et des contrats sur leurs chantiers et les faire signer. La Direction et la Comptabilité sont prévenues.",
+    "📖 Bouton « Lire le contrat » avant la signature, et PDF complet à envoyer par WhatsApp."
   ]
 }
