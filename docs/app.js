@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.5';
+const VERSION = '3.5.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -52,7 +52,7 @@ const MENU = [
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
   { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur', 'technicien'] },
-  { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier'] },
+  { r: 'stock', court: 'Stock',           label: 'Stock',           ico: '📦', roles: ['direction', 'coordinateur', 'achats', 'magasinier', 'technicien'] },
   { r: 'materiel', court: 'Matériel', label: 'Matériel et engins', ico: '🚜', roles: ['direction', 'coordinateur', 'magasinier', 'technicien', 'achats', 'comptable'] },
   { r: 'securite', court: 'Sécurité', label: 'Sécurité chantier', ico: '🦺', roles: ['direction', 'coordinateur', 'technicien'] },
   { r: 'equipe', court: 'Équipe',          label: 'Équipe',          ico: '👥', roles: ['direction'] },
@@ -6980,7 +6980,7 @@ let ongletStock = 'articles';
 
 function tableauStock(articles, { compact = false } = {}) {
   if (!articles.length) return empty('📦', compact ? 'Aucun article sous le seuil ✅' : 'Aucun article');
-  const mouv = can('direction', 'magasinier');
+  const mouv = can('direction', 'magasinier', 'technicien');
   const gerer = can('direction', 'magasinier', 'achats');
   return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Article</th><th class="num">Quantité</th><th class="num">Seuil</th><th>État</th>${compact ? '' : '<th class="num">Valeur</th>'}${!compact && (mouv || gerer) ? '<th></th>' : ''}</tr></thead><tbody>
     ${articles.map((a) => `<tr class="${a.alerte ? 'over' : ''}"><td><b>${esc(a.nom)}</b></td>
@@ -7283,7 +7283,7 @@ function formulaireOuvrier(o, apres) {
 PAGES.stock = async () => {
   const p = page(`
     ${entete('Stock', 'Magasin central : quantités, seuils d’alerte et mouvements',
-      `${can('direction', 'magasinier') ? '<button class="btn" id="mv">🔄 Entrée / sortie</button>' : ''}${can('direction', 'magasinier', 'achats') ? '<button class="btn primary" id="na">＋ Nouvel article</button>' : ''}`)}
+      `${can('direction', 'magasinier') ? '<button class="btn" id="mv">🔄 Entrée / sortie</button>' : ''}${can('technicien') ? '<button class="btn primary" id="mv">📦 Prendre / rendre du matériel</button>' : ''}${can('direction', 'magasinier', 'achats') ? '<button class="btn primary" id="na">＋ Nouvel article</button>' : ''}`)}
     <div class="tabs"><button class="tab ${ongletStock === 'articles' ? 'active' : ''}" data-o="articles">Articles</button><button class="tab ${ongletStock === 'mouvements' ? 'active' : ''}" data-o="mouvements">Historique des mouvements</button></div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
@@ -7340,19 +7340,20 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
   if (!articles.length) return toast('Créez d’abord un article.', 'warn');
   const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
   ouvrirModale({
-    titre: 'Mouvement de stock',
+    titre: can('technicien') ? '📦 Matériel du chantier' : 'Mouvement de stock',
     corps: `<div class="form-grid">
-      ${F.select('type', 'Type', [['entree', '⬇️ Entrée (livraison, retour chantier)'], ['sortie', '⬆️ Sortie (vers un chantier)']], type, { full: true })}
+      ${can('technicien') ? F.select('type', 'Je…', [['sortie', '⬆️ Prends du matériel pour mon chantier'], ['entree', '⬇️ Rends du matériel au magasin']], type, { full: true })
+        : F.select('type', 'Type', [['entree', '⬇️ Entrée (livraison, retour chantier)'], ['sortie', '⬆️ Sortie (vers un chantier)']], type, { full: true })}
       ${F.select('article_id', 'Article', articles.map((a) => [a.id, `${a.nom} — ${nf.format(num(a.quantite))} ${a.unite} en stock`]), articleId, { required: true, full: true, vide: '— Choisir —' })}
       ${F.text('quantite', 'Quantité', '', { type: 'number', min: 0.01, step: 'any', required: true, inputmode: 'decimal' })}
-      ${F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), '', { vide: '— Aucun —' })}
-      ${F.text('commentaire', 'Commentaire', '', { full: true, placeholder: 'Ex. BL n° 4512, bon de sortie…' })}
+      ${can('technicien') ? F.select('projet_id', 'Mon chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, vide: '— Choisir —' }) : F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), '', { vide: '— Aucun —' })}
+      ${F.text('commentaire', 'Commentaire', '', { full: true, placeholder: can('technicien') ? 'Ex. Pour le coulage de la dalle du R+1' : 'Ex. BL n° 4512, bon de sortie…' })}
     </div>`,
     onSubmit: async (d) => {
       if (num(d.quantite) <= 0) throw new Error('La quantité doit être positive.');
-      if (d.type === 'sortie' && !d.projet_id) throw new Error('Indiquez le chantier destinataire de la sortie.');
+      if ((d.type === 'sortie' || can('technicien')) && !d.projet_id) throw new Error('Indiquez le chantier concerné.');
       await q(sb.from('mouvements_stock').insert({ article_id: d.article_id, type: d.type, quantite: num(d.quantite), projet_id: d.projet_id, commentaire: d.commentaire }));
-      toast(d.type === 'entree' ? 'Entrée enregistrée.' : 'Sortie enregistrée.');
+      toast(can('technicien') ? (d.type === 'entree' ? 'Retour au magasin enregistré ✅ Le magasin est prévenu.' : 'Prise de matériel enregistrée ✅ Le magasin est prévenu.') : d.type === 'entree' ? 'Entrée enregistrée.' : 'Sortie enregistrée.');
       refresh();
     },
   });

@@ -1,10 +1,8 @@
 {
-  "version": "3.5",
+  "version": "3.5.1",
   "date": "2026-11-18",
   "nouveautes": [
-    "📚 Nouveau : « Le savoir du jour » sur l’accueil. Chaque jour, une règle du BAEL, des Eurocodes, un bon geste de mise en œuvre, de sécurité ou de second œuvre, avec sa référence.",
-    "🔊 Koko peut la lire à voix haute, et 📤 vous pouvez l’envoyer à toute l’équipe sur WhatsApp.",
-    "📖 Nouvelle rubrique « Normes et conseils » : plus de 50 fiches, une recherche (enrobage, poteau, cure…) et un 🎯 quiz pour se tester.",
-    "🎤 Dites à Koko « conseil du jour » pour l’entendre."
+    "📦 Les techniciens ont maintenant accès au Stock : ils voient les quantités disponibles au magasin.",
+    "Ils peuvent noter le matériel pris pour leur chantier ou rendu au magasin (bouton « Prendre / rendre du matériel ») ; le magasin, la direction et la coordination sont prévenus avec leur nom."
   ]
 }
