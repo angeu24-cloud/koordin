@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.5.1';
+const VERSION = '3.6';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -43,6 +43,7 @@ const MENU = [
   { r: 'projets', court: 'Projets',         label: 'Projets',         ico: '🏗️', roles: TOUS, labelTech: 'Mes chantiers' },
   { r: 'communiques', court: 'Infos',       label: 'Communiqués',     ico: '📢', roles: TOUS },
   { r: 'appels', court: 'Appels', label: 'Appels et réunions', ico: '📹', roles: TOUS },
+  { r: 'controles', court: 'Contrôles', label: 'Contrôles qualité', ico: '🔍', roles: ['direction', 'coordinateur', 'technicien'] },
   { r: 'savoir', court: 'Normes', label: 'Normes et conseils', ico: '📚', roles: TOUS },
   { r: 'nouveau-rapport', court: 'Rapport', label: 'Nouveau rapport', ico: '➕', roles: ['technicien'] },
   { r: 'rapports', court: 'Rapports',        label: 'Rapports',        ico: '📋', roles: ROLES_RAPPORT, labelTech: 'Mes rapports' },
@@ -1083,6 +1084,7 @@ const TRACES = {
   appels: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/>',
   contrats: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h3"/><path d="M4 7v13a1 1 0 0 0 1 1h2"/>',
   salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
+  controles: '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4V3h6v1"/><path d="m8.5 12.5 2.3 2.3 4.7-4.8"/>',
   savoir: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5"/><path d="M9 7.5h7M9 11h5"/>',
   ajouter: '<path d="M12 5v14M5 12h14"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
@@ -1376,7 +1378,7 @@ function bonjour() {
 // ═══════════════════════════════ 3.1 : NOUVEAU DESIGN ═══════════════════════════════
 const GROUPES_MENU = [
   ['pilotage', 'Pilotage', ['dashboard', 'projets', 'rapports', 'communiques', 'appels', 'ia']],
-  ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'securite', 'materiel', 'savoir']],
+  ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'controles', 'securite', 'materiel', 'savoir']],
   ['argent', 'Argent', ['compta', 'ventes', 'contrats', 'salaires', 'achats']],
   ['logistique', 'Logistique', ['stock']],
   ['equipe', 'Équipe', ['equipe', 'mon-espace']],
@@ -1391,6 +1393,7 @@ function actionsDisponibles() {
     { r: 'nouveau-rapport', ic: 'nouveau-rapport', t: 'Rapport du jour', s: 'Travaux et photos', ok: can(...ROLES_RAPPORT) },
     { r: 'appels', ic: 'appels', t: 'Appel vidéo', s: 'Chantier en direct' },
     { r: 'pointage', ic: 'pointage', t: 'Pointage', s: 'Présences du jour' },
+    { r: 'controles', ic: 'controles', t: 'Contrôle', s: 'Vérifier une étape' },
     { r: 'projets', ic: 'projets', t: 'Nouveau projet', s: 'Créer un chantier', attr: 'data-nouveau-projet', ok: can('direction', 'coordinateur') },
     { r: 'compta', ic: 'compta', t: 'Facture', s: 'Scanner ou saisir', attr: 'data-nouvelle-facture' },
     { r: 'achats', ic: 'achats', t: 'Commande', s: 'Achat fournisseur', attr: 'data-nouvelle-commande', ok: can('direction', 'coordinateur', 'achats') },
@@ -1562,6 +1565,7 @@ const KOKO_CONSEILS = {
   ia: ['Posez n’importe quelle question sur vos chantiers 🧠'],
   communiques: ['Un communiqué ici, et toute l’équipe est informée 📢'],
   'mon-espace': ['Votre espace personnel : vos salaires et vos signatures 🔒'],
+  controles: ['Une étape terminée ? Demandez un contrôle avant de passer à la suite 🔍', 'L’agent coche chaque point, prend des photos et signe : la fiche PDF est prête aussitôt.'],
   savoir: ['Une règle du BAEL ou un bon geste de chantier chaque jour 📚', 'Testez-vous avec le quiz, et partagez les fiches à votre équipe sur WhatsApp 🎯'],
   abonnement: ['Votre formule KOORDIN se gère ici.'],
   parametres: ['Les réglages de votre entreprise sont ici ⚙️'],
@@ -1903,6 +1907,7 @@ function majBoutonsKoko() {
 const sansAccents = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’']/g, ' ');
 const KOKO_ROUTES = [
   [/nouveau rapport|faire (mon|un) rapport|rapport du jour|ecrire un rapport/, 'nouveau-rapport'],
+  [/controle|verification|point d arret/, 'controles'],
   [/valider|rapports?/, 'rapports'],
   [/compta|comptabilite|factures? fournisseur|depense/, 'compta'],
   [/devis|situation|encaissement|tresorerie|facturation|client/, 'ventes'],
@@ -2367,6 +2372,266 @@ function lancerQuiz() {
   afficher();
 }
 
+// ═══════════════════════════════ 3.6 : CONTRÔLES PAR CORPS D'ÉTAT ═══════════════════════════════
+// Points d'arrêt : une étape terminée est vérifiée par un agent de l'entreprise avant de passer à la suivante.
+const PHASES = [
+  { k: 'implantation', c: 'gros', t: 'Implantation', ic: '📏', p: ['Axes et cotes conformes au plan', 'Repère de niveau (point zéro) en place', 'Équerrage et alignements vérifiés', 'Distances aux limites de parcelle respectées'] },
+  { k: 'fouilles', c: 'gros', t: 'Fouilles', ic: '⛏️', p: ['Dimensions et profondeur conformes au plan', 'Bon sol atteint, fond de fouille propre et sec', 'Talus ou blindage sécurisés', 'Béton de propreté coulé (environ 5 cm)'] },
+  { k: 'ferraillage-fondations', c: 'gros', t: 'Ferraillage des fondations', ic: '🔩', p: ['Diamètres et nombre de barres conformes au plan', 'Cales d’enrobage en place', 'Attentes des poteaux en place et bien positionnées', 'Longueurs d’ancrage et de recouvrement respectées', 'Aciers propres (ni terre, ni huile, ni rouille qui s’écaille)'] },
+  { k: 'ferraillage', c: 'gros', t: 'Ferraillage poteaux, poutres, voiles', ic: '🔩', p: ['Diamètres et nombre de barres conformes au plan', 'Espacement des cadres et étriers (resserrés aux appuis)', 'Longueurs de recouvrement et d’ancrage', 'Cales d’enrobage en place', 'Ligatures solides, cages bien d’aplomb'] },
+  { k: 'coffrage', c: 'gros', t: 'Coffrage et étaiement', ic: '🪵', p: ['Dimensions et aplomb des coffrages', 'Joints étanches (pas de fuite de laitance)', 'Étais suffisants, stables et contreventés', 'Huile de décoffrage appliquée', 'Réservations (gaines, passages) en place'] },
+  { k: 'plancher', c: 'gros', t: 'Plancher avant coulage', ic: '🧱', p: ['Poutrelles et hourdis bien posés (appuis suffisants)', 'Treillis soudé et chapeaux sur appuis', 'Gaines électriques et réservations posées', 'Étaiement des poutrelles conforme à la notice', 'Niveau et épaisseur de la dalle de compression'] },
+  { k: 'beton', c: 'gros', t: 'Bétonnage', ic: '🚚', p: ['Béton conforme à la formule (bon de livraison)', 'Essai d’affaissement réalisé', 'Éprouvettes prélevées et étiquetées', 'Vibration correcte, sans nids de cailloux', 'Cure prévue (arrosage, bâche ou produit de cure)'] },
+  { k: 'maconnerie', c: 'gros', t: 'Maçonnerie', ic: '🧱', p: ['Aplomb et alignement des murs', 'Joints remplis et réguliers', 'Liaison avec les poteaux (harpage, attentes)', 'Chaînages et linteaux (appui ≥ 20 cm)', 'Réservations des portes et fenêtres aux bonnes cotes'] },
+  { k: 'toiture', c: 'gros', t: 'Charpente et couverture', ic: '🏠', p: ['Fixations et contreventement de la charpente', 'Pente conforme au plan', 'Recouvrement et fixation des tôles', 'Faîtage, rives et chéneaux posés'] },
+  { k: 'etancheite', c: 'gros', t: 'Étanchéité', ic: '💧', p: ['Support propre et sec', 'Pentes vers les évacuations (≥ 1 %)', 'Relevés d’au moins 15 cm', 'Essai de mise en eau réalisé sans fuite'] },
+  { k: 'electricite', c: 'second', t: 'Électricité', ic: '⚡', p: ['Gaines et boîtes en place avant enduit', 'Sections des câbles conformes (1,5 / 2,5 mm²)', 'Tableau avec différentiel 30 mA', 'Mise à la terre mesurée', 'Circuits repérés au tableau'] },
+  { k: 'plomberie', c: 'second', t: 'Plomberie', ic: '🚿', p: ['Essai de pression réalisé sans fuite', 'Pentes des évacuations (1 à 3 cm/m)', 'Canalisations bien fixées', 'Siphons et regards accessibles'] },
+  { k: 'menuiserie', c: 'second', t: 'Menuiseries', ic: '🚪', p: ['Dimensions et aplomb', 'Ouverture et fermeture sans forcer', 'Quincaillerie complète (serrures, poignées)', 'Calfeutrement et joints'] },
+  { k: 'enduits', c: 'second', t: 'Enduits', ic: '🪣', p: ['Planéité vérifiée à la règle de 2 m', 'Angles d’aplomb et bien dressés', 'Pas de fissures, cloques ni décollements', 'Épaisseur régulière'] },
+  { k: 'carrelage', c: 'second', t: 'Carrelage', ic: '🔲', p: ['Planéité et alignement des joints', 'Pentes vers les siphons', 'Aucun carreau ne sonne creux', 'Joints remplis, plinthes posées'] },
+  { k: 'faux-plafond', c: 'second', t: 'Faux plafond', ic: '🧩', p: ['Ossature et suspentes', 'Planéité', 'Trappes de visite prévues', 'Finition des joints'] },
+  { k: 'peinture', c: 'second', t: 'Peinture', ic: '🎨', p: ['Support préparé (rebouché, poncé, fixateur)', 'Nombre de couches respecté', 'Teinte conforme au choix du client', 'Pas de coulures, traces ni manques'] },
+];
+const STATUT_CONTROLE = {
+  demande: ['warn', '⏳ À contrôler'], accepte: ['ok', '✅ Accepté'], reserve: ['info', '⚠️ Accepté avec réserves'], refuse: ['crit', '⛔ Refusé — à reprendre'],
+};
+const ETATS_POINT = { ok: ['✅', 'Conforme'], nok: ['❌', 'Non conforme'], na: ['➖', 'Sans objet'] };
+const phaseDe = (k) => PHASES.find((x) => x.k === k);
+const agentControle = () => can('direction', 'coordinateur');
+const erreurControle = (e) => {
+  const m = String(e?.message || '');
+  if (/^CONTROLE_/.test(m) && e?.hint) return e.hint;
+  if (/relation .*controles/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Les contrôles nécessitent la mise à jour 3.6 de la base de données (kit d’installation).';
+  return messageErreur(e);
+};
+const libelleControle = (c) => `${c.titre}${c.zone ? ` — ${c.zone}` : ''}`;
+
+// Frise des étapes d'un chantier : dernier contrôle de chaque phase
+function friseControles(controles) {
+  const dernier = (k) => controles.filter((c) => c.phase === k).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+  const bloc = (corps, titre) => {
+    const ph = PHASES.filter((x) => x.c === corps);
+    let bloque = false;
+    return `<div class="frise"><div class="frise-titre">${titre}</div>${ph.map((x) => {
+      const d = dernier(x.k);
+      const etat = d ? d.statut : bloque ? 'attente' : 'libre';
+      if (!d || d.statut === 'refuse' || d.statut === 'demande') bloque = bloque || !!d;
+      const st = d ? STATUT_CONTROLE[d.statut] : null;
+      return `<button type="button" class="frise-etape e-${etat}" data-phase="${x.k}" ${d ? `data-ctl="${d.id}"` : ''}>
+        <span class="frise-point">${d?.statut === 'accepte' ? '✓' : d?.statut === 'refuse' ? '!' : d?.statut === 'reserve' ? '~' : x.ic}</span>
+        <span class="frise-txt"><b>${esc(x.t)}</b><small>${st ? esc(st[1]) : 'Pas encore contrôlé'}${d?.zone ? ` · ${esc(d.zone)}` : ''}</small></span></button>`;
+    }).join('')}</div>`;
+  };
+  return `<div class="frises">${bloc('gros', '🏗️ Gros œuvre')}${bloc('second', '🔧 Second œuvre')}</div>`;
+}
+
+async function ongletControles(projet, zone) {
+  const controles = await q(sb.from('controles').select('*').eq('projet_id', projet.id).order('created_at', { ascending: false }));
+  const valides = new Set(controles.filter((c) => c.statut === 'accepte' || c.statut === 'reserve').map((c) => c.phase)).size;
+  const attente = controles.filter((c) => c.statut === 'demande');
+  zone.innerHTML = `<div class="card"><div class="card-title">Contrôles par corps d’état <button type="button" class="btn sm primary" id="nctl">🔍 Demander un contrôle</button></div>
+    <p class="muted" style="font-size:13px;margin-bottom:10px">Avant de passer à l’étape suivante, faites vérifier l’étape terminée par un agent de l’entreprise. Touchez une étape pour voir sa fiche.</p>
+    <div class="ctl-progres"><div class="ctl-barre"><i style="width:${pct(valides, PHASES.length)}%"></i></div><span><b>${valides}</b> étape(s) validée(s) sur ${PHASES.length}${attente.length ? ` · <b class="warn-txt">${attente.length} à contrôler</b>` : ''}</span></div>
+    ${friseControles(controles)}
+    ${controles.length ? `<div class="card-title mt">Historique</div><div class="paie-liste">${controles.map(ligneControle).join('')}</div>` : ''}</div>`;
+  const rafraichir = () => ongletControles(projet, zone);
+  $('#nctl', zone).onclick = () => demanderControle(projet, null, controles, rafraichir);
+  $$('.frise-etape', zone).forEach((b) => (b.onclick = () => (b.dataset.ctl ? ficheControle(b.dataset.ctl, rafraichir) : demanderControle(projet, b.dataset.phase, controles, rafraichir))));
+  $$('[data-voir-ctl]', zone).forEach((b) => (b.onclick = () => ficheControle(b.dataset.voirCtl, rafraichir)));
+}
+const ligneControle = (c) => `<button type="button" class="paie-ligne vente-ligne" data-voir-ctl="${c.id}"><div class="paie-nom"><b>${phaseDe(c.phase)?.ic || '🔍'} ${esc(libelleControle(c))}</b><span>${c.projets?.nom ? `${esc(c.projets.nom)} · ` : ''}demandé par ${esc(nomMembre(c.demande_par))} · ${ago(c.demande_le)}${c.controle_le ? ` · contrôlé par ${esc(c.nom_controleur || '')}` : ''}</span></div><div class="paie-montant">${badge(STATUT_CONTROLE[c.statut])}</div></button>`;
+
+async function demanderControle(projet, phase, controles, apres) {
+  const projets = projet ? [projet] : (await listeProjets()).filter((x) => x.statut !== 'termine');
+  if (!projets.length) { toast('Aucun chantier disponible.', 'warn'); return; }
+  ouvrirModale({
+    titre: '🔍 Demander un contrôle',
+    boutonOk: 'Envoyer la demande',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Un agent de l’entreprise sera prévenu pour venir vérifier l’étape avant que vous passiez à la suite.</p>
+      <div class="form-grid">
+        ${projet ? '' : F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, full: true, vide: '— Choisir —' })}
+        ${F.select('phase', 'Étape à contrôler', [['gros', '— Gros œuvre —'], ...PHASES.filter((x) => x.c === 'gros').map((x) => [x.k, `${x.ic} ${x.t}`]), ['second', '— Second œuvre —'], ...PHASES.filter((x) => x.c === 'second').map((x) => [x.k, `${x.ic} ${x.t}`])], phase || '', { required: true, full: true, vide: '— Choisir —' })}
+        ${F.text('zone', 'Où exactement ?', '', { full: true, placeholder: 'Ex. Dalle du R+1, poteaux P1 à P8, salle de bain 2…' })}
+        ${F.area('note_demande', 'Message pour l’agent (facultatif)', '', { placeholder: 'Ex. Coulage prévu demain à 7 h.' })}
+      </div><div id="ctl-avert"></div>`,
+    onOpen: (el) => {
+      const sel = $('[name="phase"]', el);
+      $$('option[value="gros"], option[value="second"]', sel).forEach((o) => { o.disabled = true; });
+      const avert = () => {
+        const i = PHASES.findIndex((x) => x.k === sel.value);
+        const prec = i > 0 && PHASES[i - 1].c === PHASES[i].c ? PHASES[i - 1] : null;
+        const ok = prec && (controles || []).some((c) => c.phase === prec.k && ['accepte', 'reserve'].includes(c.statut));
+        $('#ctl-avert', el).innerHTML = prec && !ok && projet ? `<div class="notice warn mt">⚠️ L’étape précédente « ${esc(prec.t)} » n’a pas encore été validée sur ce chantier.</div>` : '';
+      };
+      sel.addEventListener('change', avert); avert();
+    },
+    onSubmit: async (d) => {
+      const ph = phaseDe(d.phase);
+      if (!ph) throw new Error('Choisissez l’étape à contrôler.');
+      try {
+        await q(sb.from('controles').insert({ projet_id: projet?.id || d.projet_id, corps: ph.c, phase: ph.k, titre: ph.t, zone: d.zone || null, note_demande: d.note_demande || null, points: ph.p.map((texte) => ({ texte, etat: null, note: '' })) }));
+      } catch (e) { throw new Error(erreurControle(e)); }
+      toast('🔍 Demande envoyée : un agent va venir contrôler.');
+      apres?.();
+    },
+  });
+}
+
+async function ficheControle(id, apres) {
+  const c = await q(sb.from('controles').select('*, projets(nom, localisation)').eq('id', id).single());
+  const ouvert = c.statut === 'demande';
+  const peutControler = ouvert && agentControle() && (c.demande_par !== S.profil.id || can('direction'));
+  const urls = await urlsPhotos(c.photos || []);
+  let points = (c.points || []).map((x) => ({ ...x }));
+  let photos = [...(c.photos || [])];
+  const m = ouvrirModale({ titre: `${phaseDe(c.phase)?.ic || '🔍'} ${libelleControle(c)}`, large: true, corps: `
+    <div class="split" style="flex-wrap:wrap;gap:8px;margin-bottom:8px"><span class="muted">${esc(c.projets?.nom || '')} · ${c.corps === 'gros' ? 'Gros œuvre' : 'Second œuvre'}</span>${badge(STATUT_CONTROLE[c.statut])}</div>
+    <p class="muted" style="font-size:13px">Demandé par <b>${esc(nomMembre(c.demande_par))}</b> le ${new Date(c.demande_le).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${c.note_demande ? ` — « ${esc(c.note_demande)} »` : ''}</p>
+    <div class="detail-block mt"><h4>Points à vérifier</h4><div class="ctl-points" id="ctl-points"></div>
+      ${peutControler ? '<button type="button" class="btn sm ghost mt" id="ctl-ajout">＋ Ajouter un point</button>' : ''}</div>
+    <div class="detail-block"><h4>Photos</h4><div class="ctl-photos" id="ctl-photos"></div>
+      ${peutControler ? '<label class="btn sm mt">📷 Ajouter des photos<input type="file" accept="image/*" capture="environment" multiple hidden id="ctl-fichiers"></label>' : ''}</div>
+    <div class="detail-block"><h4>Observations</h4>${peutControler ? '<textarea class="input" id="ctl-obs" rows="3" placeholder="Obligatoire en cas de réserves ou de refus : ce qu’il faut reprendre, où, pour quand."></textarea>' : `<p>${esc(c.observations || '—')}</p>`}</div>
+    ${peutControler ? `<div class="detail-block"><h4>Signature de l’agent de contrôle</h4>
+      <label class="field">Nom de l’agent<input class="input" id="ctl-nom" value="${esc(S.profil.nom)}"></label><div class="sig" id="ctl-sig"></div></div>
+      <div class="ctl-decisions"><button type="button" class="btn ctl-ok" data-dec="accepte">✅ Accepter</button><button type="button" class="btn ctl-res" data-dec="reserve">⚠️ Accepter avec réserves</button><button type="button" class="btn ctl-ko" data-dec="refuse">⛔ Refuser</button></div>`
+      : c.controle_le ? `<div class="detail-block"><h4>Contrôlé par ${esc(c.nom_controleur || '')} le ${new Date(c.controle_le).toLocaleString('fr-FR')}</h4>${c.signature ? `<img class="signature-img" src="${esc(c.signature)}" alt="Signature de l’agent">` : ''}</div>`
+      : `<div class="notice">${agentControle() && c.demande_par === S.profil.id ? 'Vous avez fait cette demande : un autre agent doit faire le contrôle.' : '⏳ En attente du passage d’un agent de contrôle.'}</div>`}
+    <div class="rc-boutons mt">
+      ${!ouvert ? '<button type="button" class="btn" id="ctl-pdf">📄 Fiche PDF</button>' : ''}
+      ${c.statut === 'refuse' || c.statut === 'reserve' ? '<button type="button" class="btn primary" id="ctl-redemande">🔁 Redemander un contrôle</button>' : ''}
+      ${ouvert && (c.demande_par === S.profil.id || can('direction')) ? '<button type="button" class="btn danger" id="ctl-annule">Annuler la demande</button>' : ''}
+    </div>` });
+  const el = m.el;
+  const rendrePoints = () => {
+    $('#ctl-points', el).innerHTML = points.map((x, i) => `<div class="ctl-point ${x.etat ? `p-${x.etat}` : ''}">
+      <div class="ctl-point-txt">${esc(x.texte)}${!peutControler && x.note ? `<small>${esc(x.note)}</small>` : ''}</div>
+      ${peutControler ? `<div class="ctl-etats">${Object.entries(ETATS_POINT).map(([k, [ic, l]]) => `<button type="button" class="ctl-etat ${x.etat === k ? 'actif' : ''}" data-i="${i}" data-e="${k}" aria-label="${l}" title="${l}">${ic}</button>`).join('')}</div>
+        ${x.etat === 'nok' ? `<input class="input ctl-note" data-note="${i}" placeholder="Ce qui ne va pas…" value="${esc(x.note || '')}">` : ''}` : `<span class="ctl-etat-lu">${x.etat ? ETATS_POINT[x.etat].join(' ') : '—'}</span>`}</div>`).join('') || '<p class="muted">Aucun point.</p>';
+    $$('.ctl-etat', el).forEach((b) => (b.onclick = () => { points[+b.dataset.i].etat = b.dataset.e; rendrePoints(); }));
+    $$('[data-note]', el).forEach((inp) => (inp.oninput = () => { points[+inp.dataset.note].note = inp.value; }));
+  };
+  const rendrePhotos = async () => {
+    const u = await urlsPhotos(photos);
+    $('#ctl-photos', el).innerHTML = photos.length ? photos.map((ph) => `<img src="${esc(u(ph))}" alt="Photo du contrôle" loading="lazy">`).join('') : '<p class="muted" style="font-size:13px">Aucune photo.</p>';
+  };
+  rendrePoints();
+  $('#ctl-photos', el).innerHTML = photos.length ? photos.map((ph) => `<img src="${esc(urls(ph))}" alt="Photo du contrôle" loading="lazy">`).join('') : '<p class="muted" style="font-size:13px">Aucune photo.</p>';
+  const sig = peutControler ? padSignature($('#ctl-sig', el)) : null;
+  $('#ctl-ajout', el)?.addEventListener('click', () => { const t = prompt('Point à vérifier :'); if (t?.trim()) { points.push({ texte: t.trim(), etat: null, note: '' }); rendrePoints(); } });
+  $('#ctl-fichiers', el)?.addEventListener('change', async (e) => {
+    const fichiers = [...e.target.files].slice(0, 12 - photos.length);
+    for (const f of fichiers) { try { photos.push(await envoyerPhotoChantier(f, `controles/${c.projet_id}`)); } catch (err) { toast(messageErreur(err), 'err'); } }
+    try { await q(sb.from('controles').update({ photos }).eq('id', c.id)); } catch (err) { toast(erreurControle(err), 'err'); }
+    rendrePhotos();
+  });
+  $$('[data-dec]', el).forEach((b) => (b.onclick = async () => {
+    const statut = b.dataset.dec;
+    const nonNotes = points.filter((x) => !x.etat).length;
+    if (nonNotes) { toast(`Notez chaque point (${nonNotes} restant${nonNotes > 1 ? 's' : ''}).`, 'warn'); return; }
+    if (statut === 'accepte' && points.some((x) => x.etat === 'nok')) { toast('Un point est non conforme : choisissez « Accepter avec réserves » ou « Refuser ».', 'warn', 6000); return; }
+    const obs = $('#ctl-obs', el).value.trim();
+    const signature = sig.valeur(); const nom = $('#ctl-nom', el).value.trim();
+    if (!signature || !nom) { toast('Signez avec le doigt et indiquez votre nom.', 'warn'); return; }
+    if (statut !== 'accepte' && !obs) { toast('Expliquez les réserves ou le motif du refus dans les observations.', 'warn'); $('#ctl-obs', el).focus(); return; }
+    if (!(await confirmer(statut === 'accepte' ? 'Valider ce contrôle ? L’équipe pourra passer à l’étape suivante.' : statut === 'reserve' ? 'Accepter avec réserves ?' : 'Refuser ? L’équipe devra reprendre avant de continuer.', 'Signer'))) return;
+    try {
+      await q(sb.from('controles').update({ statut, points, photos, observations: obs || null, nom_controleur: nom, signature }).eq('id', c.id));
+      toast(statut === 'accepte' ? '✅ Contrôle validé, le demandeur est prévenu.' : statut === 'reserve' ? '⚠️ Accepté avec réserves, le demandeur est prévenu.' : '⛔ Contrôle refusé, le demandeur est prévenu.');
+      m.fermer(); apres?.();
+    } catch (e) { toast(erreurControle(e), 'err', 7000); }
+  }));
+  $('#ctl-pdf', el)?.addEventListener('click', () => pdfControle(c));
+  $('#ctl-redemande', el)?.addEventListener('click', async () => {
+    try {
+      const ph = phaseDe(c.phase);
+      await q(sb.from('controles').insert({ projet_id: c.projet_id, corps: c.corps, phase: c.phase, titre: c.titre, zone: c.zone, note_demande: 'Nouveau contrôle après reprise', points: (ph?.p || points.map((x) => x.texte)).map((texte) => ({ texte, etat: null, note: '' })) }));
+      toast('🔁 Nouvelle demande envoyée.'); m.fermer(); apres?.();
+    } catch (e) { toast(erreurControle(e), 'err'); }
+  });
+  $('#ctl-annule', el)?.addEventListener('click', async () => {
+    if (!(await confirmer('Annuler cette demande de contrôle ?', 'Annuler la demande'))) return;
+    try { await q(sb.from('controles').delete().eq('id', c.id)); toast('Demande annulée.'); m.fermer(); apres?.(); } catch (e) { toast(erreurControle(e), 'err'); }
+  });
+}
+
+async function pdfControle(c) {
+  try {
+    const JsPDF = await chargerJsPDF();
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    await enteteDocumentPDF(doc, 'FICHE DE CONTRÔLE', c.titre, `${STATUT_CONTROLE[c.statut][1].replace(/^[^ ]+ /, '')}`);
+    let y = 46;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 34, 46);
+    [[`Chantier : ${c.projets?.nom || ''}${c.projets?.localisation ? ` (${c.projets.localisation})` : ''}`], [`Étape : ${c.titre}${c.zone ? ` — ${c.zone}` : ''} (${c.corps === 'gros' ? 'gros œuvre' : 'second œuvre'})`],
+      [`Demandé par ${nomMembre(c.demande_par)} le ${new Date(c.demande_le).toLocaleString('fr-FR')}`], [`Contrôlé par ${c.nom_controleur || ''} le ${c.controle_le ? new Date(c.controle_le).toLocaleString('fr-FR') : ''}`]]
+      .forEach(([l]) => { doc.text(textePDF(l), 16, y); y += 5.5; });
+    y += 4;
+    y = tableauPDF(doc, y, [{ titre: 'Point vérifié (et remarque)', x: 16, l: 140 }, { titre: 'Résultat', x: 160, l: 34, align: 'right' }],
+      (c.points || []).map((x) => ({ gras: x.etat === 'nok', cells: [`${x.texte}${x.note ? ` — ${x.note}` : ''}`, x.etat ? ETATS_POINT[x.etat][1] : '—'] })));
+    y += 4;
+    doc.setFont('helvetica', 'bold'); doc.text('Observations', 16, y); y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.splitTextToSize(textePDF(c.observations || 'Aucune.'), 178).forEach((l) => { if (y > 270) { doc.addPage(); y = 20; } doc.text(l, 16, y); y += 4.8; });
+    if (c.photos?.length) {
+      const u = await urlsPhotos(c.photos);
+      y += 4; let x = 16;
+      for (const ph of c.photos.slice(0, 6)) {
+        try {
+          const img = await imagePourPDF(u(ph), 56 / 40);
+          if (y + 42 > 275) { doc.addPage(); y = 20; }
+          if (img) { doc.addImage(img.data, 'JPEG', x, y, 56, 40); x += 60; }
+          if (x > 150) { x = 16; y += 44; }
+        } catch { /* photo indisponible */ }
+      }
+      if (x !== 16) y += 44;
+    }
+    if (y > 235) { doc.addPage(); y = 25; }
+    y += 4; doc.setFont('helvetica', 'bold'); doc.text(textePDF(`Décision : ${STATUT_CONTROLE[c.statut][1].replace(/^[^ ]+ /, '')}`), 16, y); y += 6;
+    doc.text(textePDF(`Agent de contrôle : ${c.nom_controleur || ''}`), 16, y);
+    doc.setDrawColor(200, 204, 214); doc.rect(16, y + 3, 84, 30);
+    if (c.signature) doc.addImage(c.signature, 'PNG', 18, y + 5, 80, 26);
+    piedPDF(doc, `${S.entreprise?.nom || ''} - Contrôle ${c.titre}`);
+    presenterPDF(doc.output('blob'), `Controle-${c.phase}-${(c.controle_le || c.created_at).slice(0, 10)}.pdf`, `Fiche de contrôle ${c.titre}${c.zone ? ` (${c.zone})` : ''} — ${c.projets?.nom || ''} : ${STATUT_CONTROLE[c.statut][1]}`);
+  } catch (e) { console.error(e); toast(messageErreur(e), 'err'); }
+}
+
+// Page générale : ce qu'il y a à contrôler sur tous les chantiers
+PAGES.controles = async () => {
+  const p = page(`${entete('Contrôles', agentControle() ? 'Étapes à vérifier sur vos chantiers avant de passer à la suite' : 'Vos demandes de contrôle', '<button class="btn primary" id="nctl">🔍 Demander un contrôle</button>')}<div id="zone"></div>`);
+  const zone = $('#zone', p);
+  if (DEMO) { zone.innerHTML = `<div class="card">${empty('🔍', 'Les contrôles fonctionnent dans la version installée de KOORDIN.')}</div>`; return; }
+  const rendre = async () => {
+    zone.innerHTML = loading();
+    try {
+      const tous = await q(sb.from('controles').select('*, projets(nom)').order('created_at', { ascending: false }).limit(200));
+      const aFaire = tous.filter((c) => c.statut === 'demande');
+      const mes = tous.filter((c) => c.demande_par === S.profil.id);
+      zone.innerHTML = `<div class="grid k3 paie-kpis">
+          ${kpi('À contrôler', aFaire.length, 'demandes en attente', aFaire.length ? 'warn' : '')}
+          ${kpi('Acceptés', tous.filter((c) => c.statut === 'accepte' || c.statut === 'reserve').length, `dont ${tous.filter((c) => c.statut === 'reserve').length} avec réserves`)}
+          ${kpi('Refusés', tous.filter((c) => c.statut === 'refuse').length, 'à reprendre', tous.some((c) => c.statut === 'refuse') ? 'alert' : '')}
+        </div>
+        <div class="card"><div class="card-title">⏳ À contrôler</div><div class="paie-liste">${aFaire.length ? aFaire.map(ligneControle).join('') : empty('✅', 'Aucun contrôle en attente.')}</div></div>
+        ${!agentControle() ? `<div class="card"><div class="card-title">Mes demandes</div><div class="paie-liste">${mes.length ? mes.map(ligneControle).join('') : empty('🔍', 'Quand une étape est terminée, demandez un contrôle avant de passer à la suite.')}</div></div>` : ''}
+        <div class="card"><div class="card-title">Derniers contrôles</div><div class="paie-liste">${tous.filter((c) => c.statut !== 'demande').slice(0, 30).map(ligneControle).join('') || empty('📋', 'Aucun contrôle signé pour le moment.')}</div></div>`;
+      $$('[data-voir-ctl]', zone).forEach((b) => (b.onclick = () => ficheControle(b.dataset.voirCtl, rendre)));
+    } catch (e) { zone.innerHTML = `<div class="card">${empty('🔍', erreurControle(e))}</div>`; }
+  };
+  $('#nctl', p).onclick = () => demanderControle(null, null, null, rendre);
+  await rendre();
+};
+
+// Pastille sur le cockpit pour les agents
+async function puceControles() {
+  if (DEMO || !agentControle()) return;
+  try {
+    const { count } = await sb.from('controles').select('id', { count: 'exact', head: true }).eq('statut', 'demande');
+    const zone = $('#main .cockpit-puces') || (() => { const c = $('#main .cockpit'); if (!c) return null; c.insertAdjacentHTML('beforeend', '<div class="cockpit-puces"></div>'); return $('.cockpit-puces', c); })();
+    if (count && zone) zone.insertAdjacentHTML('afterbegin', `<a class="puce warn" href="#/controles">🔍 ${count} contrôle${count > 1 ? 's' : ''} à faire</a>`);
+  } catch { /* table absente */ }
+}
+
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
@@ -2376,6 +2641,7 @@ PAGES.dashboard = async () => {
   await encartVersementsAConfirmer().catch(() => {});
   placerAnnonce($('#zone-annonce'));
   encartSavoir();
+  puceControles();
   encartNotifications();
   await encartCommuniques();
 };
@@ -3112,7 +3378,7 @@ PAGES.projet = async (id) => {
     ['equipe', 'Équipe'],
     ...(can('direction', 'coordinateur', 'achats', 'comptable', 'magasinier') ? [['achats', 'Achats et factures']] : []),
     ['galerie', '📷 Galerie'],
-    ...(can('direction', 'coordinateur', 'technicien') && !DEMO ? [['reception', '🤝 Réception']] : []),
+    ...(can('direction', 'coordinateur', 'technicien') && !DEMO ? [['controles', '✅ Contrôles'], ['reception', '🤝 Réception']] : []),
     ['communiques', 'Communiqués'],
   ];
   if (!onglets.some(([k]) => k === ongletProjet)) ongletProjet = 'apercu';
@@ -3179,7 +3445,7 @@ async function rendreOngletProjet(projet) {
   const zone = $('#onglet');
   zone.innerHTML = loading();
   detruireGraphiques();
-  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques, galerie: ongletGalerie, reception: ongletReception };
+  const ONGLETS = { apercu: ongletApercu, lots: ongletLots, planning: ongletPlanning, rapports: ongletRapports, equipe: ongletEquipe, achats: ongletAchatsProjet, communiques: ongletCommuniques, galerie: ongletGalerie, reception: ongletReception, controles: ongletControles };
   try {
     await ONGLETS[ongletProjet](projet, zone);
   } catch (e) {

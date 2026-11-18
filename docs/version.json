@@ -1,8 +1,10 @@
 {
-  "version": "3.5.1",
+  "version": "3.6",
   "date": "2026-11-18",
   "nouveautes": [
-    "📦 Les techniciens ont maintenant accès au Stock : ils voient les quantités disponibles au magasin.",
-    "Ils peuvent noter le matériel pris pour leur chantier ou rendu au magasin (bouton « Prendre / rendre du matériel ») ; le magasin, la direction et la coordination sont prévenus avec leur nom."
+    "🔍 Nouveau : les contrôles par corps d’état (points d’arrêt). Une étape terminée — implantation, fouilles, ferraillage, coffrage, bétonnage, maçonnerie, électricité, plomberie, carrelage… — est vérifiée avant de passer à la suivante.",
+    "Le technicien demande le contrôle ; un agent de l’entreprise (Direction ou Coordination) coche les points sur place, prend des photos et signe : ✅ accepté, ⚠️ accepté avec réserves ou ⛔ refusé.",
+    "Le demandeur est prévenu tout de suite (notification), et la fiche de contrôle en PDF est prête à envoyer.",
+    "Sur chaque chantier, l’onglet « ✅ Contrôles » montre la frise des étapes du gros œuvre et du second œuvre."
   ]
 }
