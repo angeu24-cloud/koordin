@@ -1,10 +1,9 @@
 {
-  "version": "3.6",
-  "date": "2026-11-18",
+  "version": "3.6.1",
+  "date": "2026-11-19",
   "nouveautes": [
-    "🔍 Nouveau : les contrôles par corps d’état (points d’arrêt). Une étape terminée — implantation, fouilles, ferraillage, coffrage, bétonnage, maçonnerie, électricité, plomberie, carrelage… — est vérifiée avant de passer à la suivante.",
-    "Le technicien demande le contrôle ; un agent de l’entreprise (Direction ou Coordination) coche les points sur place, prend des photos et signe : ✅ accepté, ⚠️ accepté avec réserves ou ⛔ refusé.",
-    "Le demandeur est prévenu tout de suite (notification), et la fiche de contrôle en PDF est prête à envoyer.",
-    "Sur chaque chantier, l’onglet « ✅ Contrôles » montre la frise des étapes du gros œuvre et du second œuvre."
+    "👤 Contrôles : choisissez qui doit contrôler. La Direction peut demander à un technicien de réceptionner un ouvrage (fouilles, ferraillage…), et un technicien peut demander à un collègue de vérifier son travail.",
+    "La personne choisie est prévenue sur son téléphone, voit la fiche et la signe. On peut changer de contrôleur tant que le contrôle n’est pas fait.",
+    "La page Contrôles montre « À contrôler par moi », « Mes demandes » et « En attente chez les autres »."
   ]
 }

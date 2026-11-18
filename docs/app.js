@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.6';
+const VERSION = '3.6.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -2406,6 +2406,11 @@ const erreurControle = (e) => {
   return messageErreur(e);
 };
 const libelleControle = (c) => `${c.titre}${c.zone ? ` — ${c.zone}` : ''}`;
+const peutControlerFiche = (c) => c.statut === 'demande' && (c.demande_par !== S.profil.id || can('direction'))
+  && (c.controleur_designe ? c.controleur_designe === S.profil.id || can('direction') : agentControle());
+const pourMoi = (c) => c.statut === 'demande' && (c.controleur_designe === S.profil.id || (!c.controleur_designe && agentControle() && c.demande_par !== S.profil.id) || (can('direction') && c.demande_par !== S.profil.id));
+const controleursPossibles = () => (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id && ['direction', 'coordinateur', 'technicien'].includes(x.role));
+const optionsControleurs = () => [['', '— La Direction ou la Coordination —'], ...controleursPossibles().map((x) => [x.id, `${x.nom} · ${ROLES[x.role]?.label || x.role}`])];
 
 // Frise des étapes d'un chantier : dernier contrôle de chaque phase
 function friseControles(controles) {
@@ -2440,19 +2445,20 @@ async function ongletControles(projet, zone) {
   $$('.frise-etape', zone).forEach((b) => (b.onclick = () => (b.dataset.ctl ? ficheControle(b.dataset.ctl, rafraichir) : demanderControle(projet, b.dataset.phase, controles, rafraichir))));
   $$('[data-voir-ctl]', zone).forEach((b) => (b.onclick = () => ficheControle(b.dataset.voirCtl, rafraichir)));
 }
-const ligneControle = (c) => `<button type="button" class="paie-ligne vente-ligne" data-voir-ctl="${c.id}"><div class="paie-nom"><b>${phaseDe(c.phase)?.ic || '🔍'} ${esc(libelleControle(c))}</b><span>${c.projets?.nom ? `${esc(c.projets.nom)} · ` : ''}demandé par ${esc(nomMembre(c.demande_par))} · ${ago(c.demande_le)}${c.controle_le ? ` · contrôlé par ${esc(c.nom_controleur || '')}` : ''}</span></div><div class="paie-montant">${badge(STATUT_CONTROLE[c.statut])}</div></button>`;
+const ligneControle = (c) => `<button type="button" class="paie-ligne vente-ligne ${pourMoi(c) ? 'ctl-pour-moi' : ''}" data-voir-ctl="${c.id}"><div class="paie-nom"><b>${phaseDe(c.phase)?.ic || '🔍'} ${esc(libelleControle(c))}</b><span>${c.projets?.nom ? `${esc(c.projets.nom)} · ` : ''}demandé par ${esc(nomMembre(c.demande_par))} · ${ago(c.demande_le)}${c.controle_le ? ` · contrôlé par ${esc(c.nom_controleur || '')}` : c.controleur_designe ? ` · 👤 confié à ${c.controleur_designe === S.profil.id ? '<b>vous</b>' : esc(nomMembre(c.controleur_designe))}` : ''}</span></div><div class="paie-montant">${badge(STATUT_CONTROLE[c.statut])}</div></button>`;
 
 async function demanderControle(projet, phase, controles, apres) {
   const projets = projet ? [projet] : (await listeProjets()).filter((x) => x.statut !== 'termine');
   if (!projets.length) { toast('Aucun chantier disponible.', 'warn'); return; }
   ouvrirModale({
-    titre: '🔍 Demander un contrôle',
+    titre: '🔍 Demander un contrôle ou une réception',
     boutonOk: 'Envoyer la demande',
-    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Un agent de l’entreprise sera prévenu pour venir vérifier l’étape avant que vous passiez à la suite.</p>
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Choisissez l’ouvrage à réceptionner et la personne qui doit le contrôler : elle sera prévenue sur son téléphone.</p>
       <div class="form-grid">
         ${projet ? '' : F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, full: true, vide: '— Choisir —' })}
         ${F.select('phase', 'Étape à contrôler', [['gros', '— Gros œuvre —'], ...PHASES.filter((x) => x.c === 'gros').map((x) => [x.k, `${x.ic} ${x.t}`]), ['second', '— Second œuvre —'], ...PHASES.filter((x) => x.c === 'second').map((x) => [x.k, `${x.ic} ${x.t}`])], phase || '', { required: true, full: true, vide: '— Choisir —' })}
         ${F.text('zone', 'Où exactement ?', '', { full: true, placeholder: 'Ex. Dalle du R+1, poteaux P1 à P8, salle de bain 2…' })}
+        ${F.select('controleur_designe', 'Qui doit contrôler ?', optionsControleurs(), '', { full: true, hint: 'Un collègue technicien, la Coordination ou la Direction.' })}
         ${F.area('note_demande', 'Message pour l’agent (facultatif)', '', { placeholder: 'Ex. Coulage prévu demain à 7 h.' })}
       </div><div id="ctl-avert"></div>`,
     onOpen: (el) => {
@@ -2470,9 +2476,9 @@ async function demanderControle(projet, phase, controles, apres) {
       const ph = phaseDe(d.phase);
       if (!ph) throw new Error('Choisissez l’étape à contrôler.');
       try {
-        await q(sb.from('controles').insert({ projet_id: projet?.id || d.projet_id, corps: ph.c, phase: ph.k, titre: ph.t, zone: d.zone || null, note_demande: d.note_demande || null, points: ph.p.map((texte) => ({ texte, etat: null, note: '' })) }));
+        await q(sb.from('controles').insert({ projet_id: projet?.id || d.projet_id, corps: ph.c, phase: ph.k, titre: ph.t, zone: d.zone || null, note_demande: d.note_demande || null, controleur_designe: d.controleur_designe || null, points: ph.p.map((texte) => ({ texte, etat: null, note: '' })) }));
       } catch (e) { throw new Error(erreurControle(e)); }
-      toast('🔍 Demande envoyée : un agent va venir contrôler.');
+      toast(d.controleur_designe ? `🔍 Demande envoyée à ${nomMembre(d.controleur_designe)}.` : '🔍 Demande envoyée : un agent va venir contrôler.');
       apres?.();
     },
   });
@@ -2481,13 +2487,15 @@ async function demanderControle(projet, phase, controles, apres) {
 async function ficheControle(id, apres) {
   const c = await q(sb.from('controles').select('*, projets(nom, localisation)').eq('id', id).single());
   const ouvert = c.statut === 'demande';
-  const peutControler = ouvert && agentControle() && (c.demande_par !== S.profil.id || can('direction'));
+  const peutControler = peutControlerFiche(c);
+  const peutReattribuer = ouvert && (c.demande_par === S.profil.id || agentControle());
   const urls = await urlsPhotos(c.photos || []);
   let points = (c.points || []).map((x) => ({ ...x }));
   let photos = [...(c.photos || [])];
   const m = ouvrirModale({ titre: `${phaseDe(c.phase)?.ic || '🔍'} ${libelleControle(c)}`, large: true, corps: `
     <div class="split" style="flex-wrap:wrap;gap:8px;margin-bottom:8px"><span class="muted">${esc(c.projets?.nom || '')} · ${c.corps === 'gros' ? 'Gros œuvre' : 'Second œuvre'}</span>${badge(STATUT_CONTROLE[c.statut])}</div>
     <p class="muted" style="font-size:13px">Demandé par <b>${esc(nomMembre(c.demande_par))}</b> le ${new Date(c.demande_le).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${c.note_demande ? ` — « ${esc(c.note_demande)} »` : ''}</p>
+    ${ouvert ? `<div class="ctl-confie">👤 Contrôle confié à <b>${c.controleur_designe ? (c.controleur_designe === S.profil.id ? 'vous' : esc(nomMembre(c.controleur_designe))) : 'la Direction ou la Coordination'}</b>${peutReattribuer ? ' <button type="button" class="btn sm ghost" id="ctl-reattribuer">Changer</button>' : ''}</div>` : ''}
     <div class="detail-block mt"><h4>Points à vérifier</h4><div class="ctl-points" id="ctl-points"></div>
       ${peutControler ? '<button type="button" class="btn sm ghost mt" id="ctl-ajout">＋ Ajouter un point</button>' : ''}</div>
     <div class="detail-block"><h4>Photos</h4><div class="ctl-photos" id="ctl-photos"></div>
@@ -2497,7 +2505,7 @@ async function ficheControle(id, apres) {
       <label class="field">Nom de l’agent<input class="input" id="ctl-nom" value="${esc(S.profil.nom)}"></label><div class="sig" id="ctl-sig"></div></div>
       <div class="ctl-decisions"><button type="button" class="btn ctl-ok" data-dec="accepte">✅ Accepter</button><button type="button" class="btn ctl-res" data-dec="reserve">⚠️ Accepter avec réserves</button><button type="button" class="btn ctl-ko" data-dec="refuse">⛔ Refuser</button></div>`
       : c.controle_le ? `<div class="detail-block"><h4>Contrôlé par ${esc(c.nom_controleur || '')} le ${new Date(c.controle_le).toLocaleString('fr-FR')}</h4>${c.signature ? `<img class="signature-img" src="${esc(c.signature)}" alt="Signature de l’agent">` : ''}</div>`
-      : `<div class="notice">${agentControle() && c.demande_par === S.profil.id ? 'Vous avez fait cette demande : un autre agent doit faire le contrôle.' : '⏳ En attente du passage d’un agent de contrôle.'}</div>`}
+      : `<div class="notice">${c.demande_par === S.profil.id ? '⏳ Vous avez fait cette demande : la personne désignée doit faire le contrôle.' : '⏳ En attente du passage de la personne chargée du contrôle.'}</div>`}
     <div class="rc-boutons mt">
       ${!ouvert ? '<button type="button" class="btn" id="ctl-pdf">📄 Fiche PDF</button>' : ''}
       ${c.statut === 'refuse' || c.statut === 'reserve' ? '<button type="button" class="btn primary" id="ctl-redemande">🔁 Redemander un contrôle</button>' : ''}
@@ -2543,10 +2551,20 @@ async function ficheControle(id, apres) {
     } catch (e) { toast(erreurControle(e), 'err', 7000); }
   }));
   $('#ctl-pdf', el)?.addEventListener('click', () => pdfControle(c));
+  $('#ctl-reattribuer', el)?.addEventListener('click', () => ouvrirModale({
+    titre: '👤 Qui doit contrôler ?',
+    boutonOk: 'Confier le contrôle',
+    corps: `<div class="form-grid">${F.select('controleur_designe', 'Personne chargée du contrôle', optionsControleurs().filter(([v]) => v !== c.demande_par), c.controleur_designe || '', { full: true })}</div>`,
+    onSubmit: async (d) => {
+      try { await q(sb.from('controles').update({ controleur_designe: d.controleur_designe || null }).eq('id', c.id)); } catch (e) { throw new Error(erreurControle(e)); }
+      toast(d.controleur_designe ? `Contrôle confié à ${nomMembre(d.controleur_designe)} : prévenu sur son téléphone.` : 'Contrôle confié à la Direction ou la Coordination.');
+      m.fermer(); apres?.(); setTimeout(() => ficheControle(c.id, apres), 300);
+    },
+  }));
   $('#ctl-redemande', el)?.addEventListener('click', async () => {
     try {
       const ph = phaseDe(c.phase);
-      await q(sb.from('controles').insert({ projet_id: c.projet_id, corps: c.corps, phase: c.phase, titre: c.titre, zone: c.zone, note_demande: 'Nouveau contrôle après reprise', points: (ph?.p || points.map((x) => x.texte)).map((texte) => ({ texte, etat: null, note: '' })) }));
+      await q(sb.from('controles').insert({ projet_id: c.projet_id, corps: c.corps, phase: c.phase, titre: c.titre, zone: c.zone, note_demande: 'Nouveau contrôle après reprise', controleur_designe: c.controleur_id && c.controleur_id !== S.profil.id ? c.controleur_id : null, points: (ph?.p || points.map((x) => x.texte)).map((texte) => ({ texte, etat: null, note: '' })) }));
       toast('🔁 Nouvelle demande envoyée.'); m.fermer(); apres?.();
     } catch (e) { toast(erreurControle(e), 'err'); }
   });
@@ -2598,22 +2616,24 @@ async function pdfControle(c) {
 
 // Page générale : ce qu'il y a à contrôler sur tous les chantiers
 PAGES.controles = async () => {
-  const p = page(`${entete('Contrôles', agentControle() ? 'Étapes à vérifier sur vos chantiers avant de passer à la suite' : 'Vos demandes de contrôle', '<button class="btn primary" id="nctl">🔍 Demander un contrôle</button>')}<div id="zone"></div>`);
+  const p = page(`${entete('Contrôles', 'Réception des ouvrages, étape par étape, avant de passer à la suite', '<button class="btn primary" id="nctl">🔍 Demander un contrôle</button>')}<div id="zone"></div>`);
   const zone = $('#zone', p);
   if (DEMO) { zone.innerHTML = `<div class="card">${empty('🔍', 'Les contrôles fonctionnent dans la version installée de KOORDIN.')}</div>`; return; }
   const rendre = async () => {
     zone.innerHTML = loading();
     try {
       const tous = await q(sb.from('controles').select('*, projets(nom)').order('created_at', { ascending: false }).limit(200));
-      const aFaire = tous.filter((c) => c.statut === 'demande');
+      const aFaire = tous.filter(pourMoi);
+      const autres = tous.filter((c) => c.statut === 'demande' && !pourMoi(c) && c.demande_par !== S.profil.id);
       const mes = tous.filter((c) => c.demande_par === S.profil.id);
       zone.innerHTML = `<div class="grid k3 paie-kpis">
-          ${kpi('À contrôler', aFaire.length, 'demandes en attente', aFaire.length ? 'warn' : '')}
+          ${kpi('À contrôler par moi', aFaire.length, 'demandes qui vous attendent', aFaire.length ? 'warn' : '')}
           ${kpi('Acceptés', tous.filter((c) => c.statut === 'accepte' || c.statut === 'reserve').length, `dont ${tous.filter((c) => c.statut === 'reserve').length} avec réserves`)}
           ${kpi('Refusés', tous.filter((c) => c.statut === 'refuse').length, 'à reprendre', tous.some((c) => c.statut === 'refuse') ? 'alert' : '')}
         </div>
-        <div class="card"><div class="card-title">⏳ À contrôler</div><div class="paie-liste">${aFaire.length ? aFaire.map(ligneControle).join('') : empty('✅', 'Aucun contrôle en attente.')}</div></div>
-        ${!agentControle() ? `<div class="card"><div class="card-title">Mes demandes</div><div class="paie-liste">${mes.length ? mes.map(ligneControle).join('') : empty('🔍', 'Quand une étape est terminée, demandez un contrôle avant de passer à la suite.')}</div></div>` : ''}
+        <div class="card"><div class="card-title">⏳ À contrôler par moi</div><div class="paie-liste">${aFaire.length ? aFaire.map(ligneControle).join('') : empty('✅', 'Aucun contrôle ne vous attend.')}</div></div>
+        <div class="card"><div class="card-title">📤 Mes demandes</div><div class="paie-liste">${mes.length ? mes.map(ligneControle).join('') : empty('🔍', 'Quand une étape est terminée, demandez un contrôle ou une réception à un collègue.')}</div></div>
+        ${autres.length ? `<div class="card"><div class="card-title">👥 En attente chez les autres</div><div class="paie-liste">${autres.map(ligneControle).join('')}</div></div>` : ''}
         <div class="card"><div class="card-title">Derniers contrôles</div><div class="paie-liste">${tous.filter((c) => c.statut !== 'demande').slice(0, 30).map(ligneControle).join('') || empty('📋', 'Aucun contrôle signé pour le moment.')}</div></div>`;
       $$('[data-voir-ctl]', zone).forEach((b) => (b.onclick = () => ficheControle(b.dataset.voirCtl, rendre)));
     } catch (e) { zone.innerHTML = `<div class="card">${empty('🔍', erreurControle(e))}</div>`; }
@@ -2624,9 +2644,10 @@ PAGES.controles = async () => {
 
 // Pastille sur le cockpit pour les agents
 async function puceControles() {
-  if (DEMO || !agentControle()) return;
+  if (DEMO || !can('direction', 'coordinateur', 'technicien')) return;
   try {
-    const { count } = await sb.from('controles').select('id', { count: 'exact', head: true }).eq('statut', 'demande');
+    const { data } = await sb.from('controles').select('id, statut, demande_par, controleur_designe').eq('statut', 'demande');
+    const count = (data || []).filter(pourMoi).length;
     const zone = $('#main .cockpit-puces') || (() => { const c = $('#main .cockpit'); if (!c) return null; c.insertAdjacentHTML('beforeend', '<div class="cockpit-puces"></div>'); return $('.cockpit-puces', c); })();
     if (count && zone) zone.insertAdjacentHTML('afterbegin', `<a class="puce warn" href="#/controles">🔍 ${count} contrôle${count > 1 ? 's' : ''} à faire</a>`);
   } catch { /* table absente */ }

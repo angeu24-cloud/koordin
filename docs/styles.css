@@ -1782,3 +1782,8 @@ body.en-appel .koko { display: none; }
 .btn.ctl-ok { background: linear-gradient(135deg, #3ddc97, #16a273); color: #052a1b; border: 0; box-shadow: 0 4px 0 #0d6b4b; }
 .btn.ctl-res { background: linear-gradient(135deg, #8cc6ff, #2f7ae6); color: #fff; border: 0; box-shadow: 0 4px 0 #1d4f99; }
 .btn.ctl-ko { background: linear-gradient(135deg, #ff8a8a, #e5484d); color: #fff; border: 0; box-shadow: 0 4px 0 #9b2b2f; }
+
+/* 3.6.1 : contrôle confié à une personne */
+.ctl-confie { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--gold-dim); border: 1px solid var(--liseré-or, var(--border)); font-size: 13.5px; }
+.ctl-confie .btn { margin-left: auto; }
+.paie-ligne.ctl-pour-moi { border-color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
