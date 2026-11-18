@@ -1,9 +1,10 @@
 {
-  "version": "3.3.1",
-  "date": "2026-11-17",
+  "version": "3.5",
+  "date": "2026-11-18",
   "nouveautes": [
-    "🗣️ La voix de Koko fonctionne mieux sur les téléphones Android.",
-    "Pour tester sa voix : touchez Koko, puis le bouton 🔊 de sa bulle (deux fois s’il affiche 🔇). Il dit « Bonjour ! Vous m’entendez ? ».",
-    "S’il ne peut pas parler, Koko explique maintenant pourquoi (volume des médias ou voix française à installer)."
+    "📚 Nouveau : « Le savoir du jour » sur l’accueil. Chaque jour, une règle du BAEL, des Eurocodes, un bon geste de mise en œuvre, de sécurité ou de second œuvre, avec sa référence.",
+    "🔊 Koko peut la lire à voix haute, et 📤 vous pouvez l’envoyer à toute l’équipe sur WhatsApp.",
+    "📖 Nouvelle rubrique « Normes et conseils » : plus de 50 fiches, une recherche (enrobage, poteau, cure…) et un 🎯 quiz pour se tester.",
+    "🎤 Dites à Koko « conseil du jour » pour l’entendre."
   ]
 }

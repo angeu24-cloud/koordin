@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.3.1';
+const VERSION = '3.5';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -43,6 +43,7 @@ const MENU = [
   { r: 'projets', court: 'Projets',         label: 'Projets',         ico: '🏗️', roles: TOUS, labelTech: 'Mes chantiers' },
   { r: 'communiques', court: 'Infos',       label: 'Communiqués',     ico: '📢', roles: TOUS },
   { r: 'appels', court: 'Appels', label: 'Appels et réunions', ico: '📹', roles: TOUS },
+  { r: 'savoir', court: 'Normes', label: 'Normes et conseils', ico: '📚', roles: TOUS },
   { r: 'nouveau-rapport', court: 'Rapport', label: 'Nouveau rapport', ico: '➕', roles: ['technicien'] },
   { r: 'rapports', court: 'Rapports',        label: 'Rapports',        ico: '📋', roles: ROLES_RAPPORT, labelTech: 'Mes rapports' },
   { r: 'pointage', court: 'Pointage', label: 'Pointage', ico: '👷', roles: ['direction', 'coordinateur', 'technicien', 'comptable'] },
@@ -1082,6 +1083,7 @@ const TRACES = {
   appels: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/>',
   contrats: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h3"/><path d="M4 7v13a1 1 0 0 0 1 1h2"/>',
   salaires: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
+  savoir: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5"/><path d="M9 7.5h7M9 11h5"/>',
   ajouter: '<path d="M12 5v14M5 12h14"/>',
   plus: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
   cloche: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
@@ -1374,7 +1376,7 @@ function bonjour() {
 // ═══════════════════════════════ 3.1 : NOUVEAU DESIGN ═══════════════════════════════
 const GROUPES_MENU = [
   ['pilotage', 'Pilotage', ['dashboard', 'projets', 'rapports', 'communiques', 'appels', 'ia']],
-  ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'securite', 'materiel']],
+  ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'securite', 'materiel', 'savoir']],
   ['argent', 'Argent', ['compta', 'ventes', 'contrats', 'salaires', 'achats']],
   ['logistique', 'Logistique', ['stock']],
   ['equipe', 'Équipe', ['equipe', 'mon-espace']],
@@ -1414,7 +1416,7 @@ function jauge(valeur, libelle, prevu = null) {
 
 function heroAccueil({ resume = '', jaugeVal = null, jaugeLib = '', prevu = null, puces = [], actions = '' } = {}) {
   const h = new Date().getHours();
-  const [salut, emoji] = h < 12 ? ['Bonjour', '☀️'] : h < 18 ? ['Bon après-midi', '🌤️'] : ['Bonsoir', '🌙'];
+  const [salut, emoji] = h < 5 ? ['Bonsoir', '🌙'] : h < 12 ? ['Bonjour', '☀️'] : h < 18 ? ['Bon après-midi', '🌤️'] : ['Bonsoir', '🌙'];
   const heure = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const actionsRap = actionsDisponibles();
   return `<section class="cockpit">
@@ -1426,7 +1428,7 @@ function heroAccueil({ resume = '', jaugeVal = null, jaugeLib = '', prevu = null
         <h1 class="cockpit-titre">${salut}<br><span class="texte-or">${esc(String(S.profil.nom).split(' ')[0])}</span> <span class="cockpit-salut" aria-hidden="true">${emoji}</span></h1>
         ${resume ? `<p class="cockpit-resume">${esc(resume)}</p>` : ''}
       </div>
-      ${jaugeVal != null ? `<div class="cockpit-jauge">${jauge(jaugeVal, jaugeLib, prevu)}</div>` : ''}
+      ${jaugeVal != null ? `<div class="cockpit-jauge" data-val="${Math.round(num(jaugeVal))}" data-lib="${esc(jaugeLib)}">${jauge(jaugeVal, jaugeLib, prevu)}</div>` : ''}
     </div>
     ${puces.length ? `<div class="cockpit-puces">${puces.map(([t, lien, cls]) => `<a class="puce ${cls || ''}" href="${lien}">${t}</a>`).join('')}</div>` : ''}
     ${actions ? `<div class="cockpit-actions">${actions}</div>` : ''}
@@ -1450,6 +1452,7 @@ function railChantiers(projets, url) {
 // Animation des chiffres, des jauges, horloge
 function animerPage(racine = document) {
   $$('.jauge-val', racine).forEach((c) => requestAnimationFrame(() => requestAnimationFrame(() => { c.style.strokeDashoffset = c.dataset.cible; })));
+  lancerMaquette3D($('.cockpit-jauge[data-val]', racine));
   if (reduireAnimations()) return;
   $$('.kpi-value, .jauge-n', racine).forEach(compteur);
 }
@@ -1541,7 +1544,7 @@ const KOKO_TENUES = { pilotage: 'chef', terrain: 'terrain', argent: 'costume', l
 const KOKO_PAGES = { appels: 'casque-audio', ia: 'ia', 'nouveau-rapport': 'terrain', pointage: 'terrain' };
 const KOKO_NOMS = { chef: 'chef de chantier', terrain: 'tenue de chantier', costume: 'costume', magasin: 'tenue de magasinier', polo: 'polo de l’équipe', 'casque-audio': 'casque d’appel', ia: 'mode IA' };
 const KOKO_CONSEILS = {
-  dashboard: ['Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.', 'Appuyez longtemps sur moi et dites « ouvre la compta » ou « appelle Koffi » 🎤'],
+  dashboard: ['Dites-moi « conseil du jour » et je vous lis la règle de chantier du jour 📚', 'Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.', 'Appuyez longtemps sur moi et dites « ouvre la compta » ou « appelle Koffi » 🎤'],
   projets: ['Touchez un chantier pour voir son planning, ses photos et son budget.', 'Une photo de couverture rend vos chantiers bien plus faciles à reconnaître 📸'],
   rapports: ['Les rapports du terrain arrivent ici, avec leurs photos.', 'Quand un rapport est validé ou rejeté, son auteur est prévenu tout de suite.'],
   'nouveau-rapport': ['Deux ou trois photos valent mieux qu’un long texte 📸', 'Pas de réseau ? Pas de souci : j’enverrai le rapport dès que ça revient.'],
@@ -1559,6 +1562,7 @@ const KOKO_CONSEILS = {
   ia: ['Posez n’importe quelle question sur vos chantiers 🧠'],
   communiques: ['Un communiqué ici, et toute l’équipe est informée 📢'],
   'mon-espace': ['Votre espace personnel : vos salaires et vos signatures 🔒'],
+  savoir: ['Une règle du BAEL ou un bon geste de chantier chaque jour 📚', 'Testez-vous avec le quiz, et partagez les fiches à votre équipe sur WhatsApp 🎯'],
   abonnement: ['Votre formule KOORDIN se gère ici.'],
   parametres: ['Les réglages de votre entreprise sont ici ⚙️'],
 };
@@ -1918,6 +1922,7 @@ const KOKO_ROUTES = [
   [/abonnement|formule|licence/, 'abonnement'],
   [/chantiers?|projets?/, 'projets'],
   [/accueil|tableau de bord|cockpit|maison/, 'dashboard'],
+  [/norme|bael|eurocode|dtu|conseil|savoir|quiz/, 'savoir'],
 ];
 
 async function kokoComprendre(phrase) {
@@ -1936,6 +1941,7 @@ async function kokoComprendre(phrase) {
     if (qui) { repondre(`J’appelle ${qui.nom} 📹`); setTimeout(() => lancerAppel({ mode: role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return; }
     repondre(`Je ne trouve pas « ${nom} » dans votre équipe.`); return;
   }
+  if (/(savoir|conseil|astuce|regle) du jour/.test(t)) { const sj = savoirDuJour(); kokoDire(`${sj.t}. ${sj.x}`, 12000); return; }
   if (/combien/.test(t) && /rapport/.test(t) && !DEMO) {
     try {
       const p = await q(sb.from('v_projets').select('rapports_en_attente'));
@@ -1986,6 +1992,381 @@ function kokoEcouter() {
   reveil();
 })();
 
+// ═══════════════════════════════ 3.4 : LA 3D ═══════════════════════════════
+// Maquette 3D du chantier dans le cockpit (Three.js chargé à la demande) et relief des cartes
+// qui suit l'inclinaison du téléphone (ou la souris sur ordinateur).
+let troisCharge = null;
+function chargerTrois() {
+  if (window.THREE) return Promise.resolve(window.THREE);
+  troisCharge ||= new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'three.min.js?v=1';
+    s.onload = () => (window.THREE ? ok(window.THREE) : ko(new Error('3D')));
+    s.onerror = () => { troisCharge = null; ko(new Error('3D')); };
+    document.head.appendChild(s);
+  });
+  return troisCharge;
+}
+const webglPossible = () => { try { const c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch { return false; } };
+
+async function lancerMaquette3D(hote) {
+  if (!hote || hote.dataset.lance || reduireAnimations() || !webglPossible()) return;
+  hote.dataset.lance = '1';
+  let T;
+  try { T = await chargerTrois(); } catch { return; }
+  if (!hote.isConnected) return;
+  const avancement = Math.max(0, Math.min(100, num(hote.dataset.val)));
+  const libelle = hote.dataset.lib || 'avancement';
+  const zone = document.createElement('div');
+  zone.className = 'maquette3d';
+  zone.innerHTML = `<div class="maquette3d-info"><b class="jauge-n">${avancement} %</b><span>${esc(libelle)}</span></div><span class="maquette3d-aide">↔ Faites-moi tourner</span>`;
+  hote.appendChild(zone);
+  hote.classList.add('en-3d');
+  compteur($('.jauge-n', zone));
+
+  const nuit = (() => { const h = new Date().getHours(); return h < 6 || h >= 19; })();
+  const renderer = new T.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
+  zone.prepend(renderer.domElement);
+  const scene = new T.Scene();
+  const camera = new T.PerspectiveCamera(32, 1, 0.1, 100);
+
+  // Lumières : soleil doré le jour, lune bleutée la nuit
+  scene.add(new T.HemisphereLight(nuit ? 0x6f86c9 : 0xfff1d6, nuit ? 0x10131f : 0x2a2418, nuit ? 0.9 : 1.15));
+  const soleil = new T.DirectionalLight(nuit ? 0x9fb4ff : 0xffd38a, nuit ? 0.9 : 1.9);
+  soleil.position.set(6, 12, 7);
+  soleil.castShadow = true;
+  soleil.shadow.mapSize.set(1024, 1024);
+  Object.assign(soleil.shadow.camera, { left: -8, right: 8, top: 10, bottom: -6 });
+  scene.add(soleil);
+
+  const mat = (c, o = {}) => new T.MeshStandardMaterial({ color: c, roughness: 0.75, metalness: 0.05, ...o });
+  const boite = (l, h, p, m) => { const b = new T.Mesh(new T.BoxGeometry(l, h, p), m); b.castShadow = true; b.receiveShadow = true; return b; };
+
+  // Plateau du chantier
+  const plateau = new T.Mesh(new T.CylinderGeometry(6.6, 6.9, 0.45, 64), mat(0x1b2131, { roughness: 0.9 }));
+  plateau.position.y = -0.23; plateau.receiveShadow = true; scene.add(plateau);
+  const liseré = new T.Mesh(new T.TorusGeometry(6.75, 0.06, 8, 96), mat(0xe8a020, { emissive: 0x6b4405, metalness: 0.6, roughness: 0.3 }));
+  liseré.rotation.x = Math.PI / 2; liseré.position.y = 0.01; scene.add(liseré);
+  const grille = new T.GridHelper(11, 22, 0xe8a020, 0x3a4560);
+  grille.material.transparent = true; grille.material.opacity = 0.18; grille.position.y = 0.012; scene.add(grille);
+
+  // Immeuble : un étage construit par tranche de 10 %
+  const ETAGES = 10, H = 0.52, faits = avancement / 10;
+  const immeuble = new T.Group(); immeuble.position.set(-0.6, 0, 0.2); scene.add(immeuble);
+  const fenetres = (() => {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 32;
+    const x = c.getContext('2d'); x.fillStyle = '#c9cdd6'; x.fillRect(0, 0, 128, 32);
+    for (let i = 0; i < 6; i++) { x.fillStyle = nuit ? (Math.random() < 0.65 ? '#ffd56b' : '#2a3350') : '#5c7fb3'; x.fillRect(6 + i * 20.5, 8, 13, 16); }
+    const t = new T.CanvasTexture(c); if ('colorSpace' in t) t.colorSpace = T.SRGBColorSpace; return t;
+  })();
+  const murMat = new T.MeshStandardMaterial({ map: fenetres, roughness: 0.6, emissive: nuit ? 0xffd56b : 0x000000, emissiveMap: nuit ? fenetres : null, emissiveIntensity: nuit ? 0.55 : 0 });
+  const dalleMat = mat(0x8d93a3); const poteauMat = mat(0xb9bec9);
+  const fantome = new T.LineBasicMaterial({ color: 0xf5bf50, transparent: true, opacity: 0.28 });
+  const apparitions = [];
+  for (let i = 0; i < ETAGES; i++) {
+    const y = i * H;
+    if (i < Math.floor(faits)) {
+      const etage = new T.Group(); etage.position.y = y;
+      const mur = boite(3, H - 0.08, 2.4, murMat); mur.position.y = (H - 0.08) / 2 + 0.08; etage.add(mur);
+      const dalle = boite(3.25, 0.08, 2.65, dalleMat); dalle.position.y = 0.04; etage.add(dalle);
+      etage.scale.y = 0.001; immeuble.add(etage); apparitions.push(etage);
+    } else if (i === Math.floor(faits) && avancement < 100) {
+      const etage = new T.Group(); etage.position.y = y;
+      const dalle = boite(3.25, 0.08, 2.65, dalleMat); dalle.position.y = 0.04; etage.add(dalle);
+      const part = faits - Math.floor(faits);
+      [[-1.45, -1.15], [1.45, -1.15], [-1.45, 1.15], [1.45, 1.15], [0, -1.15], [0, 1.15]].slice(0, 2 + Math.round(part * 4)).forEach(([px, pz]) => {
+        const p = boite(0.12, H - 0.08, 0.12, poteauMat); p.position.set(px, (H - 0.08) / 2 + 0.08, pz); etage.add(p);
+      });
+      const halo = new T.Mesh(new T.BoxGeometry(3.3, 0.04, 2.7), new T.MeshBasicMaterial({ color: 0xf5bf50, transparent: true, opacity: 0.55 }));
+      halo.position.y = 0.1; halo.name = 'halo'; etage.add(halo);
+      etage.scale.y = 0.001; immeuble.add(etage); apparitions.push(etage);
+    } else {
+      const lignes = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(3, H - 0.04, 2.4)), fantome);
+      lignes.position.y = y + H / 2; immeuble.add(lignes);
+    }
+  }
+  // Échafaudage doré le long de la façade
+  const echafMat = new T.LineBasicMaterial({ color: 0xf0a92a, transparent: true, opacity: 0.75 });
+  const hautEchaf = Math.max(1, Math.ceil(faits)) * H + 0.2;
+  const ptsEchaf = [];
+  for (let k = 0; k <= Math.ceil(hautEchaf / H); k++) { const y = Math.min(k * H, hautEchaf); ptsEchaf.push(-1.6, y, 1.45, 1.6, y, 1.45); }
+  [-1.6, -0.5, 0.6, 1.6].forEach((x) => ptsEchaf.push(x, 0, 1.45, x, hautEchaf, 1.45));
+  const echafGeo = new T.BufferGeometry(); echafGeo.setAttribute('position', new T.Float32BufferAttribute(ptsEchaf, 3));
+  immeuble.add(new T.LineSegments(echafGeo, echafMat));
+
+  // Grue à tour
+  const jaune = mat(0xf2b01e, { roughness: 0.5, metalness: 0.2 });
+  const grue = new T.Group(); grue.position.set(2.6, 0, -1.4); scene.add(grue);
+  const mat2 = boite(0.28, 7.2, 0.28, jaune); mat2.position.y = 3.6; grue.add(mat2);
+  const treillis = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(0.28, 7.2, 0.28, 1, 12, 1)), new T.LineBasicMaterial({ color: 0x7a5205 }));
+  treillis.position.y = 3.6; grue.add(treillis);
+  const tete = new T.Group(); tete.position.y = 7.25; grue.add(tete);
+  const fleche = boite(6.2, 0.2, 0.22, jaune); fleche.position.x = -2.2; tete.add(fleche);
+  const contre = boite(1.8, 0.2, 0.22, jaune); contre.position.x = 1.6; tete.add(contre);
+  const lest = boite(0.6, 0.45, 0.5, mat(0x3b4256)); lest.position.set(2.3, -0.25, 0); tete.add(lest);
+  const cabine = boite(0.5, 0.4, 0.45, mat(0xe6e9f0)); cabine.position.set(0.15, -0.3, 0.3); tete.add(cabine);
+  const chariot = new T.Group(); chariot.position.x = -3.4; tete.add(chariot);
+  const cable = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0, 0, 0), new T.Vector3(0, -2.6, 0)]), new T.LineBasicMaterial({ color: 0x222833 }));
+  chariot.add(cable);
+  const charge = boite(0.7, 0.35, 0.5, mat(0xc08a4c)); charge.position.y = -2.8; chariot.add(charge);
+  const gyro = new T.Mesh(new T.SphereGeometry(0.11, 12, 12), new T.MeshBasicMaterial({ color: 0xff3b30 }));
+  gyro.position.y = 0.25; tete.add(gyro);
+  const gyroLum = new T.PointLight(0xff3b30, 0, 5); gyroLum.position.y = 0.4; tete.add(gyroLum);
+
+  // Poussière dorée qui flotte
+  const N = 70, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 12; pos[i * 3 + 1] = Math.random() * 8; pos[i * 3 + 2] = (Math.random() - 0.5) * 12; }
+  const pg = new T.BufferGeometry(); pg.setAttribute('position', new T.BufferAttribute(pos, 3));
+  const poussiere = new T.Points(pg, new T.PointsMaterial({ color: 0xffd98a, size: 0.07, transparent: true, opacity: 0.7, depthWrite: false }));
+  scene.add(poussiere);
+
+  // Caméra en orbite, que l'on fait tourner au doigt
+  let angle = 0.7, cible = 0.7, vitesse = 0.0025, glisse = null;
+  const toile = renderer.domElement;
+  toile.addEventListener('pointerdown', (e) => { glisse = { x: e.clientX, a: cible }; toile.setPointerCapture(e.pointerId); zone.classList.add('touche'); });
+  toile.addEventListener('pointermove', (e) => { if (glisse) cible = glisse.a - (e.clientX - glisse.x) * 0.012; });
+  const lacher = () => { glisse = null; };
+  toile.addEventListener('pointerup', lacher); toile.addEventListener('pointercancel', lacher);
+
+  const taille = () => { const r = zone.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); };
+  taille();
+  const ro = new ResizeObserver(taille); ro.observe(zone);
+  let visible = true;
+  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }); io.observe(zone);
+
+  const t0 = performance.now();
+  const boucle = (t) => {
+    if (!zone.isConnected) { ro.disconnect(); io.disconnect(); renderer.dispose(); scene.traverse((o) => { o.geometry?.dispose?.(); }); return; }
+    requestAnimationFrame(boucle);
+    if (!visible || document.hidden) return;
+    const s = (t - t0) / 1000;
+    apparitions.forEach((e, i) => { const k = Math.min(1, Math.max(0, (s - 0.25 - i * 0.12) / 0.45)); e.scale.y = 0.001 + (1 - Math.pow(1 - k, 3)) * 0.999; });
+    if (!glisse) cible += vitesse;
+    angle += (cible - angle) * 0.12;
+    const inc = INCLINAISON.x * 0.35;
+    camera.position.set(Math.sin(angle + inc) * 19, 9.5 - INCLINAISON.y * 1.2, Math.cos(angle + inc) * 19);
+    camera.lookAt(0, 3.3, 0);
+    tete.rotation.y = Math.sin(s * 0.35) * 1.1;
+    chariot.position.x = -3.4 + Math.sin(s * 0.5) * 1.4;
+    const balance = Math.sin(s * 1.6) * 0.06;
+    charge.position.set(Math.sin(balance) * 2.8, -2.8 + Math.sin(s * 0.8) * 0.4, 0);
+    cable.geometry.setFromPoints([new T.Vector3(0, 0, 0), charge.position.clone().add(new T.Vector3(0, 0.17, 0))]);
+    const clign = (Math.sin(s * 5) > 0.3) ? 1 : 0;
+    gyro.material.color.setHex(clign ? 0xff3b30 : 0x5a1512); gyroLum.intensity = clign * 2.5;
+    const halo = immeuble.getObjectByName('halo'); if (halo) halo.material.opacity = 0.35 + Math.sin(s * 3) * 0.25;
+    const p = pg.attributes.position.array;
+    for (let i = 0; i < N; i++) { p[i * 3 + 1] += 0.006; if (p[i * 3 + 1] > 8) p[i * 3 + 1] = 0; }
+    pg.attributes.position.needsUpdate = true;
+    renderer.render(scene, camera);
+  };
+  requestAnimationFrame(boucle);
+}
+
+// Relief : les cartes suivent l'inclinaison du téléphone (ou la souris)
+const INCLINAISON = { x: 0, y: 0 };
+(() => {
+  if (reduireAnimations()) return;
+  const racine = document.documentElement;
+  let vise = { x: 0, y: 0 }, prevu = false;
+  const lisser = () => {
+    prevu = false;
+    INCLINAISON.x += (vise.x - INCLINAISON.x) * 0.2;
+    INCLINAISON.y += (vise.y - INCLINAISON.y) * 0.2;
+    racine.style.setProperty('--incl-x', INCLINAISON.x.toFixed(3));
+    racine.style.setProperty('--incl-y', INCLINAISON.y.toFixed(3));
+    if (Math.abs(vise.x - INCLINAISON.x) > 0.002 || Math.abs(vise.y - INCLINAISON.y) > 0.002) demander();
+  };
+  const demander = () => { if (!prevu) { prevu = true; requestAnimationFrame(lisser); } };
+  const borne = (v) => Math.max(-1, Math.min(1, v));
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.beta == null) return;
+    vise = { x: borne((e.gamma || 0) / 25), y: borne(((e.beta || 0) - 40) / 25) };
+    demander();
+  }, { passive: true });
+  if (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) {
+    window.addEventListener('pointermove', (e) => {
+      vise = { x: borne((e.clientX / window.innerWidth - 0.5) * 2), y: borne((e.clientY / window.innerHeight - 0.5) * 2) };
+      demander();
+    }, { passive: true });
+  }
+})();
+
+// ═══════════════════════════════ 3.5 : LE SAVOIR DU JOUR ═══════════════════════════════
+// Résumés pratiques des règles BAEL 91 révisé 99, Eurocodes, DTU et bonnes pratiques de chantier.
+// Ils ne remplacent pas les textes officiels ni l'avis du bureau d'études ou du bureau de contrôle.
+const SAVOIR_CATS = {
+  bael: ['📐', 'BAEL'], euro: ['🇪🇺', 'Eurocodes'], beton: ['🧱', 'Béton et mise en œuvre'], techno: ['🏗️', 'Technologie du bâtiment'],
+  secu: ['🦺', 'Sécurité'], tropical: ['☀️', 'Climat tropical'], second: ['🔧', 'Second œuvre'],
+};
+const SAVOIR = [
+  { c: 'bael', t: 'Enrobage minimal des armatures', x: 'Distance entre l’acier et la paroi : 5 cm pour les ouvrages à la mer ou exposés aux embruns ; 3 cm pour les parois exposées aux intempéries ou aux condensations (2 cm si le béton dépasse 40 MPa) ; 1 cm pour les parois à l’abri, en local clos et couvert. Sur chantier, utilisez toujours des cales d’enrobage.', r: 'BAEL 91 révisé 99, art. A.7.1' },
+  { c: 'bael', t: 'Combinaisons de charges', x: 'À l’état limite ultime (ELU) : 1,35 G + 1,5 Q, avec G les charges permanentes (poids propre, revêtements) et Q les charges d’exploitation. À l’état limite de service (ELS) : G + Q.', r: 'BAEL 91 révisé 99, art. A.3.3' },
+  { c: 'bael', t: 'Résistance de calcul du béton', x: 'À l’ELU, la contrainte de calcul du béton comprimé est fbu = 0,85 × fc28 / (θ × γb), avec γb = 1,5 en situation courante (1,15 en situation accidentelle). Pour un béton de 25 MPa : fbu ≈ 14,2 MPa.', r: 'BAEL 91 révisé 99, art. A.4.3,41' },
+  { c: 'bael', t: 'Résistance du béton à la traction', x: 'La résistance caractéristique à la traction se déduit de la compression : ft28 = 0,6 + 0,06 × fc28 (en MPa). Pour fc28 = 25 MPa, ft28 = 2,1 MPa. Le béton résiste mal à la traction : c’est le rôle des aciers.', r: 'BAEL 91 révisé 99, art. A.2.1,12' },
+  { c: 'bael', t: 'Résistance du béton à j jours', x: 'Pour un béton courant (fc28 ≤ 40 MPa) : fcj = j / (4,76 + 0,83 j) × fc28. À 7 jours, le béton atteint environ 66 % de sa résistance à 28 jours. C’est utile pour juger les éprouvettes écrasées à 7 jours.', r: 'BAEL 91 révisé 99, art. A.2.1,11' },
+  { c: 'bael', t: 'Résistance de calcul des aciers', x: 'À l’ELU : σs = fe / γs avec γs = 1,15. Pour un acier FeE400 : 348 MPa ; pour un FeE500 : 435 MPa. Vérifiez toujours la nuance livrée (marquage des barres, certificat du fournisseur).', r: 'BAEL 91 révisé 99, art. A.4.3,2' },
+  { c: 'bael', t: 'Condition de non-fragilité des poutres', x: 'Une poutre doit contenir un minimum d’acier tendu : As ≥ 0,23 × b × d × ft28 / fe. Sans ce minimum, la poutre peut se rompre brutalement dès la première fissure.', r: 'BAEL 91 révisé 99, art. A.4.2' },
+  { c: 'bael', t: 'Armatures longitudinales des poteaux', x: 'Section d’acier comprise entre le plus grand de 4 cm² par mètre de périmètre et 0,2 % de la section du béton, et au plus 5 % de la section. Espacement entre barres ≤ la plus petite dimension + 10 cm, sans dépasser 40 cm.', r: 'BAEL 91 révisé 99, art. A.8.1,21' },
+  { c: 'bael', t: 'Cadres des poteaux', x: 'Diamètre des cadres ≥ 1/3 du plus gros diamètre longitudinal. Espacement ≤ le plus petit de : 15 fois le plus petit diamètre longitudinal, 40 cm, et la plus petite dimension du poteau + 10 cm.', r: 'BAEL 91 révisé 99, art. A.8.1,3' },
+  { c: 'bael', t: 'Élancement des poteaux', x: 'L’élancement λ = longueur de flambement / rayon de giration. La méthode forfaitaire du BAEL s’applique jusqu’à λ = 70. Au-delà de 50, la résistance chute fortement : élargissez la section plutôt qu’ajouter de l’acier.', r: 'BAEL 91 révisé 99, art. B.8.4' },
+  { c: 'bael', t: 'Espacement des armatures d’effort tranchant', x: 'Dans une poutre, l’espacement des cadres ou étriers ne dépasse pas le plus petit de 0,9 d et 40 cm. Resserrez les cadres près des appuis, là où l’effort tranchant est maximal.', r: 'BAEL 91 révisé 99, art. A.5.1,22' },
+  { c: 'bael', t: 'Longueur d’ancrage des barres', x: 'Sans calcul précis, on admet couramment une longueur de scellement droit de 40 diamètres pour un acier HA FeE400 et 50 diamètres pour un FeE500. Une barre de 12 mm en FeE400 doit donc être ancrée sur environ 48 cm.', r: 'BAEL 91 révisé 99, art. A.6.1,23' },
+  { c: 'bael', t: 'Espacement minimal entre barres', x: 'L’écart horizontal entre deux barres doit être au moins égal au plus grand du diamètre de la barre et de 1,5 fois la taille du plus gros gravillon. Sinon le béton passe mal et des vides se forment.', r: 'BAEL 91 révisé 99, art. A.7.2' },
+  { c: 'bael', t: 'Les trois cas de fissuration', x: 'Le BAEL distingue la fissuration peu préjudiciable, préjudiciable et très préjudiciable. Plus le milieu est agressif (eau, sel, humidité), plus on limite la contrainte des aciers à l’ELS et plus on soigne l’enrobage.', r: 'BAEL 91 révisé 99, art. A.4.5,3' },
+  { c: 'bael', t: 'Semelle isolée rigide', x: 'Pour la méthode des bielles, la hauteur utile d’une semelle doit vérifier d ≥ (B − b) / 4, avec B la largeur de la semelle et b celle du poteau. Une semelle trop mince poinçonne ou fissure.', r: 'BAEL 91 révisé 99, chapitre B.9 (fondations)' },
+  { c: 'euro', t: 'Notation des bétons selon l’Eurocode 2', x: 'Un béton C25/30 a une résistance caractéristique de 25 MPa sur cylindre et 30 MPa sur cube. Le premier chiffre sert aux calculs, le second aux essais sur cubes.', r: 'Eurocode 2 (NF EN 1992-1-1), tableau 3.1' },
+  { c: 'euro', t: 'Classes d’exposition', x: 'L’Eurocode classe l’environnement : XC (carbonatation, béton à l’air), XS (eau de mer, embruns), XD (chlorures hors mer), XA (sols agressifs). Plus la classe est sévère, plus l’enrobage et le dosage en ciment augmentent.', r: 'NF EN 206 et Eurocode 2, section 4' },
+  { c: 'euro', t: 'Enrobage nominal', x: 'L’Eurocode 2 calcule l’enrobage nominal : cnom = cmin + Δcdev, avec Δcdev = 10 mm en général pour tenir compte des tolérances d’exécution. En bord de mer, prévoir largement plus de 4 cm.', r: 'Eurocode 2, art. 4.4.1' },
+  { c: 'euro', t: 'Combinaison ELU de l’Eurocode 0', x: 'Comme au BAEL, la combinaison courante est 1,35 G + 1,5 Q. Avec plusieurs charges variables (vent, exploitation), une seule est prise en entier, les autres sont réduites par des coefficients ψ0.', r: 'Eurocode 0 (NF EN 1990), art. 6.4.3.2' },
+  { c: 'euro', t: 'Charges d’exploitation courantes', x: 'Valeurs usuelles : 1,5 kN/m² pour un logement, 2,5 kN/m² pour un bureau, 4 à 5 kN/m² pour les salles de réunion et lieux recevant du public. Vérifiez l’annexe nationale applicable.', r: 'Eurocode 1 (NF EN 1991-1-1), tableau 6.2' },
+  { c: 'beton', t: 'Dosages courants', x: 'Repères de chantier : béton de propreté ≈ 150 kg de ciment par m³ ; béton armé courant ≈ 350 kg/m³ ; mortier de pose des parpaings ≈ 300 kg/m³. Le dosage exact dépend de la formulation et des granulats.', r: 'Bonnes pratiques de chantier (DTU 21)' },
+  { c: 'beton', t: 'Ne jamais rajouter d’eau', x: 'Ajouter de l’eau rend le béton plus facile à couler mais fait chuter sa résistance et augmente le retrait et les fissures : chaque litre en trop compte. Utilisez plutôt un adjuvant plastifiant prévu dans la formule.', r: 'Bonnes pratiques (DTU 21)' },
+  { c: 'beton', t: 'Le cône d’Abrams', x: 'L’essai d’affaissement mesure la consistance du béton frais. Pour un béton armé courant vibré, on vise souvent 5 à 9 cm (classe S2). Faites l’essai à chaque toupie ou gâchée importante.', r: 'NF EN 12350-2' },
+  { c: 'beton', t: 'Les éprouvettes', x: 'Prélevez des éprouvettes cylindriques 16 × 32 cm, conservées humides, et faites-les écraser à 7 et 28 jours. Notez la date, l’ouvrage et la toupie : c’est la preuve de la qualité du béton.', r: 'NF EN 12390' },
+  { c: 'beton', t: 'La vibration', x: 'Plongez l’aiguille vibrante verticalement, tous les 30 à 50 cm environ, en couches de 50 cm maximum. Retirez-la lentement. Ne vibrez pas les armatures et ne vibrez pas trop longtemps : le béton se sépare.', r: 'Bonnes pratiques (DTU 21)' },
+  { c: 'beton', t: 'La cure du béton', x: 'Gardez le béton humide pendant au moins 7 jours : arrosage, bâches, toile de jute mouillée ou produit de cure. Une dalle qui sèche trop vite fissure et perd de la résistance.', r: 'DTU 21 et NF EN 13670' },
+  { c: 'beton', t: 'Délais de décoffrage', x: 'Repères indicatifs : joues de poutres et poteaux après 1 à 3 jours ; fonds de dalles et de poutres étayés pas avant 7 jours, et étais laissés jusqu’à ce que le béton ait une résistance suffisante (souvent 21 à 28 jours pour les grandes portées). Suivez le bureau d’études.', r: 'DTU 21' },
+  { c: 'beton', t: 'Les reprises de bétonnage', x: 'Avant de couler contre un béton déjà durci, nettoyez, piquez la surface pour la rendre rugueuse et humidifiez-la. Placez les reprises aux endroits prévus par le bureau d’études, et évitez les zones proches des appuis où l’effort tranchant est fort.', r: 'Bonnes pratiques (DTU 21)' },
+  { c: 'beton', t: 'Stockage du ciment', x: 'Sacs sur palettes, à l’abri de la pluie et de l’humidité, sans dépasser environ 10 sacs de hauteur. Utilisez les plus anciens en premier. Un ciment qui a fait des grumeaux durs ne doit plus servir au béton armé.', r: 'Bonnes pratiques de chantier' },
+  { c: 'beton', t: 'Les aciers sur chantier', x: 'Stockez les aciers hors du sol, sur des bastaings. Une légère rouille superficielle n’est pas grave ; une rouille qui s’écaille l’est. Les barres ne doivent pas être pliées à chaud ni redressées plusieurs fois.', r: 'Bonnes pratiques (NF A 35-080)' },
+  { c: 'techno', t: 'Prédimensionner une poutre', x: 'Règle pratique de départ : hauteur d’une poutre ≈ portée / 12 (entre L/10 et L/15), largeur ≈ 0,3 à 0,5 fois la hauteur. Pour 5 m de portée : environ 40 cm de haut. Le calcul du bureau d’études reste obligatoire.', r: 'Règles de prédimensionnement usuelles' },
+  { c: 'techno', t: 'Prédimensionner une dalle pleine', x: 'Une dalle porte dans un seul sens si le petit côté divisé par le grand est inférieur à 0,4. Épaisseur de départ : environ portée / 30 pour une dalle sur deux appuis, portée / 40 pour une dalle continue appuyée sur quatre côtés.', r: 'BAEL 91 révisé 99, annexe E3 et règles usuelles' },
+  { c: 'techno', t: 'Plancher à corps creux', x: 'Le plancher « 16 + 4 » combine des hourdis de 16 cm et une dalle de compression de 4 cm armée d’un treillis soudé. Il couvre couramment jusqu’à environ 5 m selon les poutrelles. Étayez les poutrelles selon la notice du fabricant.', r: 'Avis techniques des fabricants, DTU 23.5' },
+  { c: 'techno', t: 'Chaînages des murs en parpaings', x: 'Prévoir des chaînages horizontaux à chaque niveau de plancher et des chaînages verticaux aux angles, aux jonctions de murs et autour des grandes ouvertures. Ils tiennent le bâtiment comme une cage.', r: 'DTU 20.1 et Eurocode 6' },
+  { c: 'techno', t: 'Appui des linteaux', x: 'Un linteau doit reposer d’au moins 20 cm de chaque côté de l’ouverture. Un appui trop court fissure la maçonnerie au-dessus des portes et fenêtres.', r: 'DTU 20.1' },
+  { c: 'techno', t: 'Joints de dilatation', x: 'Un bâtiment long doit être coupé par des joints de dilatation, couramment tous les 25 à 50 m selon le climat. En climat chaud et sec, restez plutôt vers 25 à 30 m. Le joint traverse la structure, pas les fondations.', r: 'BAEL 91 révisé 99, art. B.5.1 et DTU' },
+  { c: 'techno', t: 'Formule de Blondel', x: 'Un escalier est confortable si 2 × hauteur de marche + giron ≈ 60 à 64 cm. Exemple : marches de 17 cm et giron de 28 cm donnent 62 cm. Gardez la même hauteur sur toutes les marches.', r: 'Règle de Blondel, DTU et usages' },
+  { c: 'techno', t: 'Étude de sol', x: 'Avant de fonder, faites une étude géotechnique (mission G2) : elle donne la contrainte admissible du sol et le type de fondation. Les fissures en escalier dans les murs viennent souvent d’un tassement des fondations.', r: 'NF P 94-500' },
+  { c: 'techno', t: 'Les fondations', x: 'Coulez toujours un béton de propreté d’environ 5 cm sous les semelles. Il protège les aciers de la terre et donne une surface plane pour poser les cales d’enrobage.', r: 'DTU 13.11 et 13.12' },
+  { c: 'secu', t: 'Garde-corps des échafaudages', x: 'Un garde-corps complet comprend une lisse à 1 m de haut, une sous-lisse à mi-hauteur et une plinthe d’au moins 15 cm qui empêche les outils de tomber. Sans eux, on travaille attaché avec un harnais.', r: 'Règles de prévention des chutes de hauteur' },
+  { c: 'secu', t: 'Tranchées et fouilles', x: 'Au-delà d’environ 1,30 m de profondeur, une tranchée doit être blindée ou talutée. Ne stockez jamais les déblais au bord : laissez au moins 40 cm de distance.', r: 'Règles de prévention des éboulements' },
+  { c: 'secu', t: 'Les EPI obligatoires', x: 'Casque, chaussures de sécurité, gants et gilet haute visibilité pour tous. Lunettes pour le meulage et le piquage, masque pour la poussière de ciment, protections auditives près des engins.', r: 'Prévention des risques sur chantier' },
+  { c: 'secu', t: 'Le ciment brûle la peau', x: 'Le ciment frais est très alcalin : il peut brûler la peau et les yeux. Gants et bottes étanches pour le bétonnage, et rinçage immédiat à l’eau claire en cas de projection dans les yeux.', r: 'Fiches de sécurité des ciments' },
+  { c: 'secu', t: 'La causerie du matin', x: '5 minutes chaque matin pour rappeler les dangers du jour : levage, travail en hauteur, électricité. C’est le moment de vérifier les EPI. Notez-la dans KOORDIN, rubrique Sécurité.', r: 'Bonnes pratiques de prévention' },
+  { c: 'secu', t: 'Sous la charge, jamais', x: 'Personne ne doit stationner sous une charge levée par la grue. Balisez la zone de levage, utilisez des élingues en bon état et un signaleur qui voit le grutier.', r: 'Règles de levage' },
+  { c: 'tropical', t: 'Bétonner à la fraîche', x: 'Sous fort soleil ou par harmattan, le béton sèche trop vite et fissure. Bétonnez tôt le matin ou en fin de journée, mouillez les coffrages avant de couler et protégez la surface dès la fin du coulage.', r: 'Bétonnage par temps chaud (DTU 21, NF EN 13670)' },
+  { c: 'tropical', t: 'Les termites', x: 'Traitez le sol sous les dallages et autour des fondations contre les termites avant de couler, et protégez les bois de charpente. Les dégâts sont invisibles pendant des années.', r: 'Bonnes pratiques en zone tropicale' },
+  { c: 'tropical', t: 'Bord de mer', x: 'À proximité de la lagune ou de la mer, le sel attaque les aciers. Augmentez l’enrobage, utilisez un béton plus dosé et plus compact, et soignez la cure : c’est la durée de vie de l’ouvrage qui en dépend.', r: 'BAEL A.7.1 et Eurocode 2 classes XS' },
+  { c: 'tropical', t: 'Saison des pluies', x: 'Prévoyez des bâches pour protéger le béton frais, une pente pour évacuer l’eau des fouilles et des planchers, et ne coulez pas sous une forte pluie : l’eau délave le ciment en surface.', r: 'Bonnes pratiques de chantier' },
+  { c: 'second', t: 'Étanchéité des toitures-terrasses', x: 'Pente minimale d’environ 1 % vers les évacuations. Les relevés d’étanchéité remontent d’au moins 15 cm au-dessus de la protection. Une terrasse sans pente garde l’eau et finit par fuir.', r: 'DTU 43.1' },
+  { c: 'second', t: 'Descentes d’eaux pluviales', x: 'Règle pratique : environ 1 cm² de section de descente par m² de toiture. Pour 100 m² de toiture : environ 100 cm² de descentes, soit un tube d’environ 110 à 125 mm. Prévoyez-en au moins deux pour une grande toiture.', r: 'DTU 60.11' },
+  { c: 'second', t: 'Les enduits', x: 'Un enduit traditionnel se fait en couches : gobetis d’accrochage, corps d’enduit, puis couche de finition, pour 15 à 20 mm au total. Humidifiez le support et ne travaillez pas en plein soleil.', r: 'DTU 26.1' },
+  { c: 'second', t: 'Peindre un enduit neuf', x: 'Un enduit ciment doit sécher plusieurs semaines (souvent 3 à 4) avant d’être peint, ou recevoir un fixateur adapté. Sinon, la peinture cloque et farine.', r: 'DTU 59.1' },
+  { c: 'second', t: 'Électricité : les sections', x: 'Repères de la norme NF C 15-100 : 1,5 mm² pour les circuits d’éclairage, 2,5 mm² pour les prises de courant 16 A (20 A au disjoncteur), et un interrupteur différentiel 30 mA pour protéger les personnes.', r: 'NF C 15-100' },
+  { c: 'second', t: 'Pente des évacuations', x: 'Les canalisations d’eaux usées se posent avec une pente de 1 à 3 cm par mètre. Trop faible, elles se bouchent ; trop forte, l’eau part sans les matières.', r: 'DTU 60.11' },
+  { c: 'second', t: 'Carrelage de salle d’eau', x: 'Donnez une pente d’environ 1 à 2 % vers le siphon et posez une étanchéité sous carrelage dans les douches. Laissez des joints de fractionnement sur les grandes surfaces.', r: 'DTU 52.2' },
+];
+const SAVOIR_QUIZ = [
+  { q: 'À l’ELU, quelle est la combinaison courante des charges ?', o: ['G + Q', '1,35 G + 1,5 Q', '1,5 G + 1,35 Q'], b: 1 },
+  { q: 'Quel enrobage minimal le BAEL demande-t-il pour un ouvrage exposé aux embruns marins ?', o: ['1 cm', '3 cm', '5 cm'], b: 2 },
+  { q: 'À 7 jours, un béton courant atteint environ…', o: ['33 % de sa résistance à 28 jours', '66 %', '95 %'], b: 1 },
+  { q: 'Combien de temps faut-il garder le béton humide au minimum ?', o: ['24 heures', '7 jours', 'Ce n’est pas utile'], b: 1 },
+  { q: 'Que signifie « C25/30 » ?', o: ['25 MPa sur cylindre, 30 MPa sur cube', '25 % de ciment, 30 % d’eau', '25 cm d’épaisseur, 30 cm de large'], b: 0 },
+  { q: 'Selon Blondel, 2 × hauteur de marche + giron doit faire environ…', o: ['45 cm', '62 cm', '80 cm'], b: 1 },
+  { q: 'Au-delà de quelle profondeur une tranchée doit-elle être blindée ?', o: ['0,50 m', '1,30 m', '3 m'], b: 1 },
+  { q: 'Que faire si le béton est trop ferme sur chantier ?', o: ['Rajouter de l’eau', 'Utiliser un plastifiant', 'Rajouter du sable'], b: 1 },
+  { q: 'Quelle est la longueur d’appui minimale d’un linteau de chaque côté ?', o: ['5 cm', '10 cm', '20 cm'], b: 2 },
+  { q: 'Quelle pente minimale pour une toiture-terrasse ?', o: ['Environ 1 %', '0 %', '10 %'], b: 0 },
+];
+const jourDeLAnnee = (d = new Date()) => Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+const savoirDuJour = (decalage = 0) => SAVOIR[(jourDeLAnnee() + d0Savoir() + decalage) % SAVOIR.length];
+const d0Savoir = () => (new Date().getFullYear() * 7) % SAVOIR.length;
+const texteSavoir = (s) => `💡 Le savoir du jour (${SAVOIR_CATS[s.c][1]}) — ${s.t}\n${s.x}\nRéférence : ${s.r}.\n— Partagé depuis KOORDIN`;
+
+function carteSavoir(s, { jour = true } = {}) {
+  const [ic, cat] = SAVOIR_CATS[s.c];
+  return `<div class="savoir-carte s-${s.c}">
+    <div class="savoir-tete"><span class="savoir-cat">${ic} ${esc(cat)}</span>${jour ? '<span class="savoir-jour">💡 Le savoir du jour</span>' : ''}</div>
+    <h3>${esc(s.t)}</h3><p>${esc(s.x)}</p>
+    <div class="savoir-ref">📖 ${esc(s.r)}</div>
+    <div class="savoir-boutons"><button type="button" class="btn sm" data-ecouter>🔊 Écouter</button><button type="button" class="btn sm" data-partager>📤 Partager à l’équipe</button>${jour ? '<button type="button" class="btn sm ghost" data-autre>🔄 Un autre</button><a class="btn sm ghost" href="#/savoir">📚 Tout voir</a>' : ''}</div>
+  </div>`;
+}
+function brancherSavoir(el, s, { jour = true } = {}) {
+  let courant = s, decalage = 0;
+  const rendre = () => { el.innerHTML = carteSavoir(courant, { jour }); brancher(); };
+  const brancher = () => {
+    $('[data-ecouter]', el).onclick = () => {
+      if (!KOKO.el) afficherKoko();
+      kokoAnim('saute'); kokoDire(`${courant.t}. ${courant.x}`, 12000, false); kokoParler(`${courant.t}. ${courant.x}`, { test: true });
+    };
+    $('[data-partager]', el).onclick = async () => {
+      const texte = texteSavoir(courant);
+      try { if (navigator.share) { await navigator.share({ text: texte }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+      window.open(`https://wa.me/?text=${encodeURIComponent(texte)}`, '_blank', 'noopener');
+    };
+    $('[data-autre]', el)?.addEventListener('click', () => { decalage++; courant = savoirDuJour(decalage); el.classList.remove('tourne'); void el.offsetWidth; el.classList.add('tourne'); setTimeout(rendre, 180); });
+  };
+  rendre();
+}
+function encartSavoir() {
+  const cible = $('#main .actions-rapides');
+  if (!cible || $('#encart-savoir')) return;
+  const el = document.createElement('section');
+  el.id = 'encart-savoir'; el.className = 'encart-savoir';
+  cible.insertAdjacentElement('afterend', el);
+  brancherSavoir(el, savoirDuJour());
+}
+
+let filtreSavoir = 'tous';
+PAGES.savoir = async () => {
+  const p = page(`
+    ${entete('Normes et conseils', 'BAEL, Eurocodes, mise en œuvre, sécurité : le savoir du chantier')}
+    <div id="sv-jour" class="encart-savoir"></div>
+    <div class="card">
+      <div class="toolbar"><input class="input" id="sv-cherche" type="search" placeholder="Rechercher : enrobage, poteau, cure, escalier…" style="flex:1;min-width:0">
+        <button type="button" class="btn sm primary" id="sv-quiz">🎯 Quiz</button></div>
+      <div class="sv-filtres">${[['tous', '✨ Tout'], ...Object.entries(SAVOIR_CATS).map(([k, [ic, l]]) => [k, `${ic} ${l}`])].map(([k, l]) => `<button type="button" class="puce-filtre ${k === filtreSavoir ? 'actif' : ''}" data-f="${k}">${esc(l)}</button>`).join('')}</div>
+      <div id="sv-liste" class="sv-liste"></div>
+      <p class="sv-avert">⚠️ Ces fiches sont des résumés pratiques. Elles ne remplacent pas les textes officiels (BAEL 91 révisé 99, Eurocodes et leurs annexes nationales, DTU, normes NF) ni les notes de calcul du bureau d’études et l’avis du bureau de contrôle.</p>
+    </div>`);
+  brancherSavoir($('#sv-jour', p), savoirDuJour());
+  const liste = $('#sv-liste', p);
+  const rendre = () => {
+    const t = sansAccents($('#sv-cherche', p).value.trim());
+    const l = SAVOIR.filter((s) => (filtreSavoir === 'tous' || s.c === filtreSavoir) && (!t || sansAccents(`${s.t} ${s.x} ${s.r}`).includes(t)));
+    liste.innerHTML = l.length ? l.map((s, i) => `<details class="sv-fiche s-${s.c}" style="--i:${Math.min(i, 12)}"><summary><span class="sv-ic">${SAVOIR_CATS[s.c][0]}</span><b>${esc(s.t)}</b><small>${esc(SAVOIR_CATS[s.c][1])}</small></summary><div class="sv-detail" data-i="${SAVOIR.indexOf(s)}"></div></details>`).join('') : empty('🔎', 'Aucune fiche ne correspond à votre recherche.');
+    $$('.sv-fiche', liste).forEach((d) => d.addEventListener('toggle', () => { const z = $('.sv-detail', d); if (d.open && !z.innerHTML) brancherSavoir(z, SAVOIR[+z.dataset.i], { jour: false }); }));
+  };
+  $('#sv-cherche', p).addEventListener('input', rendre);
+  $$('[data-f]', p).forEach((b) => (b.onclick = () => { filtreSavoir = b.dataset.f; $$('[data-f]', p).forEach((x) => x.classList.toggle('actif', x === b)); rendre(); }));
+  $('#sv-quiz', p).onclick = lancerQuiz;
+  rendre();
+};
+
+function lancerQuiz() {
+  const melanger = (t) => t.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+  const questions = melanger(SAVOIR_QUIZ).slice(0, 5).map((q) => { const o = melanger(q.o.map((txt, i) => ({ txt, bon: i === q.b }))); return { q: q.q, o: o.map((x) => x.txt), b: o.findIndex((x) => x.bon) }; });
+  let n = 0, score = 0;
+  const m = ouvrirModale({ titre: '🎯 Quiz du chantier', corps: '<div id="qz"></div>' });
+  const zone = $('#qz', m.el);
+  const afficher = () => {
+    if (n >= questions.length) {
+      const bravo = score === questions.length ? 'Parfait, vous êtes un vrai chef de chantier ! 🏆' : score >= 3 ? 'Très bien ! 💪' : 'Revoyez les fiches, et retentez votre chance 📚';
+      zone.innerHTML = `<div class="qz-fin"><div class="qz-score">${score} / ${questions.length}</div><p>${bravo}</p><div class="rc-boutons" style="justify-content:center"><button type="button" class="btn primary" id="qz-encore">🔄 Rejouer</button><button type="button" class="btn ghost" data-close>Fermer</button></div></div>`;
+      if (KOKO.el) { kokoHumeur(score >= 3 ? 'rire' : 'o', 2500); kokoAnim(score >= 3 ? 'saute' : 'secoue'); kokoDire(bravo, 5000); }
+      $('#qz-encore', zone).onclick = () => { m.fermer(); lancerQuiz(); };
+      return;
+    }
+    const q = questions[n];
+    zone.innerHTML = `<div class="qz-progres"><i style="width:${(n / questions.length) * 100}%"></i></div><p class="qz-num">Question ${n + 1} sur ${questions.length}</p><h4 class="qz-q">${esc(q.q)}</h4>
+      <div class="qz-options">${q.o.map((o, i) => `<button type="button" class="qz-opt" data-o="${i}">${esc(o)}</button>`).join('')}</div>`;
+    $$('.qz-opt', zone).forEach((b) => (b.onclick = () => {
+      const ok = +b.dataset.o === q.b;
+      if (ok) score++;
+      $$('.qz-opt', zone).forEach((x) => { x.disabled = true; x.classList.toggle('bon', +x.dataset.o === q.b); });
+      if (!ok) b.classList.add('faux');
+      try { navigator.vibrate?.(ok ? 15 : [40, 40, 40]); } catch { /* rien */ }
+      setTimeout(() => { n++; afficher(); }, 1100);
+    }));
+  };
+  afficher();
+}
+
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
@@ -1994,6 +2375,7 @@ PAGES.dashboard = async () => {
   await encartRapportsDuJour();
   await encartVersementsAConfirmer().catch(() => {});
   placerAnnonce($('#zone-annonce'));
+  encartSavoir();
   encartNotifications();
   await encartCommuniques();
 };
