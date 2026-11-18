@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.6.1';
+const VERSION = '3.7';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1547,8 +1547,8 @@ const KOKO_TENUES = { pilotage: 'chef', terrain: 'terrain', argent: 'costume', l
 const KOKO_PAGES = { appels: 'casque-audio', ia: 'ia', 'nouveau-rapport': 'terrain', pointage: 'terrain' };
 const KOKO_NOMS = { chef: 'chef de chantier', terrain: 'tenue de chantier', costume: 'costume', magasin: 'tenue de magasinier', polo: 'polo de l’équipe', 'casque-audio': 'casque d’appel', ia: 'mode IA' };
 const KOKO_CONSEILS = {
-  dashboard: ['Dites-moi « conseil du jour » et je vous lis la règle de chantier du jour 📚', 'Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.', 'Appuyez longtemps sur moi et dites « ouvre la compta » ou « appelle Koffi » 🎤'],
-  projets: ['Touchez un chantier pour voir son planning, ses photos et son budget.', 'Une photo de couverture rend vos chantiers bien plus faciles à reconnaître 📸'],
+  dashboard: ['Touchez une bulle « Story de la semaine » pour revivre la semaine en 30 secondes 📱', 'Dites-moi « conseil du jour » et je vous lis la règle de chantier du jour 📚', 'Voici votre cockpit du jour ! La jauge montre l’avancement moyen de vos chantiers.', 'Le bouton doré ＋ en bas permet de tout créer en un geste.', 'Touchez une pastille du cockpit pour aller droit au problème.', 'Appuyez longtemps sur moi et dites « ouvre la compta » ou « appelle Koffi » 🎤'],
+  projets: ['Dans un chantier, essayez 🎬 « Film du chantier » : toutes les photos deviennent une vidéo à envoyer au client.', 'Touchez un chantier pour voir son planning, ses photos et son budget.', 'Une photo de couverture rend vos chantiers bien plus faciles à reconnaître 📸'],
   rapports: ['Les rapports du terrain arrivent ici, avec leurs photos.', 'Quand un rapport est validé ou rejeté, son auteur est prévenu tout de suite.'],
   'nouveau-rapport': ['Deux ou trois photos valent mieux qu’un long texte 📸', 'Pas de réseau ? Pas de souci : j’enverrai le rapport dès que ça revient.'],
   pointage: ['Cochez les présents : je calcule la paie tout seul 💪', 'Le pointage marche même sans réseau.'],
@@ -2653,6 +2653,363 @@ async function puceControles() {
   } catch { /* table absente */ }
 }
 
+// ═══════════════════════════════ 3.7 : FILM DU CHANTIER, AVANT / APRÈS, STORY DE LA SEMAINE ═══════════════════════════════
+// Un petit studio vidéo dans le téléphone : les scènes sont dessinées sur un canvas vertical (format statut WhatsApp),
+// lues en plein écran comme une story, et peuvent être enregistrées en vidéo pour être partagées.
+const FILM = { W: 720, H: 1280, POLICE: 'Sora, system-ui, sans-serif' };
+const moisCourt = (d) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+async function chargerBitmap(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await createImageBitmap(await r.blob());
+  } catch { return null; }
+}
+function couvrir(ctx, img, W, H, t, sens = 1) {
+  const z = 1.06 + 0.12 * t;
+  const k = Math.max(W / img.width, H / img.height) * z;
+  const w = img.width * k, h = img.height * k;
+  const dx = (W - w) / 2 + sens * (t - 0.5) * W * 0.06, dy = (H - h) / 2 - (t - 0.5) * H * 0.03;
+  ctx.drawImage(img, dx, dy, w, h);
+}
+function lignesTexte(ctx, txt, maxW) {
+  const mots = String(txt || '').split(/\s+/).filter(Boolean), lignes = [];
+  let l = '';
+  mots.forEach((m) => { const essai = l ? `${l} ${m}` : m; if (ctx.measureText(essai).width > maxW && l) { lignes.push(l); l = m; } else l = essai; });
+  if (l) lignes.push(l);
+  return lignes;
+}
+function ecrire(ctx, txt, x, y, { taille = 34, poids = 600, couleur = '#fff', max = FILM.W - 96, lh = 1.3, lignes = 4, align = 'left', ombre = true } = {}) {
+  ctx.font = `${poids} ${taille}px ${FILM.POLICE}`; ctx.fillStyle = couleur; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+  if (ombre) { ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14; }
+  const ls = lignesTexte(ctx, txt, max);
+  const garde = ls.slice(0, lignes);
+  if (ls.length > lignes) garde[lignes - 1] = `${garde[lignes - 1].replace(/\s+\S*$/, '')}…`;
+  garde.forEach((l, i) => ctx.fillText(l, x, y + i * taille * lh));
+  ctx.shadowBlur = 0;
+  return y + garde.length * taille * lh;
+}
+const facile = (t) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+function fondFilm(ctx, W, H, t, teinte = 0) {
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, ['#1a1530', '#0f2a22', '#2a1a0b'][teinte % 3]); g.addColorStop(1, '#070a12');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  [[0.2 + 0.1 * Math.sin(t * 3), 0.25, 'rgba(247,190,80,.35)'], [0.85, 0.55 + 0.08 * Math.cos(t * 2), 'rgba(235,105,45,.25)'], [0.4, 0.95, 'rgba(90,140,255,.22)']].forEach(([x, y, c]) => {
+    const r = ctx.createRadialGradient(x * W, y * H, 0, x * W, y * H, W * 0.75);
+    r.addColorStop(0, c); r.addColorStop(1, 'transparent'); ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  });
+}
+function filigrane(ctx, W, H, nom) {
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#e8a020';
+  ctx.beginPath(); const cx = 58, cy = H - 58, r = 16;
+  for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 6; ctx[i ? 'lineTo' : 'moveTo'](cx + r * Math.cos(a), cy + r * Math.sin(a)); }
+  ctx.closePath(); ctx.fill();
+  ecrire(ctx, `KOORDIN · ${nom || ''}`, 84, H - 50, { taille: 22, poids: 700, couleur: 'rgba(255,255,255,.9)', lignes: 1 });
+  ctx.globalAlpha = 1;
+}
+function barreAvancement(ctx, x, y, w, pct, t) {
+  const v = Math.max(0, Math.min(100, pct)) * facile(t * 1.6) / 100;
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.roundRect(x, y, w, 14, 7); ctx.fill();
+  const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#ffe29a'); g.addColorStop(1, '#e8a020');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x, y, Math.max(14, w * v), 14, 7); ctx.fill();
+}
+
+function dessinerScene(ctx, s, t) {
+  const { W, H } = FILM;
+  ctx.save();
+  if (s.type === 'photo') {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    if (s.img) couvrir(ctx, s.img, W, H, t, s.sens || 1); else fondFilm(ctx, W, H, t);
+    let g = ctx.createLinearGradient(0, 0, 0, H * 0.32); g.addColorStop(0, 'rgba(0,0,0,.75)'); g.addColorStop(1, 'transparent'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H * 0.32);
+    g = ctx.createLinearGradient(0, H * 0.55, 0, H); g.addColorStop(0, 'transparent'); g.addColorStop(1, 'rgba(0,0,0,.88)'); ctx.fillStyle = g; ctx.fillRect(0, H * 0.55, W, H * 0.45);
+    ecrire(ctx, s.surtitre || '', 48, 110, { taille: 26, poids: 700, couleur: '#f7cf6f', lignes: 1 });
+    ecrire(ctx, s.titre || '', 48, 168, { taille: 50, poids: 800, lignes: 2 });
+    let y = H - 330;
+    if (s.legende) y = ecrire(ctx, s.legende, 48, y, { taille: 32, poids: 500, couleur: '#e9ecf4', lignes: 4 }) + 10;
+    if (s.pct != null) {
+      ecrire(ctx, `Avancement ${Math.round(s.pct * facile(t * 1.6))} %`, 48, H - 140, { taille: 30, poids: 800, lignes: 1 });
+      barreAvancement(ctx, 48, H - 118, W - 96, s.pct, t);
+    }
+    filigrane(ctx, W, H, s.marque);
+  } else if (s.type === 'titre') {
+    fondFilm(ctx, W, H, t, s.teinte || 0);
+    const a = facile(t * 2.2);
+    ctx.globalAlpha = a;
+    ctx.font = `${160}px ${FILM.POLICE}`; ctx.textAlign = 'center'; ctx.fillText(s.icone || '🏗️', W / 2, H * 0.36 + (1 - a) * 40);
+    let y = ecrire(ctx, s.titre, W / 2, H * 0.5, { taille: 64, poids: 800, align: 'center', lignes: 3, max: W - 100 });
+    ctx.globalAlpha = facile(t * 2.2 - 0.3);
+    (s.lignes || []).forEach((l) => { y = ecrire(ctx, l, W / 2, y + 26, { taille: 32, poids: 500, couleur: '#c9cede', align: 'center', lignes: 2, max: W - 120 }); });
+    ctx.globalAlpha = 1;
+    filigrane(ctx, W, H, s.marque);
+  } else if (s.type === 'chiffres') {
+    fondFilm(ctx, W, H, t, 1);
+    ecrire(ctx, s.titre, 48, 190, { taille: 56, poids: 800, lignes: 2 });
+    (s.items || []).slice(0, 6).forEach(([v, l, ic], i) => {
+      const col = i % 2, lig = Math.floor(i / 2), x = 48 + col * ((W - 120) / 2 + 24), y = 330 + lig * 270, w = (W - 120) / 2;
+      const k = facile(t * 2 - i * 0.12);
+      ctx.globalAlpha = k;
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.strokeStyle = 'rgba(247,207,111,.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, y + (1 - k) * 30, w, 230, 28); ctx.fill(); ctx.stroke();
+      ctx.font = `56px ${FILM.POLICE}`; ctx.textAlign = 'left'; ctx.fillText(ic || '', x + 28, y + 80 + (1 - k) * 30);
+      const n = typeof v === 'number' ? Math.round(v * facile(t * 1.5)) : v;
+      ecrire(ctx, `${n}${typeof v === 'number' && s.suffixes?.[i] ? s.suffixes[i] : ''}`, x + 28, y + 160 + (1 - k) * 30, { taille: 58, poids: 800, couleur: '#ffe29a', lignes: 1, max: w - 40 });
+      ecrire(ctx, l, x + 28, y + 205 + (1 - k) * 30, { taille: 24, poids: 600, couleur: '#c9cede', lignes: 1, max: w - 40 });
+    });
+    ctx.globalAlpha = 1;
+    filigrane(ctx, W, H, s.marque);
+  } else if (s.type === 'liste') {
+    fondFilm(ctx, W, H, t, s.teinte ?? 2);
+    ecrire(ctx, s.titre, 48, 200, { taille: 56, poids: 800, lignes: 2 });
+    let y = 330;
+    (s.items || []).slice(0, 6).forEach(([ic, txt], i) => {
+      const k = facile(t * 2.4 - i * 0.18);
+      ctx.globalAlpha = k;
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.roundRect(48 + (1 - k) * 40, y, W - 96, 136, 24); ctx.fill();
+      ctx.font = `48px ${FILM.POLICE}`; ctx.textAlign = 'left'; ctx.fillText(ic, 72 + (1 - k) * 40, y + 84);
+      ecrire(ctx, txt, 140 + (1 - k) * 40, y + 60, { taille: 28, poids: 600, lignes: 2, max: W - 220 });
+      y += 156;
+    });
+    ctx.globalAlpha = 1;
+    filigrane(ctx, W, H, s.marque);
+  } else if (s.type === 'fin') {
+    fondFilm(ctx, W, H, t, 2);
+    const k = facile(t * 2);
+    ctx.save(); ctx.translate(W / 2, H * 0.4); ctx.rotate((1 - k) * -1.2); ctx.scale(k, k);
+    const g = ctx.createLinearGradient(-90, -90, 90, 90); g.addColorStop(0, '#ffe29a'); g.addColorStop(1, '#c47a0c'); ctx.fillStyle = g;
+    ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 6; ctx[i ? 'lineTo' : 'moveTo'](90 * Math.cos(a), 90 * Math.sin(a)); } ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = k;
+    ecrire(ctx, s.titre || 'KOORDIN', W / 2, H * 0.58, { taille: 60, poids: 800, couleur: '#ffe29a', align: 'center', lignes: 2 });
+    (s.lignes || []).forEach((l, i) => ecrire(ctx, l, W / 2, H * 0.58 + 80 + i * 50, { taille: 30, poids: 500, couleur: '#c9cede', align: 'center', lignes: 2 }));
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+// ─── Lecteur plein écran (story) et enregistrement vidéo ───
+function lireFilm(scenes, { titre = 'Film', nomFichier = 'koordin' } = {}) {
+  if (!scenes.length) { toast('Pas encore assez de photos pour faire un film.', 'warn'); return; }
+  const ov = document.createElement('div');
+  ov.className = 'film';
+  ov.innerHTML = `<div class="film-barres">${scenes.map(() => '<i><b></b></i>').join('')}</div>
+    <button type="button" class="film-fermer" aria-label="Fermer">✕</button>
+    <canvas width="${FILM.W}" height="${FILM.H}" class="film-toile"></canvas>
+    <div class="film-zones"><button type="button" data-z="prec" aria-label="Précédent"></button><button type="button" data-z="suiv" aria-label="Suivant"></button></div>
+    <div class="film-outils"><button type="button" class="btn sm" id="fl-pause">⏸ Pause</button><button type="button" class="btn sm primary" id="fl-video">🎬 Créer la vidéo à partager</button></div>
+    <div class="film-enreg hidden"><div class="film-enreg-boite"><b>🎬 Création de la vidéo…</b><span id="fl-pct">0 %</span><div class="ctl-barre"><i id="fl-barre" style="width:0"></i></div><small>Laissez l’écran allumé, ça prend la durée du film.</small></div></div>`;
+  document.body.appendChild(ov);
+  document.body.classList.add('en-film');
+  const toile = $('canvas', ov), ctx = toile.getContext('2d');
+  const barres = $$('.film-barres b', ov);
+  const FONDU = 0.45;
+  let idx = 0, debut = performance.now(), pause = false, pauseDepuis = 0, fini = false, enreg = null, verrou = null;
+  const duree = (i) => scenes[i].d || 3.2;
+  const dessiner = (maintenant) => {
+    const ecoule = (maintenant - debut) / 1000, d = duree(idx), t = Math.min(1, ecoule / d);
+    dessinerScene(ctx, scenes[idx], t);
+    const reste = d - ecoule;
+    if (reste < FONDU && idx < scenes.length - 1) { ctx.globalAlpha = 1 - reste / FONDU; dessinerScene(ctx, scenes[idx + 1], 0); ctx.globalAlpha = 1; }
+    barres.forEach((b, i) => { b.style.width = i < idx ? '100%' : i === idx ? `${t * 100}%` : '0'; });
+    if (enreg) { const total = scenes.reduce((s, _x, i) => s + duree(i), 0), fait = scenes.slice(0, idx).reduce((s, _x, i) => s + duree(i), 0) + Math.min(ecoule, d); $('#fl-pct', ov).textContent = `${Math.round((fait / total) * 100)} %`; $('#fl-barre', ov).style.width = `${(fait / total) * 100}%`; }
+    if (ecoule >= d) {
+      if (idx < scenes.length - 1) { idx++; debut = maintenant; }
+      else if (enreg) { enreg.stop(); enreg = null; }
+      else if (!pause) { pause = true; pauseDepuis = maintenant; $('#fl-pause', ov).textContent = '↺ Revoir'; }
+    }
+  };
+  const boucle = (m) => { if (fini) return; if (!pause) dessiner(m); requestAnimationFrame(boucle); };
+  requestAnimationFrame(boucle);
+  const aller = (n) => { idx = Math.max(0, Math.min(scenes.length - 1, n)); debut = performance.now(); if (pause) { pause = false; $('#fl-pause', ov).textContent = '⏸ Pause'; } };
+  const fermer = () => { fini = true; try { enreg?.stop(); } catch { /* rien */ } try { verrou?.release(); } catch { /* rien */ } ov.remove(); document.body.classList.remove('en-film'); };
+  $('.film-fermer', ov).onclick = fermer;
+  $('[data-z="prec"]', ov).onclick = () => { if (!enreg) aller(idx - 1); };
+  $('[data-z="suiv"]', ov).onclick = () => { if (!enreg) { if (idx === scenes.length - 1) fermer(); else aller(idx + 1); } };
+  $('#fl-pause', ov).onclick = (e) => {
+    if (enreg) return;
+    if (pause && idx === scenes.length - 1 && performance.now() - debut > duree(idx) * 1000) { aller(0); return; }
+    pause = !pause;
+    if (pause) pauseDepuis = performance.now(); else debut += performance.now() - pauseDepuis;
+    e.currentTarget.textContent = pause ? '▶ Lecture' : '⏸ Pause';
+  };
+  $('#fl-video', ov).onclick = () => {
+    if (!toile.captureStream || !window.MediaRecorder) { toast('Ce téléphone ne permet pas de créer la vidéo. Utilisez Chrome à jour.', 'warn', 6000); return; }
+    const types = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    const type = types.find((x) => MediaRecorder.isTypeSupported?.(x)) || '';
+    const morceaux = [];
+    const rec = new MediaRecorder(toile.captureStream(30), { mimeType: type || undefined, videoBitsPerSecond: 4_000_000 });
+    rec.ondataavailable = (e) => { if (e.data.size) morceaux.push(e.data); };
+    rec.onstop = async () => {
+      $('.film-enreg', ov).classList.add('hidden');
+      const ext = /mp4/.test(rec.mimeType || type) ? 'mp4' : 'webm';
+      const blob = new Blob(morceaux, { type: rec.mimeType || type || 'video/webm' });
+      const fichier = new File([blob], `${nomFichier}.${ext}`, { type: blob.type });
+      if (navigator.canShare?.({ files: [fichier] })) {
+        try { await navigator.share({ files: [fichier], title: titre, text: `${titre} — ${S.entreprise?.nom || ''}` }); return; } catch (err) { if (err?.name === 'AbortError') return; }
+      }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fichier.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      toast(`🎬 Vidéo enregistrée (${fichier.name}).`);
+    };
+    $('.film-enreg', ov).classList.remove('hidden');
+    enreg = rec;
+    rec.start(500);
+    aller(0); pause = false;
+  };
+  navigator.wakeLock?.request('screen').then((v) => { verrou = v; }).catch(() => {});
+}
+
+// ─── 1. Film de l'avancement (timelapse) ───
+async function filmChantier(projet) {
+  toast('🎬 Préparation du film…', 'ok', 2500);
+  try {
+    const [{ data: photos }, rapports] = await Promise.all([
+      sb.rpc('galerie_projet', { p_projet: projet.id }),
+      q(sb.from('rapports').select('date_rapport, avancement').eq('projet_id', projet.id).not('avancement', 'is', null).order('date_rapport')),
+    ]);
+    let liste = (photos || []).slice().sort((a, b) => new Date(a.date_photo) - new Date(b.date_photo));
+    if (!liste.length) { toast('Aucune photo pour ce chantier : ajoutez des photos ou des rapports avec photos.', 'warn', 6000); return; }
+    if (liste.length > 36) { const pas = (liste.length - 1) / 35; liste = Array.from({ length: 36 }, (_, i) => liste[Math.round(i * pas)]); }
+    const url = await urlsPhotos(liste.map((x) => x.chemin));
+    const imgs = await Promise.all(liste.map((x) => chargerBitmap(url(x.chemin))));
+    const pctA = (d) => { let v = null; rapports.forEach((r) => { if (new Date(r.date_rapport) <= new Date(d)) v = r.avancement; }); return v; };
+    const marque = S.entreprise?.nom;
+    const scenes = [
+      { type: 'titre', icone: '🏗️', titre: projet.nom, lignes: [projet.localisation || projet.client || '', `De ${moisCourt(liste[0].date_photo)} à ${moisCourt(liste[liste.length - 1].date_photo)}`].filter(Boolean), d: 3, marque },
+      ...liste.map((x, i) => imgs[i] && ({ type: 'photo', img: imgs[i], surtitre: projet.nom, titre: moisCourt(x.date_photo), legende: x.legende || '', pct: pctA(x.date_photo), d: 1.7, sens: i % 2 ? -1 : 1, marque })).filter(Boolean),
+      { type: 'fin', titre: `${Math.max(num(projet.avancement), num(rapports[rapports.length - 1]?.avancement))} % réalisés`, lignes: [projet.nom, marque || ''], d: 3 },
+    ];
+    lireFilm(scenes, { titre: `Film du chantier ${projet.nom}`, nomFichier: `film-${projet.nom.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}` });
+  } catch (e) { toast(messageErreur(e), 'err'); }
+}
+
+// ─── 2. Avant / Après ───
+async function avantApres(projet) {
+  const { data, error } = await sb.rpc('galerie_projet', { p_projet: projet.id });
+  if (error) { toast(messageErreur(error), 'err'); return; }
+  const photos = (data || []).slice().sort((a, b) => new Date(a.date_photo) - new Date(b.date_photo));
+  if (photos.length < 2) { toast('Il faut au moins deux photos du chantier pour faire un avant / après.', 'warn', 6000); return; }
+  const url = await urlsPhotos(photos.map((x) => x.chemin));
+  let iAvant = 0, iApres = photos.length - 1;
+  const m = ouvrirModale({ titre: '↔️ Avant / Après', large: true, corps: `
+    <div class="aa" id="aa"><img class="aa-apres" alt="Après"><div class="aa-avant-zone"><img class="aa-avant" alt="Avant"></div>
+      <div class="aa-poignee"><span>↔</span></div><span class="aa-etiquette g">AVANT<small></small></span><span class="aa-etiquette d">APRÈS<small></small></span></div>
+    <p class="muted" style="font-size:12.5px;margin:8px 0">Glissez le doigt sur la photo pour comparer.</p>
+    <div class="aa-choix"><b>Avant</b><div class="aa-rail" data-rail="avant"></div><b>Après</b><div class="aa-rail" data-rail="apres"></div></div>
+    <div class="rc-boutons mt"><button type="button" class="btn primary" id="aa-partager">📤 Partager l’image</button></div>` });
+  const el = m.el, zone = $('#aa', el);
+  const rails = () => ['avant', 'apres'].forEach((k) => {
+    $(`[data-rail="${k}"]`, el).innerHTML = photos.map((p, i) => `<button type="button" class="${(k === 'avant' ? iAvant : iApres) === i ? 'actif' : ''}" data-k="${k}" data-i="${i}"><img src="${esc(url(p.chemin))}" alt="" loading="lazy"><small>${new Date(p.date_photo).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</small></button>`).join('');
+    $$(`[data-k="${k}"]`, el).forEach((b) => (b.onclick = () => { if (k === 'avant') iAvant = +b.dataset.i; else iApres = +b.dataset.i; maj(); }));
+  });
+  const maj = () => {
+    $('.aa-avant', el).src = url(photos[iAvant].chemin); $('.aa-apres', el).src = url(photos[iApres].chemin);
+    $('.aa-etiquette.g small', el).textContent = fdate(photos[iAvant].date_photo); $('.aa-etiquette.d small', el).textContent = fdate(photos[iApres].date_photo);
+    rails();
+  };
+  const placer = (x) => { const r = zone.getBoundingClientRect(); const p = Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100)); zone.style.setProperty('--aa', `${p}%`); };
+  zone.addEventListener('pointerdown', (e) => { zone.setPointerCapture(e.pointerId); placer(e.clientX); zone.dataset.glisse = '1'; });
+  zone.addEventListener('pointermove', (e) => { if (zone.dataset.glisse) placer(e.clientX); });
+  zone.addEventListener('pointerup', () => { delete zone.dataset.glisse; });
+  maj();
+  // Petite démonstration du curseur à l'ouverture
+  if (!reduireAnimations()) { let t0 = null; const demo = (t) => { t0 ??= t; const k = (t - t0) / 1600; if (k > 1 || zone.dataset.glisse) { zone.style.setProperty('--aa', '50%'); return; } zone.style.setProperty('--aa', `${50 + Math.sin(k * Math.PI * 2) * 25}%`); requestAnimationFrame(demo); }; requestAnimationFrame(demo); }
+  $('#aa-partager', el).onclick = async () => {
+    const [a, b] = await Promise.all([chargerBitmap(url(photos[iAvant].chemin)), chargerBitmap(url(photos[iApres].chemin))]);
+    if (!a || !b) { toast('Images indisponibles.', 'err'); return; }
+    const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+    x.fillStyle = '#0b0e18'; x.fillRect(0, 0, W, H);
+    const cadre = (img, y, h) => { x.save(); x.beginPath(); x.rect(0, y, W, h); x.clip(); const k = Math.max(W / img.width, h / img.height); x.drawImage(img, (W - img.width * k) / 2, y + (h - img.height * k) / 2, img.width * k, img.height * k); x.restore(); };
+    cadre(a, 0, H / 2 - 4); cadre(b, H / 2 + 4, H / 2 - 4);
+    x.fillStyle = '#e8a020'; x.fillRect(0, H / 2 - 4, W, 8);
+    const etiquette = (t, d, y) => { x.fillStyle = 'rgba(8,11,20,.72)'; x.beginPath(); x.roundRect(28, y, 360, 96, 20); x.fill(); x.fillStyle = '#ffe29a'; x.font = `800 40px ${FILM.POLICE}`; x.textAlign = 'left'; x.fillText(t, 52, y + 46); x.fillStyle = '#e9ecf4'; x.font = `500 26px ${FILM.POLICE}`; x.fillText(d, 52, y + 80); };
+    etiquette('AVANT', moisCourt(photos[iAvant].date_photo), 28); etiquette('APRÈS', moisCourt(photos[iApres].date_photo), H / 2 + 32);
+    x.fillStyle = 'rgba(8,11,20,.72)'; x.beginPath(); x.roundRect(W - 470, H - 92, 442, 64, 18); x.fill();
+    x.fillStyle = '#fff'; x.font = `700 26px ${FILM.POLICE}`; x.textAlign = 'right'; x.fillText(`${projet.nom} · ${S.entreprise?.nom || ''}`.slice(0, 40), W - 48, H - 50);
+    c.toBlob(async (blob) => {
+      const f = new File([blob], `avant-apres-${projet.nom.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.jpg`, { type: 'image/jpeg' });
+      if (navigator.canShare?.({ files: [f] })) { try { await navigator.share({ files: [f], text: `Avant / après — ${projet.nom}` }); return; } catch (e) { if (e?.name === 'AbortError') return; } }
+      const lien = document.createElement('a'); lien.href = URL.createObjectURL(blob); lien.download = f.name; lien.click();
+    }, 'image/jpeg', 0.9);
+  };
+}
+
+// ─── 3. Story de la semaine ───
+const debutSemaine = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 6); return d; };
+async function storySemaine(projetId = null) {
+  toast('📱 Préparation de la story…', 'ok', 2500);
+  try {
+    const depuis = debutSemaine(), depuisISO = depuis.toLocaleDateString('sv-SE');
+    const projets = await q(sb.from('v_projets').select('*').neq('statut', 'termine').order('nom'));
+    const cibles = projetId ? projets.filter((p) => p.id === projetId) : projets;
+    if (!cibles.length) { toast('Aucun chantier en cours.', 'warn'); return; }
+    const ids = cibles.map((p) => p.id);
+    const [rapports, controles] = await Promise.all([
+      q(sb.from('rapports').select('id, projet_id, date_rapport, travaux, incidents, effectif, avancement, statut').in('projet_id', ids).gte('date_rapport', depuisISO).order('date_rapport')),
+      sb.from('controles').select('projet_id, titre, zone, statut, controle_le').in('projet_id', ids).gte('created_at', depuis.toISOString()).then((r) => r.data || [], () => []),
+    ]);
+    const photosRap = rapports.length ? await q(sb.from('rapport_photos').select('rapport_id, chemin, created_at').in('rapport_id', rapports.map((r) => r.id))) : [];
+    const nomP = (id) => cibles.find((p) => p.id === id)?.nom || '';
+    const marque = S.entreprise?.nom;
+    const periode = `Du ${depuis.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`;
+    // Une photo forte par jour et par chantier (la dernière), au plus 6
+    const choix = [];
+    [...rapports].reverse().forEach((r) => {
+      const ph = photosRap.filter((x) => x.rapport_id === r.id);
+      if (ph.length && !choix.some((c) => c.r.projet_id === r.projet_id && c.r.date_rapport === r.date_rapport)) choix.push({ r, chemin: ph[ph.length - 1].chemin });
+    });
+    const retenues = choix.slice(0, 6).reverse();
+    const url = await urlsPhotos([...retenues.map((c) => c.chemin), ...cibles.map(couvertureDe)]);
+    const imgs = await Promise.all(retenues.map((c) => chargerBitmap(url(c.chemin))));
+    const couv = projetId ? await chargerBitmap(url(couvertureDe(cibles[0]))) : null;
+    const valides = controles.filter((c) => c.statut === 'accepte' || c.statut === 'reserve');
+    const alertes = [
+      ...controles.filter((c) => c.statut === 'refuse').map((c) => ['⛔', `${c.titre}${c.zone ? ` — ${c.zone}` : ''} à reprendre (${nomP(c.projet_id)})`]),
+      ...controles.filter((c) => c.statut === 'demande').map((c) => ['⏳', `Contrôle à faire : ${c.titre}${c.zone ? ` — ${c.zone}` : ''} (${nomP(c.projet_id)})`]),
+      ...cibles.filter((p) => p.jours_de_retard > 0).map((p) => ['⏱️', `${p.nom} : ${p.jours_de_retard} jour(s) de retard`]),
+      ...rapports.filter((r) => r.incidents).slice(-3).map((r) => ['⚠️', `${nomP(r.projet_id)} : ${r.incidents}`]),
+    ];
+    const effectifs = rapports.filter((r) => r.effectif).map((r) => r.effectif);
+    const titre = projetId ? cibles[0].nom : 'Nos chantiers';
+    const scenes = [
+      couv ? { type: 'photo', img: couv, surtitre: 'La semaine en images', titre, legende: periode, d: 3.2, marque } : { type: 'titre', icone: '📱', titre: `La semaine ${projetId ? 'du chantier' : 'de nos chantiers'}`, lignes: [projetId ? cibles[0].nom : marque || '', periode], d: 3.2, marque },
+      { type: 'chiffres', titre: 'En chiffres', items: [
+        [Math.round(cibles.reduce((s, p) => s + Math.max(num(p.avancement), num([...rapports].reverse().find((r) => r.projet_id === p.id && r.avancement != null)?.avancement)), 0) / cibles.length), projetId ? 'avancement' : 'avancement moyen', '📈'],
+        [rapports.length, 'rapports du terrain', '📋'],
+        [photosRap.length, 'photos prises', '📸'],
+        [valides.length, 'étapes validées', '✅'],
+        ...(effectifs.length ? [[Math.round(effectifs.reduce((a, b) => a + b, 0) / effectifs.length), 'ouvriers par jour', '👷🏾']] : []),
+        ...(!projetId ? [[cibles.length, 'chantiers en cours', '🏗️']] : []),
+      ], suffixes: [' %'], d: 4.2, marque },
+      ...retenues.map((c, i) => imgs[i] && { type: 'photo', img: imgs[i], surtitre: nomP(c.r.projet_id), titre: (() => { const j = new Date(c.r.date_rapport).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); return j.charAt(0).toUpperCase() + j.slice(1); })(), legende: c.r.travaux, pct: c.r.avancement ?? cibles.find((p) => p.id === c.r.projet_id)?.avancement, d: 3.4, sens: i % 2 ? -1 : 1, marque }).filter(Boolean),
+      ...(valides.length ? [{ type: 'liste', titre: '✅ Étapes validées', items: valides.slice(0, 6).map((c) => [c.statut === 'accepte' ? '✅' : '⚠️', `${c.titre}${c.zone ? ` — ${c.zone}` : ''}${projetId ? '' : ` (${nomP(c.projet_id)})`}`]), teinte: 1, d: 3.8, marque }] : []),
+      { type: 'liste', titre: alertes.length ? '👀 Points d’attention' : '👍 Tout roule', items: alertes.length ? alertes.slice(0, 5) : [['✅', 'Aucun point bloquant cette semaine.'], ['💪', 'Bravo à toute l’équipe !']], teinte: alertes.length ? 2 : 1, d: 3.8, marque },
+      { type: 'fin', titre: marque || 'KOORDIN', lignes: ['Rendez-vous la semaine prochaine', 'Suivi de chantier avec KOORDIN'], d: 3 },
+    ];
+    if (!rapports.length && !retenues.length) scenes.splice(1, 0, { type: 'titre', icone: '😴', titre: 'Semaine calme', lignes: ['Aucun rapport n’a été envoyé cette semaine.'], d: 3, marque });
+    lireFilm(scenes, { titre: `Story de la semaine — ${titre}`, nomFichier: `story-${titre.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${new Date().toLocaleDateString('sv-SE')}` });
+  } catch (e) { console.error(e); toast(messageErreur(e), 'err'); }
+}
+
+// Bulles « story » sur l'accueil : toute l'entreprise + un rond par chantier
+async function encartStories() {
+  if (DEMO || $('#encart-stories')) return;
+  const cible = $('#main .actions-rapides');
+  if (!cible) return;
+  let projets;
+  try { projets = await q(sb.from('v_projets').select('id, nom, photo, photo_terrain, statut').neq('statut', 'termine').order('nom')); } catch { return; }
+  if (!projets.length || !cible.isConnected) return;
+  const url = await urlsPhotos(projets.map(couvertureDe));
+  const el = document.createElement('section');
+  el.id = 'encart-stories'; el.className = 'stories';
+  el.innerHTML = `<div class="section-tete"><h2>📱 Story de la semaine</h2><span>7 derniers jours</span></div>
+    <div class="stories-rail">${projets.length > 1 ? `<button type="button" class="story-bulle tous" data-story=""><span class="story-anneau"><span class="story-rond">🏗️</span></span><small>Tous</small></button>` : ''}
+    ${projets.map((p) => `<button type="button" class="story-bulle" data-story="${p.id}"><span class="story-anneau"><span class="story-rond">${url(couvertureDe(p)) ? `<img src="${esc(url(couvertureDe(p)))}" alt="">` : sceneChantier(empreinte(p.id), { classe: 'mini' })}</span></span><small>${esc(p.nom)}</small></button>`).join('')}</div>`;
+  cible.insertAdjacentElement('afterend', el);
+  $$('[data-story]', el).forEach((b) => (b.onclick = () => { b.classList.add('vu'); storySemaine(b.dataset.story || null); }));
+}
+
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
@@ -2662,6 +3019,7 @@ PAGES.dashboard = async () => {
   await encartVersementsAConfirmer().catch(() => {});
   placerAnnonce($('#zone-annonce'));
   encartSavoir();
+  encartStories();
   puceControles();
   encartNotifications();
   await encartCommuniques();
@@ -3418,6 +3776,7 @@ PAGES.projet = async (id) => {
     </section>
     <div class="page-actions dc-actions">
       ${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
+      ${!DEMO ? '<button class="btn" id="film-p">🎬 Film du chantier</button><button class="btn" id="aa-p">↔️ Avant / Après</button><button class="btn" id="story-p">📱 Story de la semaine</button>' : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="rc-p">📄 Rapport client</button>' : ''}
       ${can('direction', 'coordinateur') && !DEMO ? '<button class="btn" id="ac-p">👁️ Accès client</button>' : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
@@ -3428,6 +3787,9 @@ PAGES.projet = async (id) => {
 
   $('#edit-p', p)?.addEventListener('click', () => formulaireProjet(projet));
   $('#rc-p', p)?.addEventListener('click', () => rapportClient(projet));
+  $('#film-p', p)?.addEventListener('click', () => filmChantier(projet));
+  $('#aa-p', p)?.addEventListener('click', () => avantApres(projet));
+  $('#story-p', p)?.addEventListener('click', () => storySemaine(projet.id));
   $('#ac-p', p)?.addEventListener('click', () => accesClient(projet));
   $('#photo-p', p)?.addEventListener('change', async (e) => {
     const f = e.target.files[0];
@@ -4043,7 +4405,8 @@ async function ongletGalerie(projet, zone) {
     const nb = (src) => visibles.filter((x) => src === 'toutes' || x.source === src).length;
     zone.innerHTML = `<div class="galerie-barre">
         <div class="galerie-filtres">${[['toutes', 'Toutes'], ['galerie', 'Ajoutées'], ['rapport', 'Des rapports']].map(([k, l]) => `<button type="button" class="chip-filtre ${k === filtre ? 'actif' : ''}" data-filtre="${k}">${l} <b>${nb(k)}</b></button>`).join('')}</div>
-        ${ajouter ? '<label class="btn primary">📷 Ajouter des photos<input type="file" id="g-ajout" accept="image/*" multiple hidden></label>' : ''}
+        <span class="galerie-actions">${visibles.length > 1 && !DEMO ? '<button type="button" class="btn" id="g-film">🎬 Film</button><button type="button" class="btn" id="g-aa">↔️ Avant / Après</button>' : ''}
+        ${ajouter ? '<label class="btn primary">📷 Ajouter des photos<input type="file" id="g-ajout" accept="image/*" multiple hidden></label>' : ''}</span>
       </div>
       ${liste.length ? [...mois].map(([m, idx]) => `<section class="galerie-mois"><h4>${esc(m.charAt(0).toUpperCase() + m.slice(1))} <span class="muted">· ${idx.length} photo${idx.length > 1 ? 's' : ''}</span></h4>
         <div class="galerie">${idx.map((i) => `<button type="button" class="galerie-vignette" data-i="${i}" aria-label="Agrandir la photo du ${fdate(liste[i].date_photo)}">
@@ -4052,6 +4415,8 @@ async function ongletGalerie(projet, zone) {
     $$('[data-filtre]', zone).forEach((b) => (b.onclick = () => { filtre = b.dataset.filtre; rendre(); }));
     $$('[data-i]', zone).forEach((b) => (b.onclick = () => visionneuse(liste, Number(b.dataset.i))));
     $('#g-ajout', zone)?.addEventListener('change', (e) => envoyerGalerie([...e.target.files]));
+    $('#g-film', zone)?.addEventListener('click', () => filmChantier(projet));
+    $('#g-aa', zone)?.addEventListener('click', () => avantApres(projet));
   };
 
   const envoyerGalerie = (fichiers) => {

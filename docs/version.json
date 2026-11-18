@@ -1,9 +1,9 @@
 {
-  "version": "3.6.1",
+  "version": "3.7",
   "date": "2026-11-19",
   "nouveautes": [
-    "👤 Contrôles : choisissez qui doit contrôler. La Direction peut demander à un technicien de réceptionner un ouvrage (fouilles, ferraillage…), et un technicien peut demander à un collègue de vérifier son travail.",
-    "La personne choisie est prévenue sur son téléphone, voit la fiche et la signe. On peut changer de contrôleur tant que le contrôle n’est pas fait.",
-    "La page Contrôles montre « À contrôler par moi », « Mes demandes » et « En attente chez les autres »."
+    "🎬 Film du chantier : toutes les photos deviennent une petite vidéo animée de l’avancement (dates et pourcentages), à envoyer au client sur WhatsApp.",
+    "↔️ Avant / Après : comparez deux photos du même chantier en glissant le doigt, et partagez l’image.",
+    "📱 Story de la semaine : sur l’accueil, touchez une bulle pour revivre la semaine en 30 secondes (chiffres, plus belles photos, étapes validées, points d’attention) et la partager en vidéo."
   ]
 }
