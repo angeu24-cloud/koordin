@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.10';
+const VERSION = '3.11';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -207,6 +207,7 @@ function toast(msg, type = 'ok', duree = 4200) {
   t.append(ico, txt);
   $('#toasts').appendChild(t);
   setTimeout(() => t.remove(), duree);
+  return t;
 }
 
 const empty = (ico, txt) => `<div class="empty"><div class="big">${ico}</div>${esc(txt)}</div>`;
@@ -853,8 +854,146 @@ async function listeEnvois() {
   try { return ((await boiteEnvois('readonly', (s) => s.getAll())) || []).filter((x) => x.profil_id === S.profil?.id).sort((a, b) => a.cree_le.localeCompare(b.cree_le)); } catch { return []; }
 }
 
+// ─── 3.11 : vidéos dans les rapports ───
+const VIDEO_MAX_OCTETS = 48 * 1024 * 1024;   // Supabase accepte 50 Mo par fichier
+const VIDEO_MAX_SECONDES = 180;              // 3 minutes filmées dans l'application
+const tailleLisible = (o) => (o >= 1048576 ? `${(o / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
+const dureeLisible = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+function formatEnregistrement() {
+  const choix = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return choix.find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+}
+const extensionVideo = (type) => (/mp4/.test(type) ? 'mp4' : /quicktime/.test(type) ? 'mov' : /3gpp/.test(type) ? '3gp' : 'webm');
+const typeVideoServeur = (type) => (/mp4/.test(type) ? 'video/mp4' : /quicktime/.test(type) ? 'video/quicktime' : /3gpp/.test(type) ? 'video/3gpp' : 'video/webm');
+async function dureeVideo(blob) {
+  return new Promise((ok) => {
+    const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true;
+    const u = URL.createObjectURL(blob);
+    const fin = (d) => { URL.revokeObjectURL(u); ok(Number.isFinite(d) ? d : 0); };
+    v.onloadedmetadata = () => {
+      if (Number.isFinite(v.duration)) return fin(v.duration);
+      // WebM enregistrés : la durée n'est connue qu'en allant à la fin
+      v.currentTime = 1e7; v.ontimeupdate = () => { v.ontimeupdate = null; fin(v.duration); };
+    };
+    v.onerror = () => fin(0);
+    setTimeout(() => fin(0), 8000);
+    v.src = u;
+  });
+}
+
+// Filmer dans l'application : caméra arrière, qualité réglée pour un envoi léger (≈ 10 Mo par minute)
+function filmerVideo() {
+  return new Promise((resoudre) => {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast('Ce téléphone ne permet pas de filmer ici : utilisez « Vidéo de la galerie ».', 'warn', 7000); return resoudre(null); }
+    let flux = null, rec = null, morceaux = [], debut = 0, minuterie = null, face = 'environment', fini = false;
+    const m = ouvrirModale({
+      titre: '🎥 Filmer le chantier',
+      corps: `<div class="vf-zone"><video id="vf-apercu" autoplay playsinline muted></video><div class="vf-chrono hidden" id="vf-chrono"><i></i><span>0:00</span> / ${dureeLisible(VIDEO_MAX_SECONDES)}</div></div>
+        <p class="muted vf-aide" id="vf-aide">Appuyez sur le rond rouge pour commencer. 3 minutes au maximum.</p>
+        <div class="vf-boutons"><button type="button" class="btn" id="vf-retourner">🔄</button><button type="button" class="vf-rond" id="vf-rec" aria-label="Commencer à filmer"></button><button type="button" class="btn ghost" data-close>Annuler</button></div>`,
+    });
+    const el = m.el, apercu = $('#vf-apercu', el);
+    const arreterFlux = () => flux?.getTracks().forEach((t) => t.stop());
+    const terminer = (res) => { if (fini) return; fini = true; clearInterval(minuterie); arreterFlux(); obs.disconnect(); m.fermer(); resoudre(res); };
+    const obs = new MutationObserver(() => { if (!document.body.contains(el)) { clearInterval(minuterie); if (rec?.state === 'recording') { fini = true; rec.onstop = null; rec.stop(); } arreterFlux(); if (!fini) { fini = true; resoudre(null); } obs.disconnect(); } });
+    obs.observe(document.body, { childList: true });
+    const ouvrirCamera = async () => {
+      arreterFlux();
+      try {
+        flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: face, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } }, audio: { echoCancellation: true, noiseSuppression: true } });
+      } catch {
+        try { flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: face }, audio: true }); } catch (e) { toast('Caméra inaccessible. Autorisez la caméra et le micro pour KOORDIN.', 'err', 7000); return terminer(null); }
+      }
+      apercu.srcObject = flux; apercu.classList.toggle('miroir', face === 'user');
+    };
+    $('#vf-retourner', el).onclick = () => { if (rec?.state === 'recording') return; face = face === 'environment' ? 'user' : 'environment'; ouvrirCamera(); };
+    $('#vf-rec', el).onclick = () => {
+      if (rec?.state === 'recording') { rec.stop(); return; }
+      const type = formatEnregistrement();
+      try { rec = new MediaRecorder(flux, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 1200000, audioBitsPerSecond: 64000 }); } catch { rec = new MediaRecorder(flux); }
+      morceaux = [];
+      rec.ondataavailable = (e) => { if (e.data?.size) morceaux.push(e.data); };
+      rec.onstop = async () => {
+        const blob = new Blob(morceaux, { type: rec.mimeType || type || 'video/webm' });
+        const duree = (Date.now() - debut) / 1000;
+        terminer(blob.size ? { blob, duree } : null);
+      };
+      rec.start(1000); debut = Date.now();
+      $('#vf-rec', el).classList.add('enreg'); $('#vf-rec', el).setAttribute('aria-label', 'Arrêter');
+      $('#vf-chrono', el).classList.remove('hidden'); $('#vf-retourner', el).disabled = true;
+      $('#vf-aide', el).textContent = 'On filme… appuyez sur le carré pour arrêter.';
+      minuterie = setInterval(() => {
+        const s = (Date.now() - debut) / 1000;
+        $('#vf-chrono span', el).textContent = dureeLisible(s);
+        if (s >= VIDEO_MAX_SECONDES && rec.state === 'recording') rec.stop();
+      }, 250);
+    };
+    ouvrirCamera();
+  });
+}
+
+// Vidéo trop lourde (galerie) : on la réencode en 720p léger, en temps réel, sur le téléphone
+async function alleger(fichier, progression = () => {}) {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('Vidéo trop lourde (plus de 48 Mo) et ce téléphone ne sait pas la réduire. Filmez plutôt dans KOORDIN avec « 🎥 Filmer ».');
+  const v = document.createElement('video'); v.playsInline = true; v.preload = 'auto';
+  const u = URL.createObjectURL(fichier); v.src = u;
+  await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('Vidéo illisible sur ce téléphone.')); });
+  if (v.duration > 600) { URL.revokeObjectURL(u); throw new Error('Vidéo trop longue : 10 minutes au maximum. Coupez-la dans la galerie du téléphone.'); }
+  const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * k / 2) * 2; c.height = Math.round(v.videoHeight * k / 2) * 2;
+  const ctx = c.getContext('2d');
+  const flux = c.captureStream(25);
+  let audio = null;
+  try {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = audio.createMediaStreamDestination();
+    audio.createMediaElementSource(v).connect(dest);
+    dest.stream.getAudioTracks().forEach((t) => flux.addTrack(t));
+  } catch { v.muted = true; }
+  const type = formatEnregistrement();
+  const rec = new MediaRecorder(flux, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 1200000, audioBitsPerSecond: 64000 });
+  const morceaux = []; rec.ondataavailable = (e) => { if (e.data?.size) morceaux.push(e.data); };
+  const fin = new Promise((ok) => { rec.onstop = ok; });
+  let actif = true;
+  const dessiner = () => { if (!actif) return; ctx.drawImage(v, 0, 0, c.width, c.height); progression(Math.min(1, v.currentTime / v.duration)); if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(dessiner); else requestAnimationFrame(dessiner); };
+  rec.start(1000);
+  await v.play();
+  dessiner();
+  await new Promise((ok) => { v.onended = ok; });
+  actif = false; rec.stop(); await fin;
+  try { audio?.close(); } catch { /* rien */ }
+  URL.revokeObjectURL(u);
+  const blob = new Blob(morceaux, { type: rec.mimeType || type || 'video/webm' });
+  if (blob.size > VIDEO_MAX_OCTETS) throw new Error('Même réduite, la vidéo dépasse 48 Mo. Coupez-la en plusieurs morceaux.');
+  return { blob, duree: v.duration };
+}
+async function preparerVideoGalerie(fichier, progression) {
+  if (fichier.size <= VIDEO_MAX_OCTETS) return { blob: fichier, duree: await dureeVideo(fichier) };
+  return alleger(fichier, progression);
+}
+
+// Envoi des vidéos d'un rapport (après les photos)
+async function envoyerVideosRapport(rapport, videos, progression = () => {}) {
+  if (!videos.length) return 0;
+  let echecs = 0;
+  let deja = [];
+  try { deja = ((await sb.from('rapport_videos').select('chemin').eq('rapport_id', rapport.id)).data || []).map((x) => x.chemin); } catch { /* rien */ }
+  for (let i = 0; i < videos.length; i++) {
+    progression(i + 1, videos.length);
+    const v = videos[i], blob = v.blob || v;
+    const type = typeVideoServeur(blob.type || '');
+    const chemin = `${S.entreprise.id}/${rapport.id}/video-${i + 1}.${extensionVideo(type)}`;
+    if (deja.includes(chemin)) continue;
+    const { error: e1 } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: type, upsert: false });
+    if (e1 && !/exists|Duplicate/i.test(e1.message)) { if (estErreurReseau(e1)) throw e1; console.warn('vidéo', e1); echecs++; continue; }
+    const { error: e2 } = await sb.from('rapport_videos').insert({ rapport_id: rapport.id, chemin, duree: v.duree ? Math.round(v.duree * 10) / 10 : null, taille: blob.size });
+    if (e2) { if (estErreurReseau(e2)) throw e2; console.warn('vidéo', e2); echecs++; }
+  }
+  return echecs;
+}
+
 // ─── Envoi d'un rapport (même chemin en ligne et depuis la boîte d'envoi) ───
-async function envoyerRapport(rapport, photos, progression = () => {}) {
+async function envoyerRapport(rapport, photos, progression = () => {}, videos = [], progressionVideo = () => {}) {
   const { error } = await sb.from('rapports').insert(rapport);
   if (error && !/duplicate key|rapports_pkey|23505/.test(`${error.message} ${error.code}`)) throw error;
   let echecs = 0;
@@ -868,6 +1007,7 @@ async function envoyerRapport(rapport, photos, progression = () => {}) {
     const { error: e2 } = await sb.from('rapport_photos').insert({ rapport_id: rapport.id, chemin });
     if (e2) { if (estErreurReseau(e2)) throw e2; echecs++; }
   }
+  echecs += await envoyerVideosRapport(rapport, videos, progressionVideo);
   return { echecs };
 }
 
@@ -902,7 +1042,7 @@ async function synchroniser({ silencieux = false } = {}) {
     for (const envoi of envois) {
       try {
         if (envoi.type === 'rapport') {
-          const { echecs } = await envoyerRapport(envoi.rapport, envoi.photos || []);
+          const { echecs } = await envoyerRapport(envoi.rapport, envoi.photos || [], undefined, envoi.videos || []);
           if (echecs) toast(`Rapport envoyé, mais ${echecs} photo(s) n’ont pas pu être envoyées.`, 'warn', 6000);
         } else if (envoi.type === 'appel') {
           await envoyerAppel(envoi.appel);
@@ -1949,7 +2089,11 @@ async function kokoComprendre(phrase) {
   if (appel) {
     const nom = appel[2].replace(/^(le |la |l |monsieur |madame |m )/, '').trim();
     const qui = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id).find((x) => sansAccents(x.nom).split(/\s+/).some((m) => m.length > 1 && nom.split(/\s+/).includes(m)) || sansAccents(x.nom).includes(nom));
-    if (qui) { repondre(`J’appelle ${qui.nom} 📹`); setTimeout(() => lancerAppel({ mode: role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return; }
+    if (qui) {
+      const video = /video|camera|chantier en direct/.test(t);
+      repondre(`J’appelle ${qui.nom} ${video ? '📹' : '📞'}`);
+      setTimeout(() => lancerAppel({ mode: !video ? 'audio' : role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return;
+    }
     repondre(`Je ne trouve pas « ${nom} » dans votre équipe.`); return;
   }
   if (/(savoir|conseil|astuce|regle) du jour/.test(t)) { const sj = savoirDuJour(); kokoDire(`${sj.t}. ${sj.x}`, 12000); return; }
@@ -4192,13 +4336,18 @@ async function listeRapports(zone, { projetId = null, statut = null, sansFiltre 
   if (statut === 'attente') req = req.in('statut', ['soumis', 'pre_valide']);
   else if (statut) req = req.eq('statut', statut);
   const rapports = await q(req);
+  try {
+    const ids = rapports.map((r) => r.id);
+    const vids = ids.length ? ((await sb.from('rapport_videos').select('rapport_id').in('rapport_id', ids)).data || []) : [];
+    rapports.forEach((r) => { r.nb_videos = vids.filter((v) => v.rapport_id === r.id).length; });
+  } catch { /* base pas encore mise à jour (3.11) */ }
   zone.innerHTML = (!sansFiltre ? `<div class="card-title">Rapports du projet <a class="btn sm primary" href="#/nouveau-rapport">➕ Nouveau rapport</a></div>` : '')
     + (rapports.length ? rapports.map((r) => `
     <div class="report card" data-rapport="${r.id}">
       <div class="avatar">${esc(initiales(r.auteur?.nom))}</div>
       <div class="r-body">
         <div class="r-title">${esc(r.projets?.nom)}${r.lots?.nom ? ` · ${esc(r.lots.nom)}` : ''} ${badge(STATUT_RAPPORT[r.statut])} ${r.incidents ? badge(['crit', '⚠️ Incident']) : ''}</div>
-        <div class="r-meta">${fdate(r.date_rapport)} · ${esc(r.auteur?.nom)} · ${r.effectif ?? '—'} pers. · ${esc(r.meteo || '')}${r.avancement != null ? ` · ${r.avancement} %` : ''}${r.rapport_photos?.length ? ` · 📷 ${r.rapport_photos.length}` : ''}</div>
+        <div class="r-meta">${fdate(r.date_rapport)} · ${esc(r.auteur?.nom)} · ${r.effectif ?? '—'} pers. · ${esc(r.meteo || '')}${r.avancement != null ? ` · ${r.avancement} %` : ''}${r.rapport_photos?.length ? ` · 📷 ${r.rapport_photos.length}` : ''}${r.nb_videos ? ` · 🎥 ${r.nb_videos}` : ''}</div>
         <div class="r-text">${esc(r.travaux)}</div>
       </div>
     </div>`).join('') : empty('📋', 'Aucun rapport pour ces critères'));
@@ -4211,11 +4360,18 @@ async function detailRapport(id) {
     let r;
     try { r = await q(sb.from('rapports').select(`${champs}, verificateur:profils!rapports_pre_valide_par_fkey(nom)`).eq('id', id).single()); }
     catch { r = await q(sb.from('rapports').select(champs).eq('id', id).single()); } // base pas encore mise à jour (3.10)
-    let urls = [];
+    let urls = [], urlsVideos = [];
     if (r.rapport_photos?.length) {
       const { data } = await sb.storage.from('photos-chantier').createSignedUrls(r.rapport_photos.map((x) => x.chemin), 3600);
       urls = (data || []).map((x) => x.signedUrl).filter(Boolean);
     }
+    try {
+      const vids = (await sb.from('rapport_videos').select('chemin, duree').eq('rapport_id', r.id).order('created_at')).data || [];
+      if (vids.length) {
+        const { data } = await sb.storage.from('photos-chantier').createSignedUrls(vids.map((x) => x.chemin), 3600 * 3);
+        urlsVideos = (data || []).map((x, i) => ({ url: x.signedUrl, duree: vids[i].duree })).filter((x) => x.url);
+      }
+    } catch { /* base pas encore mise à jour (3.11) */ }
     const dir = can('direction');
     const valider = (dir && ['soumis', 'pre_valide'].includes(r.statut)) || (can('coordinateur') && r.statut === 'soumis');
     $('.modal-body', m.el).innerHTML = `
@@ -4231,6 +4387,7 @@ async function detailRapport(id) {
       ${r.incidents ? `<div class="detail-block"><h4>⚠️ Incidents / problèmes</h4><p style="color:var(--crit)">${esc(r.incidents)}</p></div>` : ''}
       ${r.besoins ? `<div class="detail-block"><h4>Besoins (matériaux, matériel, personnel)</h4><p>${esc(r.besoins)}</p></div>` : ''}
       ${urls.length ? `<div class="detail-block"><h4>Photos (${urls.length})</h4><div class="photos">${urls.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo de chantier" loading="lazy"></a>`).join('')}</div></div>` : ''}
+      ${urlsVideos.length ? `<div class="detail-block"><h4>Vidéos (${urlsVideos.length})</h4><div class="medias-videos">${urlsVideos.map((v, i) => `<div class="video-pick lecture"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video><div class="video-info"><b>🎥 Vidéo ${i + 1}</b><span>${v.duree ? dureeLisible(num(v.duree)) : ''}</span></div><a class="btn sm ghost" href="${esc(v.url)}" target="_blank" rel="noopener">⬇️ Ouvrir</a></div>`).join('')}</div></div>` : ''}
       ${circuitValidation(r)}
       ${valider ? `<div class="card" style="background:var(--surface-2)">
         ${dir ? '' : '<p class="muted" style="font-size:13px;margin-bottom:10px">Après votre vérification, le rapport part à la <b>Direction</b> pour la validation finale.</p>'}
@@ -4324,6 +4481,7 @@ PAGES['nouveau-rapport'] = async () => {
   memo.del('koordin-projet-rapport');
   const projetInitial = projetPrefere || brouillon.projet_id || (projets.length === 1 ? projets[0].id : '');
   const photos = [];
+  const videos = [];
 
   if (!projets.length) {
     page(`${entete('Nouveau rapport')}<div class="card">${empty('🏗️', 'Vous n’êtes affecté à aucun chantier en cours. Demandez à votre coordinateur de vous ajouter à un projet.')}</div>`);
@@ -4346,11 +4504,13 @@ PAGES['nouveau-rapport'] = async () => {
         ${F.area('travaux', 'Travaux réalisés aujourd’hui', brouillon.travaux, { required: true, placeholder: 'Ex. Coulage des poteaux R+3 côté nord, pose des réservations électriques…' })}
         ${F.area('incidents', 'Incidents, retards ou problèmes (laisser vide si aucun)', brouillon.incidents, { placeholder: 'Ex. Pluie de 10 h à 13 h, panne bétonnière, absence de 3 ouvriers…' })}
         ${F.area('besoins', 'Besoins (matériaux, matériel, main-d’œuvre)', brouillon.besoins, { placeholder: 'Ex. 50 sacs de ciment pour jeudi, 2 ferrailleurs supplémentaires…' })}
-        <div class="field full">Photos du chantier
-          <div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn">📷 Prendre une photo<input type="file" class="choix-photos" accept="image/*" capture="environment" hidden></label>
-            <label class="btn">🖼️ Choisir dans la galerie<input type="file" class="choix-photos" accept="image/*" multiple hidden></label></div>
-          <span class="hint">Les photos sont compressées automatiquement pour économiser vos données mobiles.</span>
-          <div class="photos mt" id="apercu-photos"></div></div>
+        <div class="field full">Photos et vidéos du chantier <span class="medias-compte" id="medias-compte"></span>
+          <div class="medias-boutons"><label class="btn">📷 Prendre une photo<input type="file" class="choix-photos" accept="image/*" capture="environment" hidden></label>
+            <label class="btn">🖼️ Photos de la galerie<input type="file" class="choix-photos" accept="image/*" multiple hidden></label>
+            <button type="button" class="btn" id="filmer">🎥 Filmer</button>
+            <label class="btn">🎞️ Vidéo de la galerie<input type="file" id="choix-videos" accept="video/*" multiple hidden></label></div>
+          <span class="hint">Autant de photos que vous voulez, compressées automatiquement. Vidéos : 3 minutes au plus quand vous filmez ici, 48 Mo au plus depuis la galerie (sinon KOORDIN la réduit).</span>
+          <div class="photos mt" id="apercu-photos"></div><div class="medias-videos" id="apercu-videos"></div></div>
       </div>
       <div class="form-actions"><button type="button" class="btn ghost" id="effacer">Effacer le brouillon</button><button class="btn primary" type="submit" id="envoyer">📤 Envoyer le rapport</button></div>
     </form>`);
@@ -4383,20 +4543,46 @@ PAGES['nouveau-rapport'] = async () => {
   form.addEventListener('input', sauver);
   await chargerLots(brouillon.lot_id);
 
+  const compter = () => {
+    const t = [photos.length ? `${photos.length} photo${photos.length > 1 ? 's' : ''}` : '', videos.length ? `${videos.length} vidéo${videos.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+    $('#medias-compte', p).textContent = t ? `(${t})` : '';
+  };
   const rendrePhotos = () => {
     $('#apercu-photos', p).innerHTML = photos.map((ph, i) => `<div class="photo-pick"><img src="${ph.url}" alt="Photo ${i + 1}"><button type="button" data-suppr="${i}" aria-label="Retirer">×</button></div>`).join('');
     $$('[data-suppr]', p).forEach((b) => (b.onclick = () => { URL.revokeObjectURL(photos[b.dataset.suppr].url); photos.splice(Number(b.dataset.suppr), 1); rendrePhotos(); }));
+    compter();
+  };
+  const rendreVideos = () => {
+    $('#apercu-videos', p).innerHTML = videos.map((v, i) => `<div class="video-pick"><video src="${v.url}" controls playsinline preload="metadata"></video>
+      <div class="video-info"><b>🎥 Vidéo ${i + 1}</b><span>${v.duree ? dureeLisible(v.duree) + ' · ' : ''}${tailleLisible(v.blob.size)}</span></div><button type="button" class="btn sm ghost" data-suppr-video="${i}">Retirer</button></div>`).join('');
+    $$('[data-suppr-video]', p).forEach((b) => (b.onclick = () => { URL.revokeObjectURL(videos[b.dataset.supprVideo].url); videos.splice(Number(b.dataset.supprVideo), 1); rendreVideos(); }));
+    compter();
   };
   const ajouterPhotos = async (e) => {
-    const fichiers = [...e.target.files].slice(0, 12 - photos.length);
-    for (const f of fichiers) {
-      const blob = await compresserImage(f);
+    const fichiers = [...e.target.files];
+    e.target.value = '';
+    for (let i = 0; i < fichiers.length; i++) {
+      if (fichiers.length > 3) $('#medias-compte', p).textContent = `(préparation ${i + 1}/${fichiers.length}…)`;
+      const blob = await compresserImage(fichiers[i]);
       photos.push({ blob, url: URL.createObjectURL(blob) });
     }
-    e.target.value = '';
     rendrePhotos();
   };
   $$('.choix-photos', p).forEach((inp) => (inp.onchange = ajouterPhotos));
+  const ajouterVideo = (v) => { if (!v?.blob) return; videos.push({ ...v, url: URL.createObjectURL(v.blob) }); rendreVideos(); };
+  $('#filmer', p).onclick = async () => ajouterVideo(await filmerVideo());
+  $('#choix-videos', p).onchange = async (e) => {
+    const fichiers = [...e.target.files];
+    e.target.value = '';
+    for (const f of fichiers) {
+      const lourde = f.size > VIDEO_MAX_OCTETS;
+      let t = null;
+      if (lourde) t = toast(`⏳ Vidéo de ${tailleLisible(f.size)} : réduction en cours, gardez l’écran allumé…`, 'warn', 600000);
+      try { ajouterVideo(await preparerVideoGalerie(f, (x) => { $('#medias-compte', p).textContent = `(réduction de la vidéo ${Math.round(x * 100)} %…)`; })); }
+      catch (err) { toast(err.message || 'Vidéo illisible.', 'err', 8000); }
+      finally { t?.remove?.(); compter(); }
+    }
+  };
   $('#effacer', p).onclick = () => { try { localStorage.removeItem(cle); } catch { /* rien */ } naviguer(); };
 
   form.addEventListener('submit', async (e) => {
@@ -4413,8 +4599,9 @@ PAGES['nouveau-rapport'] = async () => {
       avancement: d.lot_id ? Math.round(num(av.value)) : null,
     };
     const blobs = photos.map((ph) => ph.blob);
+    const vids = videos.map((v) => ({ blob: v.blob, duree: v.duree || null }));
     const garderSurTelephone = async () => {
-      await ajouterEnvoi({ type: 'rapport', rapport, photos: blobs, libelle: projets.find((x) => x.id === d.projet_id)?.nom || '' });
+      await ajouterEnvoi({ type: 'rapport', rapport, photos: blobs, videos: vids, libelle: projets.find((x) => x.id === d.projet_id)?.nom || '' });
       try { localStorage.removeItem(cle); } catch { /* rien */ }
       toast('📶 Pas de réseau : rapport enregistré sur le téléphone. Il partira tout seul dès que le réseau revient ✅', 'warn', 7000);
       majIndicateurReseau();
@@ -4422,9 +4609,9 @@ PAGES['nouveau-rapport'] = async () => {
     };
     try {
       if (!navigator.onLine) { await garderSurTelephone(); return; }
-      const { echecs } = await envoyerRapport(rapport, blobs, (i, n) => { btn.textContent = `Envoi des photos ${i}/${n}…`; });
+      const { echecs } = await envoyerRapport(rapport, blobs, (i, n) => { btn.textContent = `Envoi des photos ${i}/${n}…`; }, vids, (i, n) => { btn.textContent = `Envoi de la vidéo ${i}/${n}… (patientez)`; });
       try { localStorage.removeItem(cle); } catch { /* rien */ }
-      toast(echecs ? `Rapport envoyé, mais ${echecs} photo(s) n’ont pas pu être envoyées.` : 'Rapport envoyé ✅ La coordination est prévenue.', echecs ? 'warn' : 'ok');
+      toast(echecs ? `Rapport envoyé, mais ${echecs} photo(s) ou vidéo(s) n’ont pas pu être envoyées.` : 'Rapport envoyé ✅ La coordination est prévenue.', echecs ? 'warn' : 'ok');
       allerA('#/rapports');
     } catch (err) {
       if (estErreurReseau(err)) {
@@ -7395,10 +7582,11 @@ async function serveursICE() {
 
 PAGES.appels = async (id) => {
   const p = page(`
-    ${entete('Appels et réunions', 'Voir un chantier en direct et se réunir en vidéo')}
-    <div class="appel-actions">
+    ${entete('Appels et réunions', 'Appeler l’équipe, voir un chantier en direct, se réunir')}
+    <div class="appel-actions trois">
+      <button type="button" class="appel-gros vocal" id="ap-vocal"><span class="appel-gros-ic">📞</span><b>Appel vocal</b><small>Sans caméra : pour parler avec une ou plusieurs personnes</small></button>
       <button type="button" class="appel-gros" id="ap-chantier"><span class="appel-gros-ic">📹</span><b>${role() === 'technicien' ? 'Montrer le chantier en direct' : 'Voir un chantier en direct'}</b><small>${role() === 'technicien' ? 'Vous filmez, la direction voit et vous parle' : 'Le technicien filme, vous voyez et vous parlez'}</small></button>
-      <button type="button" class="appel-gros" id="ap-reunion"><span class="appel-gros-ic">👥</span><b>Démarrer une réunion</b><small>Vidéo avec plusieurs personnes de l’équipe</small></button>
+      <button type="button" class="appel-gros" id="ap-reunion"><span class="appel-gros-ic">👥</span><b>Réunion vidéo</b><small>Se voir à plusieurs, avec la caméra</small></button>
     </div>
     <div id="ap-encours"></div>
     <div class="card"><div class="card-title">Appeler directement</div><div id="ap-equipe" class="paie-liste"></div></div>
@@ -7407,11 +7595,13 @@ PAGES.appels = async (id) => {
   await chargerEquipe();
   const membres = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id);
   $('#ap-equipe', p).innerHTML = membres.length ? membres.map((x) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(x.nom)}</b><span>${esc(ROLES[x.role]?.label || x.role)}</span></div>
-      <button type="button" class="btn sm primary" data-appeler="${x.id}">📹 Appeler</button></div>`).join('') : empty('👥', 'Invitez d’abord des membres dans « Équipe ».');
+      <span class="ap-choix"><button type="button" class="btn sm primary" data-vocal="${x.id}" aria-label="Appel vocal ${esc(x.nom)}">📞 Appeler</button><button type="button" class="btn sm" data-appeler="${x.id}" aria-label="Appel vidéo ${esc(x.nom)}">📹 Vidéo</button></span></div>`).join('') : empty('👥', 'Invitez d’abord des membres dans « Équipe ».');
   $$('[data-appeler]', p).forEach((b) => (b.onclick = () => {
     const x = membres.find((m) => m.id === b.dataset.appeler);
     lancerAppel({ mode: role() === 'technicien' || x.role === 'technicien' ? 'chantier' : 'reunion', invites: [x.id] });
   }));
+  $$('[data-vocal]', p).forEach((b) => (b.onclick = () => lancerAppel({ mode: 'audio', invites: [b.dataset.vocal] })));
+  $('#ap-vocal', p).onclick = () => dialogueReunion(membres, 'audio');
   $('#ap-chantier', p).onclick = () => dialogueChantier(membres);
   $('#ap-reunion', p).onclick = () => dialogueReunion(membres);
   try {
@@ -7424,7 +7614,7 @@ PAGES.appels = async (id) => {
       const manque = !moi && !a.participants.includes(S.profil.id) && !appelActif(a);
       const duree = a.termine_le ? Math.max(1, Math.round((new Date(a.termine_le) - new Date(a.created_at)) / 60000)) : null;
       const st = appelActif(a) ? ['ok', '🔴 En cours'] : manque ? ['warn', a.refus.includes(S.profil.id) ? 'Refusé' : 'Manqué'] : ['muted', duree ? `${duree} min` : 'Terminé'];
-      return `<div class="paie-ligne"><div class="paie-nom"><b>${a.mode === 'chantier' ? '📹' : '👥'} ${esc(titreAppel(a))}</b><span>${moi ? 'Vous avez appelé' : `Appel de ${esc(nomAppel(a.cree_par))}`} · ${new Date(a.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${a.projets?.nom ? ` · ${esc(a.projets.nom)}` : ''}</span></div><div class="paie-montant">${badge(st)}</div></div>`;
+      return `<div class="paie-ligne"><div class="paie-nom"><b>${(a.mode === 'chantier' ? '📹' : a.mode === 'audio' ? '📞' : '👥')} ${esc(titreAppel(a))}</b><span>${moi ? 'Vous avez appelé' : `Appel de ${esc(nomAppel(a.cree_par))}`} · ${new Date(a.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${a.projets?.nom ? ` · ${esc(a.projets.nom)}` : ''}</span></div><div class="paie-montant">${badge(st)}</div></div>`;
     }).join('') : empty('📹', 'Aucun appel pour le moment. Appelez un technicien pour voir son chantier en direct.');
   } catch (e) { $('#ap-histo', p).innerHTML = empty('📹', erreurAppel(e)); }
   if (id) rejoindreParLien(id);
@@ -7433,7 +7623,7 @@ PAGES.appels = async (id) => {
 function titreAppel(a) {
   if (a.titre) return a.titre;
   const autres = [a.cree_par, ...a.invites].filter((x) => x !== S.profil.id).map(nomAppel);
-  return `${a.mode === 'chantier' ? 'Chantier en direct' : 'Réunion'} avec ${autres.slice(0, 3).join(', ')}${autres.length > 3 ? '…' : ''}`;
+  return `${a.mode === 'chantier' ? 'Chantier en direct' : a.mode === 'audio' ? 'Appel' : 'Réunion'} avec ${autres.slice(0, 3).join(', ')}${autres.length > 3 ? '…' : ''}`;
 }
 
 async function dialogueChantier(membres) {
@@ -7452,13 +7642,15 @@ async function dialogueChantier(membres) {
   });
 }
 
-async function dialogueReunion(membres) {
+async function dialogueReunion(membres, mode = 'reunion') {
   const projets = await q(sb.from('projets').select('id, nom').neq('statut', 'termine').order('nom'));
+  const vocal = mode === 'audio';
   ouvrirModale({
-    titre: '👥 Nouvelle réunion vidéo',
-    boutonOk: '📹 Démarrer',
+    titre: vocal ? '📞 Appel vocal' : '👥 Nouvelle réunion vidéo',
+    boutonOk: vocal ? '📞 Appeler' : '📹 Démarrer',
     corps: `<div class="form-grid">
-        ${F.text('titre', 'Sujet de la réunion', '', { full: true, placeholder: 'Ex. Point hebdomadaire Villa Cocody' })}
+        ${vocal ? '<p class="muted full" style="font-size:13px">Sans caméra : idéal pour un échange rapide, même avec peu de réseau. Cochez une ou plusieurs personnes.</p>' : ''}
+        ${F.text('titre', vocal ? 'Sujet (facultatif)' : 'Sujet de la réunion', '', { full: true, placeholder: vocal ? 'Ex. Livraison du béton demain' : 'Ex. Point hebdomadaire Villa Cocody' })}
         ${F.select('projet_id', 'Chantier (facultatif)', [['', '— Aucun —'], ...projets.map((x) => [x.id, x.nom])], '', { full: true })}
       </div>
       <div class="field full" style="margin-top:6px">Participants (7 au maximum)</div>
@@ -7467,7 +7659,7 @@ async function dialogueReunion(membres) {
       const invites = Object.keys(d).filter((k) => k.startsWith('m_') && d[k]).map((k) => k.slice(2));
       if (!invites.length) { toast('Cochez au moins une personne.', 'warn'); return false; }
       if (invites.length > 7) { toast('7 participants au maximum (8 avec vous).', 'warn'); return false; }
-      await lancerAppel({ mode: 'reunion', invites, projet_id: d.projet_id || null, titre: d.titre || null });
+      await lancerAppel({ mode, invites, projet_id: d.projet_id || null, titre: d.titre || null });
     },
   });
 }
@@ -7484,7 +7676,7 @@ async function rejoindreParLien(id) {
   try {
     const a = await q(sb.from('appels').select('*, projets(nom)').eq('id', id).single());
     if (!appelActif(a)) { toast('Cet appel est terminé.', 'warn'); return; }
-    if (await confirmer(`Rejoindre « ${titreAppel(a)} » ? La caméra et le micro vont s’activer.`, '📹 Rejoindre')) ouvrirEcranAppel(a);
+    if (await confirmer(`Rejoindre « ${titreAppel(a)} » ? ${a.mode === 'audio' ? 'Le micro va s’activer.' : 'La caméra et le micro vont s’activer.'}`, a.mode === 'audio' ? '📞 Rejoindre' : '📹 Rejoindre')) ouvrirEcranAppel(a);
   } catch (e) { toast(erreurAppel(e), 'err'); }
 }
 
@@ -7498,7 +7690,7 @@ function gererAppelTempsReel(payload) {
   }
   if (APPEL.sonnerie?.id === a.id && (a.statut === 'termine' || a.participants.includes(S.profil.id) || a.refus.includes(S.profil.id))) {
     arreterSonnerie();
-    if (a.statut === 'termine') toast(`📹 Appel manqué de ${nomAppel(a.cree_par)}.`, 'warn', 8000);
+    if (a.statut === 'termine') toast(`${a.mode === 'audio' ? '📞' : '📹'} Appel manqué de ${nomAppel(a.cree_par)}.`, 'warn', 8000);
   }
   const c = APPEL.courant;
   if (c?.id === a.id) {
@@ -7525,10 +7717,10 @@ function sonner(a) {
   el.innerHTML = `<div class="sonnerie-carte" role="alertdialog" aria-label="Appel entrant">
     <div class="sonnerie-onde"><div class="sonnerie-avatar">${esc(initiales(qui))}</div></div>
     <b>${esc(qui)}</b>
-    <span>${a.mode === 'chantier' ? (role() === 'technicien' ? '📹 veut voir le chantier en direct' : '📹 veut vous montrer le chantier') : '👥 vous invite à une réunion vidéo'}${a.titre ? `<br>« ${esc(a.titre)} »` : ''}</span>
+    <span>${a.mode === 'chantier' ? (role() === 'technicien' ? '📹 veut voir le chantier en direct' : '📹 veut vous montrer le chantier') : a.mode === 'audio' ? (a.invites.length > 1 ? '📞 appel vocal de groupe' : '📞 vous appelle') : '👥 vous invite à une réunion vidéo'}${a.titre ? `<br>« ${esc(a.titre)} »` : ''}</span>
     <div class="sonnerie-boutons">
       <button type="button" class="rond rouge" id="so-non" aria-label="Refuser">✕</button>
-      <button type="button" class="rond vert" id="so-oui" aria-label="Répondre">📹</button>
+      <button type="button" class="rond vert" id="so-oui" aria-label="Répondre">${a.mode === 'audio' ? '📞' : '📹'}</button>
     </div><div class="sonnerie-legende"><span>Refuser</span><span>Répondre</span></div></div>`;
   document.body.appendChild(el);
   let ctx = null;
@@ -7545,7 +7737,7 @@ function sonner(a) {
   };
   bip();
   const iv = setInterval(bip, 2200);
-  const fin = setTimeout(() => { arreterSonnerie(); toast(`📹 Appel manqué de ${qui}.`, 'warn', 8000); }, 45000);
+  const fin = setTimeout(() => { arreterSonnerie(); toast(`${a.mode === 'audio' ? '📞' : '📹'} Appel manqué de ${qui}.`, 'warn', 8000); }, 45000);
   APPEL.sonnerie = { id: a.id, el, stop: () => { clearInterval(iv); clearTimeout(fin); try { ctx?.close(); } catch { /* rien */ } el.remove(); } };
   $('#so-non', el).onclick = async () => { arreterSonnerie(); try { await sb.rpc('repondre_appel', { p_appel: a.id, p_reponse: 'refuse' }); } catch { /* rien */ } };
   $('#so-oui', el).onclick = () => { arreterSonnerie(); ouvrirEcranAppel(a); };
@@ -7638,25 +7830,26 @@ class SalleVisio {
 // ─── Écran d'appel ───
 async function ouvrirEcranAppel(a) {
   if (APPEL.courant) { toast('Vous êtes déjà en appel.', 'warn'); return; }
-  if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) { toast('Ce navigateur ne permet pas les appels vidéo. Utilisez Chrome à jour.', 'err', 7000); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) { toast('Ce navigateur ne permet pas les appels. Utilisez Chrome à jour.', 'err', 7000); return; }
   APPEL.courant = { id: a.id, appel: a, terminer: () => {} };
+  const vocal = a.mode === 'audio';
   const createur = a.cree_par === S.profil.id;
   let face = a.mode === 'chantier' && role() === 'technicien' ? 'environment' : 'user';
   const contraintes = (f) => ({ facingMode: f, width: { ideal: f === 'environment' ? 1280 : 640 }, height: { ideal: f === 'environment' ? 720 : 480 }, frameRate: { ideal: 24, max: 30 } });
   let flux;
   try {
-    flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: contraintes(face) });
+    flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: vocal ? false : contraintes(face) });
   } catch (e) {
-    try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); toast('Caméra indisponible : vous êtes en audio seulement.', 'warn', 6000); }
+    try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); if (!vocal) toast('Caméra indisponible : vous êtes en audio seulement.', 'warn', 6000); }
     catch (e2) { APPEL.courant = null; toast(erreurAppel(e2), 'err', 9000); return; }
   }
   try { await q(sb.rpc('repondre_appel', { p_appel: a.id, p_reponse: 'rejoint' })); }
   catch (e) { flux.getTracks().forEach((t) => t.stop()); APPEL.courant = null; toast(erreurAppel(e), 'err', 7000); return; }
 
-  const peutPhoto = a.projet_id && can('direction', 'coordinateur', 'technicien');
+  const peutPhoto = !vocal && a.projet_id && can('direction', 'coordinateur', 'technicien');
   const autres = [a.cree_par, ...a.invites].filter((x) => x !== S.profil.id);
   const el = document.createElement('div');
-  el.className = 'appel-ecran';
+  el.className = `appel-ecran${vocal ? ' vocal' : ''}`;
   el.innerHTML = `
     <div class="ap-haut"><div class="ap-titre"><b>${esc(titreAppel(a))}</b><span><i class="ap-point"></i><span id="ap-chrono">00:00</span> · <span id="ap-nb">1 personne</span>${a.projets?.nom ? ` · ${esc(a.projets.nom)}` : ''}</span></div>
       <button type="button" class="ap-mini" id="ap-relancer" title="Relancer par WhatsApp">📲</button></div>
@@ -7664,8 +7857,8 @@ async function ouvrirEcranAppel(a) {
     <video class="ap-moi ${face === 'user' ? 'miroir' : ''}" id="ap-moi" autoplay playsinline muted></video>
     <div class="ap-bas">
       <button type="button" class="ap-btn" id="ap-micro" aria-label="Micro"><span>🎤</span><small>Micro</small></button>
-      <button type="button" class="ap-btn" id="ap-cam" aria-label="Caméra"><span>📷</span><small>Caméra</small></button>
-      <button type="button" class="ap-btn" id="ap-retourner" aria-label="Changer de caméra"><span>🔄</span><small>Retourner</small></button>
+      ${vocal ? '<button type="button" class="ap-btn" id="ap-hp" aria-label="Haut-parleur"><span>🔊</span><small>Haut-parleur</small></button>' : `<button type="button" class="ap-btn" id="ap-cam" aria-label="Caméra"><span>📷</span><small>Caméra</small></button>
+      <button type="button" class="ap-btn" id="ap-retourner" aria-label="Changer de caméra"><span>🔄</span><small>Retourner</small></button>`}
       ${peutPhoto ? '<button type="button" class="ap-btn" id="ap-photo" aria-label="Photo"><span>📸</span><small>Photo</small></button>' : ''}
       <button type="button" class="ap-btn rouge" id="ap-fin" aria-label="Raccrocher"><span>✆</span><small>${createur ? 'Terminer' : 'Quitter'}</small></button>
     </div>`;
@@ -7688,11 +7881,12 @@ async function ouvrirEcranAppel(a) {
       if (!t) {
         t = document.createElement('div');
         t.className = 'ap-tuile'; t.dataset.pid = pair.pid;
-        t.innerHTML = '<video autoplay playsinline></video><span class="ap-nom"></span><span class="ap-etat">Connexion…</span>';
+        t.innerHTML = `<video autoplay playsinline></video>${vocal ? `<div class="ap-avatar"><span>${esc(initiales(pair.nom))}</span></div>` : ''}<span class="ap-nom"></span><span class="ap-etat">Connexion…</span>`;
         t.onclick = () => { const f = t.classList.toggle('focus'); $$('.ap-tuile', grille).forEach((x) => { if (x !== t) x.classList.toggle('cache', f); }); };
         grille.appendChild(t);
       }
       $('.ap-nom', t).textContent = pair.nom;
+      if (vocal && $('.ap-avatar span', t)) $('.ap-avatar span', t).textContent = initiales(pair.nom);
       const v = $('video', t);
       if (v.srcObject !== pair.flux) { v.srcObject = pair.flux; v.play?.().catch(() => {}); }
       $('#ap-attente', el)?.classList.add('hidden');
@@ -7737,8 +7931,15 @@ async function ouvrirEcranAppel(a) {
 
   const piste = (k) => flux.getTracks().find((t) => t.kind === k);
   $('#ap-micro', el).onclick = (e) => { const t = piste('audio'); if (!t) return; t.enabled = !t.enabled; e.currentTarget.classList.toggle('off', !t.enabled); $('span', e.currentTarget).textContent = t.enabled ? '🎤' : '🔇'; };
-  $('#ap-cam', el).onclick = (e) => { const t = piste('video'); if (!t) return; t.enabled = !t.enabled; e.currentTarget.classList.toggle('off', !t.enabled); moi.classList.toggle('hidden', !t.enabled); };
-  $('#ap-retourner', el).onclick = async (e) => {
+  $('#ap-hp', el)?.addEventListener('click', (e) => {
+    // Le volume des voix des autres : fort (haut-parleur) ou normal
+    const fort = !e.currentTarget.classList.toggle('off');
+    $$('.ap-tuile video', grille).forEach((v) => { v.volume = fort ? 1 : 0.35; });
+    $('span', e.currentTarget).textContent = fort ? '🔊' : '🔉';
+  });
+  if (vocal) $('#ap-moi', el).classList.add('hidden');
+  if (!$('#ap-cam', el)) { /* appel vocal : pas de caméra */ } else $('#ap-cam', el).onclick = (e) => { const t = piste('video'); if (!t) return; t.enabled = !t.enabled; e.currentTarget.classList.toggle('off', !t.enabled); moi.classList.toggle('hidden', !t.enabled); };
+  if ($('#ap-retourner', el)) $('#ap-retourner', el).onclick = async (e) => {
     const ancienne = piste('video');
     const btn = e.currentTarget; btn.disabled = true;
     const voulu = face === 'user' ? 'environment' : 'user';
@@ -7774,7 +7975,7 @@ async function ouvrirEcranAppel(a) {
   $('#ap-relancer', el).onclick = () => {
     const cible = autres.length === 1 ? S.equipe?.find((x) => x.id === autres[0]) : null;
     const numero = cible ? numeroAuteur(cible) : '';
-    const texte = `📹 ${S.profil.nom} vous attend dans un appel vidéo KOORDIN. Appuyez ici pour rejoindre : ${lienAppel(a.id)}`;
+    const texte = `${vocal ? '📞' : '📹'} ${S.profil.nom} vous attend dans un appel ${vocal ? '' : 'vidéo '}KOORDIN. Appuyez ici pour rejoindre : ${lienAppel(a.id)}`;
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texte)}`, '_blank', 'noopener');
   };
   $('#ap-fin', el).onclick = async () => {
