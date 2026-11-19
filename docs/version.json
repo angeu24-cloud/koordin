@@ -1,10 +1,10 @@
 {
-  "version": "3.9.2",
+  "version": "3.10",
   "date": "2026-11-19",
   "nouveautes": [
-    "📦 Page Stock réorganisée : en haut les gros boutons (Entrée, Sortie, Nouvel article), puis trois onglets clairs : Le stock, Historique, Chantiers.",
-    "Touchez un article pour ouvrir sa fiche : ce qui reste, son historique, Sortie / Entrée, Modifier, Supprimer. Tout est au même endroit.",
-    "L’historique se lit comme des phrases, jour par jour : « −4 bottes de HA 10 · Vers Villa Cocody · Koffi ».",
-    "Nouvel onglet Chantiers : ce que chaque chantier a reçu du magasin, retours déduits."
+    "📋 Validation des rapports en deux temps : le chef de projet vérifie (🔎), puis la Direction donne la validation finale (✅).",
+    "Le rapport n’est validé (avancement du lot, visible par le client) qu’après la Direction. La Direction peut aussi valider directement.",
+    "Chaque rapport montre son circuit : Envoyé → Vérifié → Validé, avec les noms et les commentaires.",
+    "📦 Page Stock réorganisée : fiche de l’article, historique lisible, consommation par chantier, suppression."
   ]
 }

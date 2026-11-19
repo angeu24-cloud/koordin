@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.9.2';
+const VERSION = '3.10';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -77,7 +77,8 @@ const SANTE = {
   termine:   ['muted', '🏁 Terminé'],
 };
 const STATUT_RAPPORT = {
-  soumis: ['warn', '⏳ À valider'],
+  soumis: ['warn', '⏳ À vérifier'],
+  pre_valide: ['info', '🔎 Vérifié · attend la Direction'],
   valide: ['ok', '✅ Validé'],
   rejete: ['crit', '↩️ Rejeté'],
 };
@@ -4173,7 +4174,7 @@ PAGES.rapports = async () => {
     <div class="card">
       <div class="toolbar">
         <select class="input" id="f-p"><option value="">Tous les projets</option>${projets.map((x) => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
-        <select class="input" id="f-s"><option value="">Tous les statuts</option>${Object.entries(STATUT_RAPPORT).map(([k, [, l]]) => `<option value="${k}" ${!tech && k === 'soumis' ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select class="input" id="f-s"><option value="">Tous les statuts</option>${can('direction') ? '<option value="attente" selected>📋 À valider (tout ce qui attend)</option>' : ''}${Object.entries(STATUT_RAPPORT).map(([k, [, l]]) => `<option value="${k}" ${!tech && !can('direction') && k === 'soumis' ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </div>
       <div id="zone-rapports"></div></div>`);
   const charger = () => listeRapports($('#zone-rapports', p), { projetId: $('#f-p', p).value || null, statut: $('#f-s', p).value || null, sansFiltre: true });
@@ -4188,7 +4189,8 @@ async function listeRapports(zone, { projetId = null, statut = null, sansFiltre 
     .select('id, date_rapport, statut, travaux, incidents, effectif, meteo, avancement, created_at, projets(nom), lots(nom), auteur:profils!rapports_auteur_id_fkey(nom), rapport_photos(id)')
     .order('date_rapport', { ascending: false }).order('created_at', { ascending: false }).limit(100);
   if (projetId) req = req.eq('projet_id', projetId);
-  if (statut) req = req.eq('statut', statut);
+  if (statut === 'attente') req = req.in('statut', ['soumis', 'pre_valide']);
+  else if (statut) req = req.eq('statut', statut);
   const rapports = await q(req);
   zone.innerHTML = (!sansFiltre ? `<div class="card-title">Rapports du projet <a class="btn sm primary" href="#/nouveau-rapport">➕ Nouveau rapport</a></div>` : '')
     + (rapports.length ? rapports.map((r) => `
@@ -4205,15 +4207,17 @@ async function listeRapports(zone, { projetId = null, statut = null, sansFiltre 
 async function detailRapport(id) {
   const m = ouvrirModale({ titre: 'Rapport de chantier', large: true, corps: loading() });
   try {
-    const r = await q(sb.from('rapports')
-      .select('*, projets(nom), lots(nom, avancement), auteur:profils!rapports_auteur_id_fkey(nom, email, telephone), validateur:profils!rapports_valide_par_fkey(nom), rapport_photos(chemin)')
-      .eq('id', id).single());
+    const champs = '*, projets(nom), lots(nom, avancement), auteur:profils!rapports_auteur_id_fkey(nom, email, telephone), validateur:profils!rapports_valide_par_fkey(nom), rapport_photos(chemin)';
+    let r;
+    try { r = await q(sb.from('rapports').select(`${champs}, verificateur:profils!rapports_pre_valide_par_fkey(nom)`).eq('id', id).single()); }
+    catch { r = await q(sb.from('rapports').select(champs).eq('id', id).single()); } // base pas encore mise à jour (3.10)
     let urls = [];
     if (r.rapport_photos?.length) {
       const { data } = await sb.storage.from('photos-chantier').createSignedUrls(r.rapport_photos.map((x) => x.chemin), 3600);
       urls = (data || []).map((x) => x.signedUrl).filter(Boolean);
     }
-    const valider = can('direction', 'coordinateur') && r.statut === 'soumis';
+    const dir = can('direction');
+    const valider = (dir && ['soumis', 'pre_valide'].includes(r.statut)) || (can('coordinateur') && r.statut === 'soumis');
     $('.modal-body', m.el).innerHTML = `
       <div class="split" style="margin-bottom:14px;flex-wrap:wrap"><div><b style="font-size:16px">${esc(r.projets?.nom)}</b>${r.lots?.nom ? ` · ${esc(r.lots.nom)}` : ''}
         <div class="muted" style="font-size:12px">Par ${esc(r.auteur?.nom)} · envoyé ${ago(r.created_at)}</div></div>${badge(STATUT_RAPPORT[r.statut])}</div>
@@ -4227,27 +4231,46 @@ async function detailRapport(id) {
       ${r.incidents ? `<div class="detail-block"><h4>⚠️ Incidents / problèmes</h4><p style="color:var(--crit)">${esc(r.incidents)}</p></div>` : ''}
       ${r.besoins ? `<div class="detail-block"><h4>Besoins (matériaux, matériel, personnel)</h4><p>${esc(r.besoins)}</p></div>` : ''}
       ${urls.length ? `<div class="detail-block"><h4>Photos (${urls.length})</h4><div class="photos">${urls.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo de chantier" loading="lazy"></a>`).join('')}</div></div>` : ''}
-      ${r.statut !== 'soumis' ? `<div class="notice ${r.statut === 'rejete' ? 'warn' : ''}">${r.statut === 'valide' ? 'Validé' : 'Rejeté'} par ${esc(r.validateur?.nom || '—')} ${r.valide_at ? ago(r.valide_at) : ''}${r.commentaire_validation ? ` — « ${esc(r.commentaire_validation)} »` : ''}</div>` : ''}
+      ${circuitValidation(r)}
       ${valider ? `<div class="card" style="background:var(--surface-2)">
+        ${dir ? '' : '<p class="muted" style="font-size:13px;margin-bottom:10px">Après votre vérification, le rapport part à la <b>Direction</b> pour la validation finale.</p>'}
         <label class="field">Commentaire (facultatif, obligatoire pour un rejet)<textarea id="com-val" placeholder="Ex. Merci, bon travail / Préciser les quantités…"></textarea></label>
-        ${r.lot_id && r.avancement != null ? `<p class="muted mt" style="font-size:12px">En validant, l’avancement du lot « ${esc(r.lots?.nom)} » passera de ${r.lots?.avancement} % à <b>${r.avancement} %</b>.</p>` : ''}
-        <div class="form-actions"><button class="btn danger" id="rej">↩️ Rejeter</button><button class="btn primary" id="val">✅ Valider le rapport</button></div></div>` : ''}`;
+        ${dir && r.lot_id && r.avancement != null ? `<p class="muted mt" style="font-size:12px">En validant, l’avancement du lot « ${esc(r.lots?.nom)} » passera de ${r.lots?.avancement} % à <b>${r.avancement} %</b>.</p>` : ''}
+        <div class="form-actions"><button class="btn danger" id="rej">↩️ Rejeter</button><button class="btn primary" id="val">${dir ? '✅ Validation finale' : '🔎 Vérifié : envoyer à la Direction'}</button></div></div>` : ''}`;
     const decider = async (statut) => {
       const com = $('#com-val', m.el).value.trim();
       if (statut === 'rejete' && !com) return toast('Indiquez le motif du rejet.', 'warn');
       try {
-        await q(sb.from('rapports').update({ statut, commentaire_validation: com || null }).eq('id', r.id));
+        const maj = await q(sb.from('rapports').update({ statut, commentaire_validation: com || null }).eq('id', r.id).select('statut').single());
         m.fermer();
         naviguer();
-        if (r.auteur_id !== S.profil.id) proposerWhatsAppRapport(r, statut, com);
+        if (maj?.statut === 'pre_valide') toast('🔎 Rapport vérifié. La Direction est prévenue pour la validation finale.');
+        else if (r.auteur_id !== S.profil.id) proposerWhatsAppRapport(r, statut, com);
         else toast(statut === 'valide' ? 'Rapport validé.' : 'Rapport rejeté.');
-      } catch (e) { toast(messageErreur(e), 'err'); }
+      } catch (e) {
+        toast(/RAPPORT_FINAL/.test(String(e?.message)) ? 'Ce rapport a déjà reçu la validation finale de la Direction.' : /rapports_statut_check|pre_valide/.test(String(e?.message)) ? 'La validation en deux temps nécessite la mise à jour 3.10 de la base de données (kit d’installation).' : messageErreur(e), 'err', 7000);
+      }
     };
-    $('#val', m.el)?.addEventListener('click', () => decider('valide'));
+    $('#val', m.el)?.addEventListener('click', () => decider(dir ? 'valide' : 'pre_valide'));
     $('#rej', m.el)?.addEventListener('click', () => decider('rejete'));
   } catch (e) {
     $('.modal-body', m.el).innerHTML = empty('⚠️', messageErreur(e));
   }
+}
+
+// Circuit du rapport : Envoyé → Vérifié (chef de projet) → Validé (Direction)
+function circuitValidation(r) {
+  const fait = (x) => (x ? 'fait' : '');
+  const rejete = r.statut === 'rejete';
+  const verifie = r.pre_valide_at || r.statut === 'pre_valide' || (r.statut === 'valide' && r.pre_valide_at);
+  const etapes = [
+    ['📤', 'Envoyé', `${esc(r.auteur?.nom || '')} · ${ago(r.created_at)}`, 'fait'],
+    ['🔎', 'Vérifié', r.pre_valide_at ? `${esc(r.verificateur?.nom || '—')} · ${ago(r.pre_valide_at)}${r.commentaire_pre_validation ? `<br>« ${esc(r.commentaire_pre_validation)} »` : ''}` : r.statut === 'valide' ? 'Validé directement par la Direction' : 'Chef de projet', r.statut === 'valide' ? 'fait' : fait(verifie)],
+    rejete ? ['↩️', 'Rejeté', `${esc(r.validateur?.nom || '—')} ${r.valide_at ? `· ${ago(r.valide_at)}` : ''}${r.commentaire_validation ? `<br>« ${esc(r.commentaire_validation)} »` : ''}`, 'rejete']
+      : ['✅', 'Validé', r.statut === 'valide' ? `${esc(r.validateur?.nom || '—')} · ${ago(r.valide_at)}${r.commentaire_validation ? `<br>« ${esc(r.commentaire_validation)} »` : ''}` : 'Direction (validation finale)', fait(r.statut === 'valide')],
+  ];
+  const enCours = r.statut === 'soumis' ? 1 : r.statut === 'pre_valide' ? 2 : -1;
+  return `<div class="circuit">${etapes.map(([ic, t, s, cl], i) => `<div class="circuit-etape ${cl} ${i === enCours ? 'en-cours' : ''}"><span class="circuit-ic">${ic}</span><b>${t}</b><small>${s}</small></div>`).join('')}</div>`;
 }
 
 // Après une validation : prévenir l'auteur par WhatsApp en un geste
@@ -4261,7 +4284,7 @@ function proposerWhatsAppRapport(r, statut, commentaire) {
   const prenom = String(r.auteur?.nom || '').split(' ')[0];
   const quand = parseDay(r.date_rapport).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
   const message = statut === 'valide'
-    ? `Bonjour ${prenom}, votre rapport du ${quand} sur « ${r.projets?.nom} » a été validé ✅.${commentaire ? ` Commentaire : ${commentaire}` : ''}\n${S.profil.nom} (KOORDIN)`
+    ? `Bonjour ${prenom}, votre rapport du ${quand} sur « ${r.projets?.nom} » est définitivement validé ✅.${commentaire ? ` Commentaire : ${commentaire}` : ''}\n${S.profil.nom} (KOORDIN)`
     : `Bonjour ${prenom}, votre rapport du ${quand} sur « ${r.projets?.nom} » a été rejeté ↩️. Motif : ${commentaire}\nMerci de le corriger et d’envoyer un nouveau rapport dans KOORDIN.\n${S.profil.nom}`;
   const numero = numeroAuteur(r.auteur);
   const m = ouvrirModale({

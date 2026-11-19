@@ -2014,3 +2014,12 @@ body.en-film .koko { display: none; }
 }
 .sk-bilan div { padding: 10px 12px; }
 .sk-bilan .valeur b { font-size: 15px; white-space: nowrap; }
+
+/* 3.10 : circuit de validation des rapports */
+.circuit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 4px 0 14px; position: relative; }
+.circuit-etape { border: 1px solid var(--border); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 3px; opacity: .55; font-size: 13px; }
+.circuit-etape .circuit-ic { font-size: 20px; }
+.circuit-etape small { color: var(--text-3); font-size: 11px; line-height: 1.35; }
+.circuit-etape.fait { opacity: 1; border-color: color-mix(in srgb, var(--ok, #3ecf8e) 45%, transparent); background: color-mix(in srgb, var(--ok, #3ecf8e) 8%, transparent); }
+.circuit-etape.en-cours { opacity: 1; border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 15%, transparent); }
+.circuit-etape.rejete { opacity: 1; border-color: color-mix(in srgb, var(--crit, #ff6b6b) 50%, transparent); background: color-mix(in srgb, var(--crit, #ff6b6b) 9%, transparent); }
