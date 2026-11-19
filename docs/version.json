@@ -1,8 +1,10 @@
 {
-  "version": "3.9.1",
+  "version": "3.9.2",
   "date": "2026-11-19",
   "nouveautes": [
-    "🗑️ Stock : on peut supprimer un article (✏️ → Supprimer cet article).",
-    "🗑️ Une erreur de saisie ? La Direction supprime le mouvement dans « Historique des mouvements » : le stock est recalculé tout seul."
+    "📦 Page Stock réorganisée : en haut les gros boutons (Entrée, Sortie, Nouvel article), puis trois onglets clairs : Le stock, Historique, Chantiers.",
+    "Touchez un article pour ouvrir sa fiche : ce qui reste, son historique, Sortie / Entrée, Modifier, Supprimer. Tout est au même endroit.",
+    "L’historique se lit comme des phrases, jour par jour : « −4 bottes de HA 10 · Vers Villa Cocody · Koffi ».",
+    "Nouvel onglet Chantiers : ce que chaque chantier a reçu du magasin, retours déduits."
   ]
 }

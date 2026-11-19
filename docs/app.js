@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.9.1';
+const VERSION = '3.9.2';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -7777,18 +7777,6 @@ function tableauStock(articles, { compact = false } = {}) {
         ${gerer ? `<button class="btn sm" data-ea="${a.id}">Modifier</button>` : ''}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 }
 
-// Sur téléphone : une carte par article, gros chiffres et boutons faciles à toucher
-function cartesStock(articles) {
-  if (!articles.length) return empty('📦', 'Aucun article');
-  const mouv = can('direction', 'magasinier', 'technicien'), gerer = can('direction', 'magasinier', 'achats'), tech = can('technicien');
-  return `<div class="sk-cartes">${articles.map((a) => `<div class="sk-carte ${a.alerte ? 'bas' : ''}">
-    <div class="sk-carte-tete"><span class="sk-emoji">${emojiArticle(a.nom)}</span><div class="sk-art-txt"><b>${esc(a.nom)}</b><small>${a.alerte ? '🚨 À réapprovisionner' : '✅ OK'} · seuil ${esc(qteLisible(a, a.seuil_min))}</small></div>
-      ${gerer ? `<button class="btn sm ghost" data-ea="${a.id}" aria-label="Modifier ${esc(a.nom)}">✏️</button>` : ''}</div>
-    <div class="sk-carte-qte">${esc(qteLisible(a, a.quantite))}</div>
-    ${mouv ? `<div class="sk-carte-btns"><button class="btn" data-mv="sortie" data-art="${a.id}">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button class="btn" data-mv="entree" data-art="${a.id}">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
-  </div>`).join('')}</div>`;
-}
-
 function tableauMouvements(mouvements, { supprimer = false } = {}) {
   if (!mouvements.length) return empty('🔄', 'Aucun mouvement');
   return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Article</th><th>Mouvement</th><th>Projet</th><th>Par</th><th>Commentaire</th>${supprimer ? '<th></th>' : ''}</tr></thead><tbody>
@@ -8078,55 +8066,213 @@ function formulaireOuvrier(o, apres) {
   });
 }
 
+// ─── 3.9.2 : page Stock réorganisée ───
+// Trois questions simples : qu'est-ce qu'il reste ? qu'est-ce qui a bougé ? qu'est-ce que chaque chantier a consommé ?
+// Tout ce qui concerne un article (entrées, sorties, historique, modifier, supprimer) est réuni dans sa fiche.
+const sensMouvement = (m) => m.type === 'entree'
+  ? (m.projet_id ? `↩️ Retour de ${m.projets?.nom || 'chantier'}` : '🚚 Arrivée au magasin')
+  : `🏗️ Vers ${m.projets?.nom || 'un chantier'}`;
+const jourLisible = (ts) => {
+  const d = new Date(ts), auj = new Date(); const hier = new Date(); hier.setDate(auj.getDate() - 1);
+  if (d.toDateString() === auj.toDateString()) return 'Aujourd’hui';
+  if (d.toDateString() === hier.toDateString()) return 'Hier';
+  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+};
+// Une ligne d'historique, lisible comme une phrase
+function ligneMouvement(m, { avecArticle = true, supprimer = false } = {}) {
+  const ent = m.type === 'entree';
+  return `<div class="sk-mv ${ent ? 'entree' : 'sortie'}">
+    <span class="sk-mv-ic">${ent ? '⬇️' : '⬆️'}</span>
+    <div class="sk-mv-txt"><span><b>${ent ? '+' : '−'}${esc(qteLisible(m.articles, m.quantite))}</b>${avecArticle ? ` · ${esc(m.articles?.nom || '')}` : ''}</span>
+      <small>${esc(sensMouvement(m))} · ${esc(nomMembre(m.created_by))} · ${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.commentaire ? ` · « ${esc(m.commentaire)} »` : ''}</small></div>
+    ${supprimer ? `<button type="button" class="btn sm ghost" data-sm="${m.id}" aria-label="Supprimer ce mouvement" title="Supprimer (erreur de saisie)">🗑️</button>` : ''}</div>`;
+}
+function listeMouvementsParJour(mouvements, o = {}) {
+  if (!mouvements.length) return empty('🕘', 'Aucun mouvement pour le moment');
+  let jour = '';
+  return mouvements.map((m) => {
+    const j = jourLisible(m.created_at); const tete = j !== jour ? `<div class="sk-jour">${esc(j)}</div>` : ''; jour = j;
+    return tete + ligneMouvement(m, o);
+  }).join('');
+}
+async function supprimerMouvement(m, a) {
+  const qteTxt = qteLisible(m.articles, m.quantite);
+  // Supprimer une entrée retire ce stock : impossible si ce stock a déjà été sorti
+  if (m.type === 'entree' && a && num(a.quantite) - num(m.quantite) < 0) {
+    toast(`Impossible : il ne reste que ${qteLisible(a, a.quantite)} de « ${a.nom} ». Une partie de cette entrée est déjà sortie vers un chantier.`, 'warn', 7000);
+    return false;
+  }
+  const effet = m.type === 'entree' ? `Le stock de « ${m.articles?.nom} » baissera de ${qteTxt}.` : `Les ${qteTxt} de « ${m.articles?.nom} » reviendront dans le stock.`;
+  if (!(await confirmer(`Supprimer ce mouvement (${m.type === 'entree' ? 'entrée' : 'sortie'} de ${qteTxt}) ? ${effet}`, 'Supprimer'))) return false;
+  const r = await q(sb.from('mouvements_stock').delete().eq('id', m.id).select('id'));
+  if (!r?.length) { toast('Suppression refusée : seule la Direction peut supprimer un mouvement.', 'err'); return false; }
+  toast('Mouvement supprimé, stock recalculé ✅');
+  return true;
+}
+
+let filtreStock = 'tous';
 PAGES.stock = async () => {
+  const tech = can('technicien'), mouv = can('direction', 'magasinier', 'technicien'), gerer = can('direction', 'magasinier', 'achats');
+  const actions = tech
+    ? [['sortie', 'prendre', '⬆️', 'Je prends', 'du matériel pour mon chantier'], ['entree', 'rendre', '⬇️', 'Je rends', 'ce qui reste au magasin']]
+    : [...(mouv ? [['entree', 'rendre', '⬇️', 'Entrée', 'livraison ou retour de chantier'], ['sortie', 'prendre', '⬆️', 'Sortie', 'vers un chantier']] : []),
+      ...(gerer ? [['article', 'nouveau', '＋', 'Nouvel article', 'ajouter au catalogue']] : [])];
   const p = page(`
-    ${entete('Stock', 'Magasin central : quantités, seuils d’alerte et mouvements',
-      `${can('direction', 'magasinier') ? '<button class="btn" id="mv">🔄 Entrée / sortie</button>' : ''}${can('direction', 'magasinier', 'achats') ? '<button class="btn primary" id="na">＋ Nouvel article</button>' : ''}`)}
-    ${can('technicien') ? `<div class="sk-gros"><button type="button" class="sk-gros-btn prendre" data-gros="sortie"><span>⬆️</span><b>Je prends</b><small>du matériel pour mon chantier</small></button><button type="button" class="sk-gros-btn rendre" data-gros="entree"><span>⬇️</span><b>Je rends</b><small>ce qui reste au magasin</small></button></div>` : ''}
-    <div class="tabs"><button class="tab ${ongletStock === 'articles' ? 'active' : ''}" data-o="articles">Articles</button><button class="tab ${ongletStock === 'mouvements' ? 'active' : ''}" data-o="mouvements">Historique des mouvements</button></div>
+    ${entete('Stock', tech ? 'Prenez et rendez le matériel de vos chantiers' : 'Le magasin : ce qui arrive, ce qui part, ce qui reste')}
+    ${actions.length ? `<div class="sk-actions n${actions.length}">${actions.map(([t, c, e, b, s]) => `<button type="button" class="sk-gros-btn ${c}" data-act="${t}"><span>${e}</span><b>${b}</b><small>${s}</small></button>`).join('')}</div>` : ''}
+    <div class="tabs"><button class="tab" data-o="articles">📦 Le stock</button><button class="tab" data-o="mouvements">🕘 Historique</button><button class="tab" data-o="chantiers">🏗️ Chantiers</button></div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
   let articles = [];
+  if (!['articles', 'mouvements', 'chantiers'].includes(ongletStock)) ongletStock = 'articles';
   const rendre = async () => {
+    $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x.dataset.o === ongletStock));
     zone.innerHTML = loading();
     articles = await q(sb.from('v_stock').select('*').order('nom'));
-    if (ongletStock === 'articles') {
-      zone.innerHTML = `<div class="card"><div class="toolbar"><input class="input" id="fq" placeholder="🔍 Rechercher un article…"><span class="muted" style="margin-left:auto;font-size:13px">
-        ${can('technicien') ? '' : `Valeur totale : <b>${money(articles.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0))}</b> · `}${articles.filter((a) => a.alerte).length} alerte(s)</span></div><div id="ta"></div></div>`;
-      const filtrer = (txt) => {
-        const l = articles.filter((a) => !txt || a.nom.toLowerCase().includes(txt));
-        $('#ta', zone).innerHTML = window.matchMedia('(max-width: 760px)').matches ? cartesStock(l) : tableauStock(l);
-        $$('[data-mv]', zone).forEach((b) => (b.onclick = () => formulaireMouvement(articles, b.dataset.mv, b.dataset.art, rendre)));
-        $$('[data-ea]', zone).forEach((b) => (b.onclick = () => formulaireArticle(articles.find((a) => a.id === b.dataset.ea), rendre)));
-      };
-      $('#fq', zone).oninput = (e) => filtrer(e.target.value.toLowerCase());
-      filtrer('');
-    } else {
-      const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(300));
-      const peut = can('direction');
-      zone.innerHTML = `<div class="card">${peut ? '<p class="muted" style="font-size:13px;margin-bottom:10px">Une erreur de saisie ? Touchez 🗑️ pour supprimer le mouvement : le stock est recalculé tout seul.</p>' : ''}${tableauMouvements(mouvements, { supprimer: peut })}</div>`;
-      $$('[data-sm]', zone).forEach((b) => (b.onclick = async () => {
-        const m = mouvements.find((x) => x.id === b.dataset.sm), a = articles.find((x) => x.id === m.article_id);
-        const qteTxt = qteLisible(m.articles, m.quantite);
-        // Supprimer une entrée retire ce stock : impossible si ce stock a déjà été sorti
-        if (m.type === 'entree' && a && num(a.quantite) - num(m.quantite) < 0) {
-          return toast(`Impossible : il ne reste que ${qteLisible(a, a.quantite)} de « ${a.nom} ». Une partie de cette entrée est déjà sortie vers un chantier.`, 'warn', 7000);
-        }
-        const effet = m.type === 'entree' ? `Le stock de « ${m.articles?.nom} » baissera de ${qteTxt}.` : `Les ${qteTxt} de « ${m.articles?.nom} » reviendront dans le stock.`;
-        if (!(await confirmer(`Supprimer ce mouvement (${m.type === 'entree' ? 'entrée' : 'sortie'} de ${qteTxt}) ? ${effet}`, 'Supprimer'))) return;
-        const r = await q(sb.from('mouvements_stock').delete().eq('id', m.id).select('id'));
-        if (!r?.length) return toast('Suppression refusée : seule la Direction peut supprimer un mouvement.', 'err');
-        toast('Mouvement supprimé, stock recalculé ✅');
-        rendre();
-      }));
-    }
+    if (ongletStock === 'articles') vueReste();
+    else if (ongletStock === 'mouvements') await vueHistorique();
+    else await vueChantiers();
   };
-  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletStock = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
-  $('#na', p)?.addEventListener('click', () => formulaireArticle(null, rendre));
-  $('#mv', p)?.addEventListener('click', () => formulaireMouvement(articles, 'entree', null, rendre));
-  $$('[data-gros]', p).forEach((b) => (b.onclick = () => formulaireMouvement(articles, b.dataset.gros, null, rendre)));
+
+  // ── Onglet 1 : ce qui reste ──
+  const vueReste = () => {
+    if (!articles.length) {
+      zone.innerHTML = `<div class="card sk-guide"><div class="card-title">Comment ça marche ?</div>
+        <ol><li><b>Créez vos articles une seule fois</b> : ciment, acier HA 10, sable… (bouton « ＋ Nouvel article »).</li>
+          <li><b>Notez chaque arrivée</b> au magasin : bouton « ⬇️ Entrée ».</li>
+          <li><b>Notez chaque sortie</b> vers un chantier : bouton « ⬆️ Sortie ». Les techniciens peuvent le faire eux-mêmes.</li></ol>
+        <p class="muted">KOORDIN calcule tout seul ce qui reste et vous prévient quand un article passe sous son seuil.</p>
+        ${gerer ? '<button type="button" class="btn primary" id="sk-premier">＋ Créer mon premier article</button>' : ''}</div>`;
+      $('#sk-premier', zone)?.addEventListener('click', () => formulaireArticle(null, rendre));
+      return;
+    }
+    const bas = articles.filter((a) => a.alerte);
+    const valeur = articles.reduce((s, a) => s + Math.max(0, num(a.quantite)) * num(a.prix_unitaire), 0);
+    zone.innerHTML = `<div class="sk-bilan">
+        <div><b>${articles.length}</b><span>article${articles.length > 1 ? 's' : ''}</span></div>
+        <div class="${bas.length ? 'mauvais' : 'bon'}"><b>${bas.length}</b><span>à racheter</span></div>
+        ${tech ? '' : `<div class="valeur"><b>${moneyShort(valeur)}</b><span>valeur du stock</span></div>`}</div>
+      <div class="sk-filtres"><input class="input" type="search" id="fq" placeholder="🔍 Chercher un article…" aria-label="Chercher un article">
+        <div class="sk-chips"><button type="button" class="sk-chip" data-f="tous">Tous</button><button type="button" class="sk-chip" data-f="bas">🚨 À racheter (${bas.length})</button></div></div>
+      <div id="ta"></div>
+      <p class="muted sk-astuce">Touchez un article pour voir sa fiche : son historique${gerer ? ', le modifier ou le supprimer' : ''}.</p>`;
+    const filtrer = () => {
+      const txt = $('#fq', zone).value.trim().toLowerCase();
+      $$('[data-f]', zone).forEach((x) => x.classList.toggle('actif', x.dataset.f === filtreStock));
+      const l = articles.filter((a) => (!txt || a.nom.toLowerCase().includes(txt)) && (filtreStock !== 'bas' || a.alerte));
+      $('#ta', zone).innerHTML = l.length ? `<div class="sk-cartes">${l.map(carteArticle).join('')}</div>` : empty('🔍', 'Aucun article ne correspond');
+    };
+    $('#fq', zone).oninput = filtrer;
+    $$('[data-f]', zone).forEach((x) => (x.onclick = () => { filtreStock = x.dataset.f; filtrer(); }));
+    filtrer();
+  };
+  const carteArticle = (a) => {
+    const qte = num(a.quantite), seuil = num(a.seuil_min);
+    const pct = seuil > 0 ? Math.min(100, Math.round((qte / (seuil * 3)) * 100)) : (qte > 0 ? 100 : 0);
+    return `<div class="sk-carte ${a.alerte ? 'bas' : ''}" data-fiche="${a.id}" role="button" tabindex="0">
+      <div class="sk-carte-tete"><span class="sk-emoji">${emojiArticle(a.nom)}</span><div class="sk-art-txt"><b>${esc(a.nom)}</b><small>${a.alerte ? '🚨 À racheter' : '✅ En stock'}${seuil ? ` · alerte sous ${esc(qteLisible(a, seuil))}` : ''}</small></div><span class="sk-chevron">›</span></div>
+      <div class="sk-carte-qte">${esc(qteLisible(a, qte))}<small> au magasin</small></div>
+      <div class="sk-jauge"><i style="width:${pct}%"></i></div>
+      ${mouv ? `<div class="sk-carte-btns"><button type="button" class="btn" data-mv="sortie" data-art="${a.id}">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button type="button" class="btn" data-mv="entree" data-art="${a.id}">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
+    </div>`;
+  };
+
+  // ── Onglet 2 : historique, jour par jour ──
+  const vueHistorique = async () => {
+    const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(300));
+    const peut = can('direction');
+    let sens = 'tout';
+    zone.innerHTML = `<div class="card"><div class="sk-chips sk-sens"><button type="button" class="sk-chip" data-s="tout">Tout</button><button type="button" class="sk-chip" data-s="entree">⬇️ Entrées</button><button type="button" class="sk-chip" data-s="sortie">⬆️ Sorties</button></div>
+      ${peut ? '<p class="muted sk-astuce">Une erreur de saisie ? Touchez 🗑️ sur la ligne : le stock est recalculé tout seul.</p>' : ''}
+      <div id="sk-hist"></div></div>`;
+    const dessiner = () => {
+      $$('[data-s]', zone).forEach((x) => x.classList.toggle('actif', x.dataset.s === sens));
+      $('#sk-hist', zone).innerHTML = listeMouvementsParJour(mouvements.filter((m) => sens === 'tout' || m.type === sens), { supprimer: peut });
+    };
+    $$('[data-s]', zone).forEach((x) => (x.onclick = () => { sens = x.dataset.s; dessiner(); }));
+    $('#sk-hist', zone).addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-sm]'); if (!b) return;
+      const m = mouvements.find((x) => x.id === b.dataset.sm);
+      if (await supprimerMouvement(m, articles.find((x) => x.id === m.article_id))) rendre();
+    });
+    dessiner();
+  };
+
+  // ── Onglet 3 : ce que chaque chantier a consommé (sorties moins retours) ──
+  const vueChantiers = async () => {
+    const mouvements = await q(sb.from('mouvements_stock').select('article_id, projet_id, type, quantite, projets(nom)').not('projet_id', 'is', null).limit(5000));
+    const parProjet = new Map();
+    for (const m of mouvements) {
+      const pr = parProjet.get(m.projet_id) || { nom: m.projets?.nom || 'Chantier', art: new Map() };
+      pr.art.set(m.article_id, (pr.art.get(m.article_id) || 0) + (m.type === 'sortie' ? num(m.quantite) : -num(m.quantite)));
+      parProjet.set(m.projet_id, pr);
+    }
+    const blocs = [...parProjet.values()].sort((x, y) => x.nom.localeCompare(y.nom, 'fr')).map((pr) => {
+      const lignes = [...pr.art].map(([id, qte]) => [articles.find((a) => a.id === id), qte]).filter(([a, qte]) => a && qte > 0);
+      if (!lignes.length) return '';
+      const total = lignes.reduce((s, [a, qte]) => s + qte * num(a.prix_unitaire), 0);
+      return `<div class="card sk-chantier"><div class="card-title">🏗️ ${esc(pr.nom)}${tech ? '' : `<span class="sk-total">${money(total)}</span>`}</div>
+        ${lignes.map(([a, qte]) => `<div class="sk-conso"><span class="sk-emoji">${emojiArticle(a.nom)}</span><span>${esc(a.nom)}</span><b>${esc(qteLisible(a, qte))}</b></div>`).join('')}</div>`;
+    }).join('');
+    zone.innerHTML = `<p class="muted sk-astuce">Ce que chaque chantier a reçu du magasin, retours déduits.</p>${blocs || empty('🏗️', 'Aucun matériel envoyé sur un chantier pour le moment')}`;
+  };
+
+  // Fiche d'un article : tout au même endroit
+  const ouvrirFiche = async (a) => {
+    const peutSuppr = can('direction');
+    const fiche = ouvrirModale({
+      titre: `${emojiArticle(a.nom)} ${a.nom}`,
+      corps: `<div class="sk-fiche">
+        <div class="sk-fiche-qte ${a.alerte ? 'bas' : ''}"><small>Au magasin</small><b>${esc(qteLisible(a, a.quantite))}</b><span>${a.alerte ? '🚨 Sous le seuil : à racheter' : '✅ Stock suffisant'}</span></div>
+        <div class="sk-fiche-infos">
+          <div><span>Alerte sous</span><b>${esc(qteLisible(a, a.seuil_min))}</b></div>
+          ${estEnBottes(a) ? `<div><span>1 botte</span><b>${pluriel(num(a.barres_par_botte), 'barre', 'barres')}</b></div>` : `<div><span>Unité</span><b>${esc(a.unite)}</b></div>`}
+          ${tech ? '' : `<div><span>Prix ${estEnBottes(a) ? 'd’une barre' : 'unitaire'}</span><b>${money(a.prix_unitaire)}</b></div><div><span>Valeur</span><b>${money(Math.max(0, num(a.quantite)) * num(a.prix_unitaire))}</b></div>`}
+        </div>
+        ${mouv ? `<div class="sk-carte-btns"><button type="button" class="btn primary" data-fmv="sortie">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button type="button" class="btn" data-fmv="entree">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
+        <div class="sk-fiche-titre">Ses derniers mouvements</div>
+        <div id="sk-fiche-hist">${loading()}</div>
+        ${gerer ? '<div class="sk-fiche-bas"><button type="button" class="btn" data-fmod>✏️ Modifier</button><button type="button" class="btn danger" data-fsuppr>🗑️ Supprimer l’article</button></div>' : ''}
+      </div>`,
+      large: true,
+    });
+    const el = fiche.el;
+    const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').eq('article_id', a.id).order('created_at', { ascending: false }).limit(40));
+    $('#sk-fiche-hist', el).innerHTML = listeMouvementsParJour(mouvements, { avecArticle: false, supprimer: peutSuppr });
+    el.addEventListener('click', async (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.fmv) { fiche.fermer(); formulaireMouvement(articles, b.dataset.fmv, a.id, rendre); }
+      else if ('fmod' in b.dataset) { fiche.fermer(); formulaireArticle(a, rendre); }
+      else if ('fsuppr' in b.dataset) { if (await supprimerArticle(a)) { fiche.fermer(); rendre(); } }
+      else if (b.dataset.sm) { const m = mouvements.find((x) => x.id === b.dataset.sm); if (await supprimerMouvement(m, a)) { fiche.fermer(); await rendre(); const n = articles.find((x) => x.id === a.id); if (n) ouvrirFiche(n); } }
+    });
+  };
+
+  zone.addEventListener('click', (e) => {
+    const mv = e.target.closest('[data-mv]');
+    if (mv) { e.stopPropagation(); return formulaireMouvement(articles, mv.dataset.mv, mv.dataset.art, rendre); }
+    const c = e.target.closest('[data-fiche]');
+    if (c) ouvrirFiche(articles.find((a) => a.id === c.dataset.fiche));
+  });
+  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-fiche]')) ouvrirFiche(articles.find((a) => a.id === e.target.dataset.fiche)); });
+  $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletStock = b.dataset.o; rendre(); }));
+  $$('[data-act]', p).forEach((b) => (b.onclick = () => (b.dataset.act === 'article' ? formulaireArticle(null, rendre) : formulaireMouvement(articles, b.dataset.act, null, rendre))));
   await rendre();
 };
+
+async function supprimerArticle(a) {
+  const reste = num(a.quantite);
+  const msg = reste > 0
+    ? `Supprimer « ${a.nom} » ? Il reste ${qteLisible(a, reste)} au magasin. L’article et tout son historique d’entrées et de sorties seront effacés.`
+    : `Supprimer « ${a.nom} » ? L’article et tout son historique d’entrées et de sorties seront effacés.`;
+  if (!(await confirmer(msg, 'Supprimer'))) return false;
+  try {
+    const r = await q(sb.from('articles').delete().eq('id', a.id).select('id'));
+    if (!r?.length) throw new Error('Suppression refusée : seuls la Direction, le Magasin et les Achats peuvent supprimer un article.');
+    toast(`« ${a.nom} » supprimé.`);
+    return true;
+  } catch (e) { toast(messageErreur(e), 'err', 6000); return false; }
+}
 
 // ─── 3.9 : acier en bottes et saisie simplifiée ───
 const estEnBottes = (a) => num(a?.barres_par_botte) > 1;
@@ -8170,20 +8316,7 @@ function formulaireArticle(a, refresh) {
     ${a ? '<button type="button" class="btn danger sk-suppr" id="sk-suppr">🗑️ Supprimer cet article</button>' : ''}`,
     onOpen: (ov) => {
       const cb = $('#sk-bottes', ov), nom = $('[name="nom"]', ov);
-      $('#sk-suppr', ov)?.addEventListener('click', async () => {
-        const reste = num(a.quantite);
-        const msg = reste > 0
-          ? `Supprimer « ${a.nom} » ? Il reste ${qteLisible(a, reste)} au magasin. L’article et tout son historique d’entrées et de sorties seront effacés.`
-          : `Supprimer « ${a.nom} » ? L’article et tout son historique d’entrées et de sorties seront effacés.`;
-        if (!(await confirmer(msg, 'Supprimer'))) return;
-        try {
-          const r = await q(sb.from('articles').delete().eq('id', a.id).select('id'));
-          if (!r?.length) throw new Error('Suppression refusée : seuls la Direction, le Magasin et les Achats peuvent supprimer un article.');
-          $('.modal-head [data-close]', ov)?.click();
-          toast(`« ${a.nom} » supprimé.`);
-          refresh();
-        } catch (e) { toast(messageErreur(e), 'err', 6000); }
-      });
+      $('#sk-suppr', ov)?.addEventListener('click', async () => { if (await supprimerArticle(a)) { $('.modal-head [data-close]', ov)?.click(); refresh(); } });
       const maj = () => {
         const on = cb.checked;
         $('.sk-si-bottes', ov).style.display = on ? '' : 'none';
@@ -8223,7 +8356,8 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
   if (!articles.length) return toast('Créez d’abord un article.', 'warn');
   const tech = can('technicien');
   const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
-  const st = { type: tech ? (type === 'entree' ? 'entree' : 'sortie') : type || 'entree', projet: projets.length === 1 ? projets[0].id : '', panier: new Map(), filtre: '' };
+  const st = { type: tech ? (type === 'entree' ? 'entree' : 'sortie') : type || 'entree', projet: '', panier: new Map(), filtre: '' };
+  if (projets.length === 1 && (tech || st.type === 'sortie')) st.projet = projets[0].id;
   if (articleId) { const a0 = articles.find((a) => a.id === articleId); st.panier.set(articleId, estEnBottes(a0) ? num(a0.barres_par_botte) : 1); }
   const rec = recentsStock();
   const trie = [...articles].sort((x, y) => {
@@ -8232,15 +8366,15 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
   });
   const choixType = tech
     ? [['sortie', '⬆️', 'Je prends', 'du magasin pour mon chantier'], ['entree', '⬇️', 'Je rends', 'au magasin ce qui reste']]
-    : [['entree', '⬇️', 'Entrée', 'livraison, retour chantier'], ['sortie', '⬆️', 'Sortie', 'vers un chantier']];
+    : [['entree', '⬇️', 'Entrée', 'arrive au magasin'], ['sortie', '⬆️', 'Sortie', 'part vers un chantier']];
   const m = ouvrirModale({
-    titre: tech ? '📦 Matériel du chantier' : '🔄 Entrée / sortie de stock',
+    titre: tech ? '📦 Matériel du chantier' : '📦 Entrée ou sortie de matériel',
     boutonOk: 'Valider',
     corps: `<input type="hidden" name="_">
       <div class="sk-etape"><div class="sk-num">1</div><div class="sk-quoi">${tech ? 'Je…' : 'Type'}</div></div>
       <div class="sk-types">${choixType.map(([v, e, t, s]) => `<button type="button" class="sk-type" data-t="${v}"><span>${e}</span><b>${t}</b><small>${s}</small></button>`).join('')}</div>
-      <div class="sk-etape"><div class="sk-num">2</div><div class="sk-quoi">${tech ? 'Mon chantier' : 'Chantier'}</div></div>
-      <div class="sk-chips" id="sk-projets">${tech ? '' : '<button type="button" class="sk-chip" data-p="">🏬 Aucun (dépôt)</button>'}${projets.map((x) => `<button type="button" class="sk-chip" data-p="${x.id}">🏗️ ${esc(x.nom)}</button>`).join('') || '<span class="muted">Aucun chantier en cours.</span>'}</div>
+      <div class="sk-etape"><div class="sk-num">2</div><div class="sk-quoi" id="sk-q2"></div></div>
+      <div class="sk-chips" id="sk-projets"></div>
       <div class="sk-etape"><div class="sk-num">3</div><div class="sk-quoi">Le matériel <small>touchez pour ajouter</small></div></div>
       ${articles.length > 6 ? '<input class="input sk-cherche" type="search" placeholder="🔍 Chercher : ciment, HA 10, sable…" aria-label="Chercher un article">' : ''}
       <div class="sk-liste" id="sk-liste"></div>
@@ -8308,11 +8442,20 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
       });
       liste.addEventListener('focusin', (e) => { if (e.target.matches('[data-champ]')) e.target.select?.(); });
       $('.sk-cherche', ov)?.addEventListener('input', (e) => { st.filtre = e.target.value.trim().toLowerCase(); dessiner(); });
-      const choisirType = (v) => { st.type = v; $$('.sk-type', ov).forEach((x) => x.classList.toggle('actif', x.dataset.t === v)); dessiner(); };
-      $$('.sk-type', ov).forEach((x) => (x.onclick = () => choisirType(x.dataset.t)));
       const choisirProjet = (v) => { st.projet = v; $$('.sk-chip', ov).forEach((x) => x.classList.toggle('actif', x.dataset.p === v)); };
-      $$('.sk-chip', ov).forEach((x) => (x.onclick = () => choisirProjet(x.dataset.p)));
-      choisirType(st.type); choisirProjet(st.projet);
+      // L'étape 2 change selon le sens : d'où vient le matériel (entrée) ou vers quel chantier il part (sortie)
+      const etape2 = () => {
+        const ent = st.type === 'entree', livraison = !tech && ent;
+        $('#sk-q2', ov).textContent = tech ? (ent ? 'Depuis quel chantier ?' : 'Pour quel chantier ?') : ent ? 'D’où vient le matériel ?' : 'Vers quel chantier ?';
+        $('#sk-projets', ov).innerHTML = (livraison ? '<button type="button" class="sk-chip" data-p="">🚚 Livraison du fournisseur</button>' : '')
+          + (projets.map((x) => `<button type="button" class="sk-chip" data-p="${x.id}">${livraison ? '↩️ Retour de ' : '🏗️ '}${esc(x.nom)}</button>`).join('') || (livraison ? '' : '<span class="muted">Aucun chantier en cours.</span>'));
+        if (!ent && st.projet === '' && projets.length === 1) st.projet = projets[0].id;
+        choisirProjet(st.projet);
+      };
+      $('#sk-projets', ov).addEventListener('click', (e) => { const c = e.target.closest('.sk-chip'); if (c) choisirProjet(c.dataset.p); });
+      const choisirType = (v) => { st.type = v; $$('.sk-type', ov).forEach((x) => x.classList.toggle('actif', x.dataset.t === v)); etape2(); dessiner(); };
+      $$('.sk-type', ov).forEach((x) => (x.onclick = () => choisirType(x.dataset.t)));
+      choisirType(st.type);
     },
     onSubmit: async (d) => {
       const lignes = [...st.panier].filter(([, q]) => q > 0);
