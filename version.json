@@ -1,0 +1,10 @@
+{
+  "version": "3.10",
+  "date": "2026-11-19",
+  "nouveautes": [
+    "📋 Validation des rapports en deux temps : le chef de projet vérifie (🔎), puis la Direction donne la validation finale (✅).",
+    "Le rapport n’est validé (avancement du lot, visible par le client) qu’après la Direction. La Direction peut aussi valider directement.",
+    "Chaque rapport montre son circuit : Envoyé → Vérifié → Validé, avec les noms et les commentaires.",
+    "📦 Page Stock réorganisée : fiche de l’article, historique lisible, consommation par chantier, suppression."
+  ]
+}
