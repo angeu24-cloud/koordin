@@ -1,10 +1,10 @@
 {
-  "version": "3.11",
+  "version": "3.11.1",
   "date": "2026-11-19",
   "nouveautes": [
-    "📷 Rapports : autant de photos que vous voulez (plus de limite de 12).",
-    "🎥 Vidéos dans les rapports : filmez directement dans KOORDIN (3 minutes au plus) ou choisissez une vidéo de la galerie. La Direction et la Coordination la regardent dans le rapport.",
-    "📞 Appels vocaux : appelez une ou plusieurs personnes sans caméra. L’appel vidéo reste disponible pour voir les chantiers en direct.",
-    "📋 Validation des rapports en deux temps : le chef de projet vérifie, la Direction valide en dernier."
+    "📷 Envoi des photos plus solide : chaque photo est réessayée 3 fois si le réseau coupe.",
+    "Si des photos ne passent pas, elles sont gardées sur le téléphone et renvoyées automatiquement (seulement celles qui manquent).",
+    "Nouveau bouton « 📷 Ajouter des photos à ce rapport » dans un rapport déjà envoyé.",
+    "🎥 Vidéos dans les rapports et 📞 appels vocaux (3.11)."
   ]
 }

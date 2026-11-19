@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.11';
+const VERSION = '3.11.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -996,19 +996,45 @@ async function envoyerVideosRapport(rapport, videos, progression = () => {}) {
 async function envoyerRapport(rapport, photos, progression = () => {}, videos = [], progressionVideo = () => {}) {
   const { error } = await sb.from('rapports').insert(rapport);
   if (error && !/duplicate key|rapports_pkey|23505/.test(`${error.message} ${error.code}`)) throw error;
-  let echecs = 0;
-  const deja = photos.length ? ((await sb.from('rapport_photos').select('chemin').eq('rapport_id', rapport.id)).data || []).map((x) => x.chemin) : [];
+  const { echecs, raison } = await envoyerPhotosRapport(rapport.id, photos, progression);
+  const ev = await envoyerVideosRapport(rapport, videos, progressionVideo);
+  return { echecs: echecs + ev, raison };
+}
+
+// Chaque photo est essayée 3 fois ; une photo déjà arrivée n'est jamais renvoyée
+async function envoyerPhotosRapport(rapportId, photos, progression = () => {}, prefixe = 'photo') {
+  let echecs = 0, raison = '';
+  const deja = photos.length ? ((await sb.from('rapport_photos').select('chemin').eq('rapport_id', rapportId)).data || []).map((x) => x.chemin) : [];
   for (let i = 0; i < photos.length; i++) {
     progression(i + 1, photos.length);
-    const chemin = `${S.entreprise.id}/${rapport.id}/photo-${i + 1}.jpg`;
+    const blob = photos[i];
+    const type = /^image\/(jpeg|png|webp)$/.test(blob?.type || '') ? blob.type : 'image/jpeg';
+    const chemin = `${S.entreprise.id}/${rapportId}/${prefixe}-${i + 1}.${type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg'}`;
     if (deja.includes(chemin)) continue;
-    const { error: e1 } = await sb.storage.from('photos-chantier').upload(chemin, photos[i], { contentType: 'image/jpeg', upsert: false });
-    if (e1 && !/exists|Duplicate/i.test(e1.message)) { if (estErreurReseau(e1)) throw e1; echecs++; continue; }
-    const { error: e2 } = await sb.from('rapport_photos').insert({ rapport_id: rapport.id, chemin });
-    if (e2) { if (estErreurReseau(e2)) throw e2; echecs++; }
+    let ok = false, derniere = null;
+    for (let essai = 0; essai < 3 && !ok; essai++) {
+      if (essai) await new Promise((r) => setTimeout(r, essai * 2000));
+      const { error: e1 } = await sb.storage.from('photos-chantier').upload(chemin, blob, { contentType: type, upsert: false });
+      if (e1 && !/exists|Duplicate/i.test(e1.message)) { derniere = e1; continue; }
+      const { error: e2 } = await sb.from('rapport_photos').insert({ rapport_id: rapportId, chemin });
+      if (e2) { derniere = e2; continue; }
+      ok = true;
+    }
+    if (!ok) {
+      if (estErreurReseau(derniere)) throw derniere;
+      echecs++;
+      raison ||= raisonEchecPhoto(derniere, blob);
+      console.warn('photo', i + 1, derniere);
+    }
   }
-  echecs += await envoyerVideosRapport(rapport, videos, progressionVideo);
-  return { echecs };
+  return { echecs, raison };
+}
+function raisonEchecPhoto(e, blob) {
+  const m = String(e?.message || e || '');
+  if (/size|too large|exceeded|413/i.test(m)) return `photo trop lourde (${tailleLisible(blob?.size || 0)})`;
+  if (/mime|type/i.test(m)) return 'format de photo non accepté';
+  if (/row-level|policy|permission|403|Unauthorized/i.test(m)) return 'droits insuffisants';
+  return m.slice(0, 80) || 'raison inconnue';
 }
 
 // ─── Envoi d'un appel de pointage ───
@@ -1042,8 +1068,12 @@ async function synchroniser({ silencieux = false } = {}) {
     for (const envoi of envois) {
       try {
         if (envoi.type === 'rapport') {
-          const { echecs } = await envoyerRapport(envoi.rapport, envoi.photos || [], undefined, envoi.videos || []);
-          if (echecs) toast(`Rapport envoyé, mais ${echecs} photo(s) n’ont pas pu être envoyées.`, 'warn', 6000);
+          const { echecs, raison } = await envoyerRapport(envoi.rapport, envoi.photos || [], undefined, envoi.videos || []);
+          if (echecs && (envoi.essais || 0) < 6) {
+            await majEnvoi({ ...envoi, essais: (envoi.essais || 0) + 1, erreur: `${echecs} photo(s) ou vidéo(s) pas encore envoyée(s) : ${raison}` });
+            continue;
+          }
+          if (echecs) toast(`Rapport envoyé, mais ${echecs} photo(s) ou vidéo(s) n’ont pas pu partir (${raison}). Ajoutez-les depuis le rapport.`, 'warn', 9000);
         } else if (envoi.type === 'appel') {
           await envoyerAppel(envoi.appel);
         }
@@ -4387,6 +4417,7 @@ async function detailRapport(id) {
       ${r.incidents ? `<div class="detail-block"><h4>⚠️ Incidents / problèmes</h4><p style="color:var(--crit)">${esc(r.incidents)}</p></div>` : ''}
       ${r.besoins ? `<div class="detail-block"><h4>Besoins (matériaux, matériel, personnel)</h4><p>${esc(r.besoins)}</p></div>` : ''}
       ${urls.length ? `<div class="detail-block"><h4>Photos (${urls.length})</h4><div class="photos">${urls.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo de chantier" loading="lazy"></a>`).join('')}</div></div>` : ''}
+      ${r.auteur_id === S.profil.id || can('direction', 'coordinateur') ? `<div class="detail-block"><label class="btn sm">📷 Ajouter des photos à ce rapport<input type="file" id="ajout-photos-rapport" accept="image/*" multiple hidden></label> <span class="hint" id="ajout-photos-etat"></span></div>` : ''}
       ${urlsVideos.length ? `<div class="detail-block"><h4>Vidéos (${urlsVideos.length})</h4><div class="medias-videos">${urlsVideos.map((v, i) => `<div class="video-pick lecture"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video><div class="video-info"><b>🎥 Vidéo ${i + 1}</b><span>${v.duree ? dureeLisible(num(v.duree)) : ''}</span></div><a class="btn sm ghost" href="${esc(v.url)}" target="_blank" rel="noopener">⬇️ Ouvrir</a></div>`).join('')}</div></div>` : ''}
       ${circuitValidation(r)}
       ${valider ? `<div class="card" style="background:var(--surface-2)">
@@ -4409,6 +4440,18 @@ async function detailRapport(id) {
       }
     };
     $('#val', m.el)?.addEventListener('click', () => decider(dir ? 'valide' : 'pre_valide'));
+    $('#ajout-photos-rapport', m.el)?.addEventListener('change', async (e) => {
+      const fichiers = [...e.target.files]; e.target.value = '';
+      if (!fichiers.length) return;
+      const etat = $('#ajout-photos-etat', m.el);
+      const blobs = [];
+      for (let i = 0; i < fichiers.length; i++) { etat.textContent = `Préparation ${i + 1}/${fichiers.length}…`; blobs.push(await compresserImage(fichiers[i])); }
+      try {
+        const { echecs, raison } = await envoyerPhotosRapport(r.id, blobs, (i, n) => { etat.textContent = `Envoi ${i}/${n}…`; }, `ajout-${Date.now().toString(36)}`);
+        toast(echecs ? `${blobs.length - echecs} photo(s) ajoutée(s), ${echecs} refusée(s) : ${raison}.` : `📷 ${blobs.length} photo${blobs.length > 1 ? 's' : ''} ajoutée${blobs.length > 1 ? 's' : ''} au rapport ✅`, echecs ? 'warn' : 'ok', 8000);
+        m.fermer(); detailRapport(r.id);
+      } catch (err) { etat.textContent = ''; toast(messageErreur(err), 'err', 7000); }
+    });
     $('#rej', m.el)?.addEventListener('click', () => decider('rejete'));
   } catch (e) {
     $('.modal-body', m.el).innerHTML = empty('⚠️', messageErreur(e));
@@ -4458,18 +4501,30 @@ function proposerWhatsAppRapport(r, statut, commentaire) {
 // ─── Nouveau rapport (pensé pour le téléphone) ───
 
 async function compresserImage(fichier, max = 1600, qualite = 0.8) {
+  const versJpeg = async (source, l, h) => {
+    const k = Math.min(1, max / Math.max(l, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(l * k)); c.height = Math.max(1, Math.round(h * k));
+    c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+    const b = await new Promise((res) => c.toBlob(res, 'image/jpeg', qualite));
+    c.width = c.height = 0; // libère la mémoire tout de suite
+    return b;
+  };
   try {
     const bmp = await createImageBitmap(fichier, { imageOrientation: 'from-image' });
-    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(bmp.width * k);
-    c.height = Math.round(bmp.height * k);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const b = await versJpeg(bmp, bmp.width, bmp.height);
     bmp.close?.();
-    return await new Promise((res) => c.toBlob((b) => res(b || fichier), 'image/jpeg', qualite));
-  } catch {
-    return fichier;
-  }
+    if (b) return b;
+  } catch { /* on essaie autrement */ }
+  try {
+    const u = URL.createObjectURL(fichier);
+    const img = new Image(); img.src = u;
+    await img.decode();
+    const b = await versJpeg(img, img.naturalWidth, img.naturalHeight);
+    URL.revokeObjectURL(u);
+    if (b) return b;
+  } catch { /* format illisible par le téléphone */ }
+  return fichier;
 }
 
 PAGES['nouveau-rapport'] = async () => {
@@ -4609,9 +4664,13 @@ PAGES['nouveau-rapport'] = async () => {
     };
     try {
       if (!navigator.onLine) { await garderSurTelephone(); return; }
-      const { echecs } = await envoyerRapport(rapport, blobs, (i, n) => { btn.textContent = `Envoi des photos ${i}/${n}…`; }, vids, (i, n) => { btn.textContent = `Envoi de la vidéo ${i}/${n}… (patientez)`; });
+      const { echecs, raison } = await envoyerRapport(rapport, blobs, (i, n) => { btn.textContent = `Envoi des photos ${i}/${n}…`; }, vids, (i, n) => { btn.textContent = `Envoi de la vidéo ${i}/${n}… (patientez)`; });
       try { localStorage.removeItem(cle); } catch { /* rien */ }
-      toast(echecs ? `Rapport envoyé, mais ${echecs} photo(s) ou vidéo(s) n’ont pas pu être envoyées.` : 'Rapport envoyé ✅ La coordination est prévenue.', echecs ? 'warn' : 'ok');
+      if (echecs) {
+        try { await ajouterEnvoi({ type: 'rapport', rapport, photos: blobs, videos: vids, libelle: projets.find((x) => x.id === d.projet_id)?.nom || '', erreur: raison }); } catch { /* stockage indisponible */ }
+        majIndicateurReseau();
+        toast(`Rapport envoyé, mais ${echecs} photo(s) ou vidéo(s) n’ont pas pu partir (${raison}). Elles sont gardées sur le téléphone et seront renvoyées automatiquement.`, 'warn', 10000);
+      } else toast(`Rapport envoyé ✅ ${blobs.length ? `${blobs.length} photo${blobs.length > 1 ? 's' : ''}${vids.length ? ` et ${vids.length} vidéo${vids.length > 1 ? 's' : ''}` : ''}. ` : ''}La coordination est prévenue.`);
       allerA('#/rapports');
     } catch (err) {
       if (estErreurReseau(err)) {
