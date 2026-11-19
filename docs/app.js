@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.9';
+const VERSION = '3.9.1';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -7789,13 +7789,13 @@ function cartesStock(articles) {
   </div>`).join('')}</div>`;
 }
 
-function tableauMouvements(mouvements) {
+function tableauMouvements(mouvements, { supprimer = false } = {}) {
   if (!mouvements.length) return empty('🔄', 'Aucun mouvement');
-  return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Article</th><th>Mouvement</th><th>Projet</th><th>Par</th><th>Commentaire</th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Article</th><th>Mouvement</th><th>Projet</th><th>Par</th><th>Commentaire</th>${supprimer ? '<th></th>' : ''}</tr></thead><tbody>
     ${mouvements.map((m) => `<tr><td class="nowrap">${new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
       <td><b>${esc(m.articles?.nom)}</b></td>
       <td>${m.type === 'entree' ? badge(['ok', `⬇️ +${qteLisible(m.articles, m.quantite)}`]) : badge(['info', `⬆️ −${qteLisible(m.articles, m.quantite)}`])}</td>
-      <td>${esc(m.projets?.nom || '—')}</td><td>${esc(nomMembre(m.created_by))}</td><td class="muted">${esc(m.commentaire || '')}</td></tr>`).join('')}</tbody></table></div>`;
+      <td>${esc(m.projets?.nom || '—')}</td><td>${esc(nomMembre(m.created_by))}</td><td class="muted">${esc(m.commentaire || '')}</td>${supprimer ? `<td class="right"><button class="btn sm ghost" data-sm="${m.id}" aria-label="Supprimer ce mouvement" title="Supprimer ce mouvement">🗑️</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 }
 
 // ─────────────────────────────── Pointage et paie des journaliers ───────────────────────────────
@@ -8103,7 +8103,22 @@ PAGES.stock = async () => {
       filtrer('');
     } else {
       const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(300));
-      zone.innerHTML = `<div class="card">${tableauMouvements(mouvements)}</div>`;
+      const peut = can('direction');
+      zone.innerHTML = `<div class="card">${peut ? '<p class="muted" style="font-size:13px;margin-bottom:10px">Une erreur de saisie ? Touchez 🗑️ pour supprimer le mouvement : le stock est recalculé tout seul.</p>' : ''}${tableauMouvements(mouvements, { supprimer: peut })}</div>`;
+      $$('[data-sm]', zone).forEach((b) => (b.onclick = async () => {
+        const m = mouvements.find((x) => x.id === b.dataset.sm), a = articles.find((x) => x.id === m.article_id);
+        const qteTxt = qteLisible(m.articles, m.quantite);
+        // Supprimer une entrée retire ce stock : impossible si ce stock a déjà été sorti
+        if (m.type === 'entree' && a && num(a.quantite) - num(m.quantite) < 0) {
+          return toast(`Impossible : il ne reste que ${qteLisible(a, a.quantite)} de « ${a.nom} ». Une partie de cette entrée est déjà sortie vers un chantier.`, 'warn', 7000);
+        }
+        const effet = m.type === 'entree' ? `Le stock de « ${m.articles?.nom} » baissera de ${qteTxt}.` : `Les ${qteTxt} de « ${m.articles?.nom} » reviendront dans le stock.`;
+        if (!(await confirmer(`Supprimer ce mouvement (${m.type === 'entree' ? 'entrée' : 'sortie'} de ${qteTxt}) ? ${effet}`, 'Supprimer'))) return;
+        const r = await q(sb.from('mouvements_stock').delete().eq('id', m.id).select('id'));
+        if (!r?.length) return toast('Suppression refusée : seule la Direction peut supprimer un mouvement.', 'err');
+        toast('Mouvement supprimé, stock recalculé ✅');
+        rendre();
+      }));
     }
   };
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletStock = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
@@ -8151,9 +8166,24 @@ function formulaireArticle(a, refresh) {
       ${!a && can('direction', 'magasinier') ? `<label class="field">Stock initial <span class="sk-lib-seuil"></span>
         <input name="stock_initial" type="number" min="0" step="any" inputmode="decimal" value="0">
         <span class="hint">Ce que vous avez déjà au magasin</span></label>` : ''}
-    </div>`,
+    </div>
+    ${a ? '<button type="button" class="btn danger sk-suppr" id="sk-suppr">🗑️ Supprimer cet article</button>' : ''}`,
     onOpen: (ov) => {
       const cb = $('#sk-bottes', ov), nom = $('[name="nom"]', ov);
+      $('#sk-suppr', ov)?.addEventListener('click', async () => {
+        const reste = num(a.quantite);
+        const msg = reste > 0
+          ? `Supprimer « ${a.nom} » ? Il reste ${qteLisible(a, reste)} au magasin. L’article et tout son historique d’entrées et de sorties seront effacés.`
+          : `Supprimer « ${a.nom} » ? L’article et tout son historique d’entrées et de sorties seront effacés.`;
+        if (!(await confirmer(msg, 'Supprimer'))) return;
+        try {
+          const r = await q(sb.from('articles').delete().eq('id', a.id).select('id'));
+          if (!r?.length) throw new Error('Suppression refusée : seuls la Direction, le Magasin et les Achats peuvent supprimer un article.');
+          $('.modal-head [data-close]', ov)?.click();
+          toast(`« ${a.nom} » supprimé.`);
+          refresh();
+        } catch (e) { toast(messageErreur(e), 'err', 6000); }
+      });
       const maj = () => {
         const on = cb.checked;
         $('.sk-si-bottes', ov).style.display = on ? '' : 'none';

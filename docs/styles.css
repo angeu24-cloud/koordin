@@ -1939,3 +1939,4 @@ body.en-film .koko { display: none; }
 .sk-carte-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sk-carte-btns .btn { min-height: 46px; justify-content: center; font-size: 15px; }
 .field .sk-lib-seuil, .field .sk-lib-prix { display: inline; }
+.sk-suppr { width: 100%; margin-top: 14px; }
