@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.7';
+const VERSION = '3.9';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -612,6 +612,8 @@ const lienParrainage = (code) => `${location.origin}${location.pathname}?parrain
 
 function ecranConnexion(onglet = 'connexion', message = null) {
   if (DEMO) return ecranDemo();
+  const mm = marqueMemorisee();
+  if (mm?.couleur) appliquerMarque({ couleur_marque: mm.couleur, nom: mm.nom, logo: mm.logo });
   const onglets = { connexion: 'Se connecter', creer: 'Créer mon entreprise', invite: 'J’ai une invitation' };
   const formulaires = {
     connexion: `
@@ -649,6 +651,7 @@ function ecranConnexion(onglet = 'connexion', message = null) {
     <div class="auth-card">
     <div class="auth-illu-mobile">${sceneChantier(11)}</div>
     <div class="brand auth-brand-mobile"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
+    ${marqueMemorisee()?.logo ? `<div class="auth-marque"><img src="${esc(marqueMemorisee().logo)}" alt=""><span>Espace ${esc(marqueMemorisee().nom)}</span></div>` : ''}
     <p class="auth-sub">Tous vos chantiers, une seule plateforme.</p>
     <div class="auth-tabs">${Object.entries(onglets).map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === onglet ? 'active' : ''}">${l}</button>`).join('')}</div>
     ${message ? `<div class="auth-msg ${message.type}" style="margin-bottom:14px">${esc(message.texte)}</div>` : ''}
@@ -767,6 +770,7 @@ async function ouvrirApplication(session) {
     if (!profil) return ecranSansEntreprise(session.user.email);
     S.profil = profil;
     S.entreprise = profil.entreprises;
+    appliquerMarque();
     S.plateformeAdmin = false;
     if (!DEMO) {
       const { data: admin, error: errAdmin } = navigator.onLine ? await sb.rpc('est_admin_plateforme') : { error: true };
@@ -1148,9 +1152,9 @@ function construireInterface() {
   const p = S.profil;
   $('#root').innerHTML = `<div class="app">
     <header class="topbar">
-      <div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>
+      ${brandHTML()}
       <div class="sep"></div>
-      <div class="company">${esc(S.entreprise?.nom)}</div>
+      <div class="company">${entrepriseHTML()}</div>
       <div class="topbar-right">
         <button type="button" class="reseau-pill hidden" id="reseau"></button>
         <button class="icon-btn" id="btn-notif" title="Activité et alertes" aria-label="Activité et alertes">${icone('cloche', 20)}<span class="count hidden" id="notif-count"></span></button>
@@ -1291,6 +1295,7 @@ const PAGES = {};
 
 async function naviguer() {
   if (!S.profil) return;
+  appliquerMarque();
   const h = hashCourant().startsWith('#/') ? hashCourant().slice(2) : 'dashboard';
   const [page, id] = h.split('/');
   const autorise = page === 'projet' || (page === 'nouveau-rapport' && can(...ROLES_RAPPORT)) || menuVisible().some((m) => m.r === page);
@@ -2701,7 +2706,15 @@ function fondFilm(ctx, W, H, t, teinte = 0) {
   });
 }
 function filigrane(ctx, W, H, nom) {
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = 0.9;
+  if (FILM.logo) {
+    const h = 54, l = Math.min(150, (FILM.logo.width / FILM.logo.height) * h), hh = (FILM.logo.height / FILM.logo.width) * l;
+    ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.beginPath(); ctx.roundRect(40, H - 58 - hh / 2 - 8, l + 16, hh + 16, 12); ctx.fill();
+    ctx.drawImage(FILM.logo, 48, H - 58 - hh / 2, l, hh);
+    ecrire(ctx, `${nom || ''} · avec KOORDIN`, 48 + l + 26, H - 50, { taille: 22, poids: 700, couleur: 'rgba(255,255,255,.95)', lignes: 1 });
+    ctx.globalAlpha = 1;
+    return;
+  }
   ctx.fillStyle = '#e8a020';
   ctx.beginPath(); const cx = 58, cy = H - 58, r = 16;
   for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 6; ctx[i ? 'lineTo' : 'moveTo'](cx + r * Math.cos(a), cy + r * Math.sin(a)); }
@@ -2791,6 +2804,10 @@ function dessinerScene(ctx, s, t) {
 // ─── Lecteur plein écran (story) et enregistrement vidéo ───
 function lireFilm(scenes, { titre = 'Film', nomFichier = 'koordin' } = {}) {
   if (!scenes.length) { toast('Pas encore assez de photos pour faire un film.', 'warn'); return; }
+  if (S.entreprise?.logo && FILM.logoSrc !== S.entreprise.logo) {
+    FILM.logoSrc = S.entreprise.logo; FILM.logo = null;
+    fetch(S.entreprise.logo).then((r) => r.blob()).then(createImageBitmap).then((b) => { FILM.logo = b; }).catch(() => {});
+  } else if (!S.entreprise?.logo) FILM.logo = null;
   const ov = document.createElement('div');
   ov.className = 'film';
   ov.innerHTML = `<div class="film-barres">${scenes.map(() => '<i><b></b></i>').join('')}</div>
@@ -3010,6 +3027,113 @@ async function encartStories() {
   $$('[data-story]', el).forEach((b) => (b.onclick = () => { b.classList.add('vu'); storySemaine(b.dataset.story || null); }));
 }
 
+// ═══════════════════════════════ 3.8 : VOTRE MARQUE (LOGO ET COULEUR) ═══════════════════════════════
+const MARQUE_DEFAUT = '#e8a020';
+const PALETTE_MARQUE = [['#e8a020', 'Or KOORDIN'], ['#e4572e', 'Orange brique'], ['#d62839', 'Rouge'], ['#2f7ae6', 'Bleu'], ['#0b5394', 'Bleu marine'], ['#13a676', 'Vert'], ['#2e7d32', 'Vert forêt'], ['#7a5cf0', 'Violet'], ['#37474f', 'Gris ardoise']];
+const hexRgb = (h) => { const n = parseInt(String(h || MARQUE_DEFAUT).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+function rgbHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b); let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) { const d = max - min; s = l > 0.5 ? d / (2 - max - min) : d / (max + min); h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4; h /= 6; }
+  return [h * 360, s * 100, l * 100];
+}
+const hsl = (h, s, l) => `hsl(${h.toFixed(0)} ${Math.max(0, Math.min(100, s)).toFixed(0)}% ${Math.max(0, Math.min(100, l)).toFixed(0)}%)`;
+const encreSur = (hex) => { const [r, g, b] = hexRgb(hex); return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1a1203' : '#ffffff'; };
+
+function appliquerMarque(ent = S.entreprise) {
+  const racine = document.documentElement.style;
+  const noms = ['--or-1', '--or-2', '--or-3', '--gold', '--gold-2', '--gold-dim', '--liseré-or', '--gold-ink', '--marque-encre'];
+  const c = ent?.couleur_marque;
+  if (!c || c.toLowerCase() === MARQUE_DEFAUT) { noms.forEach((n) => racine.removeProperty(n)); }
+  else {
+    const [h, s, l] = rgbHsl(hexRgb(c)); const [r, g, b] = hexRgb(c);
+    racine.setProperty('--or-1', hsl(h, s + 5, l + 20)); racine.setProperty('--or-2', c); racine.setProperty('--or-3', hsl(h, s, l - 14));
+    racine.setProperty('--gold', c); racine.setProperty('--gold-2', hsl(h, s, l + 12));
+    racine.setProperty('--gold-dim', `rgba(${r}, ${g}, ${b}, .13)`); racine.setProperty('--liseré-or', `rgba(${r}, ${g}, ${b}, .32)`);
+    racine.setProperty('--gold-ink', encreSur(c)); racine.setProperty('--marque-encre', encreSur(c));
+  }
+  try { localStorage.setItem('koordin-marque', JSON.stringify({ nom: ent?.nom || '', logo: ent?.logo || null, couleur: ent?.couleur_marque || null })); } catch { /* rien */ }
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta && c) meta.content = hsl(...rgbHsl(hexRgb(c)).slice(0, 2), 12);
+}
+const marqueMemorisee = () => { try { return JSON.parse(localStorage.getItem('koordin-marque') || 'null'); } catch { return null; } };
+const brandHTML = () => '<div class="brand"><div class="hex"></div><div class="brand-name">KOORDIN</div></div>';
+const entrepriseHTML = (ent = S.entreprise) => `${ent?.logo ? `<img class="company-logo" src="${esc(ent.logo)}" alt="">` : ''}<span class="company-nom">${esc(ent?.nom || '')}</span>`;
+
+// Taille du logo pour le PDF (gardée en mémoire)
+let logoPDF = { src: null, l: 0, h: 0 };
+async function dimensionsLogo() {
+  const src = S.entreprise?.logo;
+  if (!src) return null;
+  if (logoPDF.src === src) return logoPDF;
+  const img = new Image(); img.src = src;
+  try { await img.decode(); } catch { return null; }
+  logoPDF = { src, l: img.naturalWidth, h: img.naturalHeight };
+  return logoPDF;
+}
+
+// Réduit l'image choisie (logo) : PNG au plus 480 px, fond transparent conservé
+async function preparerLogo(fichier) {
+  const bmp = await createImageBitmap(fichier);
+  const k = Math.min(1, 480 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  let data = c.toDataURL('image/png');
+  if (data.length > 380000) data = c.toDataURL('image/webp', 0.9);
+  if (data.length > 380000) throw new Error('Logo trop lourd, même réduit. Essayez une image plus simple.');
+  return data;
+}
+
+function carteMarque() {
+  const e = S.entreprise;
+  return `<div class="card section" id="carte-marque"><div class="card-title">🎨 Votre marque</div>
+    <p class="muted" style="font-size:13px;margin-bottom:12px">Votre logo et votre couleur apparaissent dans l’application, sur l’écran de connexion, dans tous les PDF (devis, situations, contrats, fiches de contrôle…), dans les films et sur la page de suivi de vos clients.</p>
+    <div class="marque-grille">
+      <div><div class="field">Logo</div>
+        <div class="marque-logo" id="mq-logo">${e.logo ? `<img src="${esc(e.logo)}" alt="Logo">` : '<span>Aucun logo</span>'}</div>
+        <div class="rc-boutons"><label class="btn sm">📷 Choisir le logo<input type="file" id="mq-fichier" accept="image/png,image/jpeg,image/webp" hidden></label>${e.logo ? '<button type="button" class="btn sm ghost" id="mq-sans">Retirer</button>' : ''}</div>
+        <p class="hint">Idéalement un PNG à fond transparent.</p></div>
+      <div><div class="field">Couleur principale</div>
+        <div class="marque-palette">${PALETTE_MARQUE.map(([h, n]) => `<button type="button" class="pastille ${(e.couleur_marque || MARQUE_DEFAUT) === h ? 'actif' : ''}" data-c="${h}" style="--c:${h}" title="${esc(n)}" aria-label="${esc(n)}"></button>`).join('')}
+          <label class="pastille perso" title="Autre couleur"><input type="color" id="mq-perso" value="${esc(e.couleur_marque || MARQUE_DEFAUT)}">🎨</label></div>
+        <div class="marque-apercu" id="mq-apercu"></div></div>
+    </div>
+    <div class="form-actions"><button type="button" class="btn ghost" id="mq-defaut">Revenir à KOORDIN</button><button type="button" class="btn primary" id="mq-ok">💾 Enregistrer ma marque</button></div></div>`;
+}
+function brancherMarque(p) {
+  const zone = $('#carte-marque', p);
+  if (!zone) return;
+  let logo = S.entreprise.logo || null, couleur = S.entreprise.couleur_marque || MARQUE_DEFAUT;
+  const apercu = () => {
+    const test = { ...S.entreprise, logo, couleur_marque: couleur };
+    appliquerMarque(test);
+    $('#mq-apercu', zone).innerHTML = `<div class="apercu-barre">${brandHTML()}<span class="apercu-sep"></span><span class="company">${entrepriseHTML(test)}</span></div><div class="apercu-pdf" style="--c:${couleur}"><div class="apercu-pdf-tete">${logo ? `<img src="${esc(logo)}" alt="">` : ''}<b>${esc(S.entreprise.nom)}</b><span>DEVIS</span></div><i></i><p>Aperçu de l’en-tête de vos PDF</p></div><button type="button" class="btn primary sm">Bouton</button>`;
+    $('#mq-logo', zone).innerHTML = logo ? `<img src="${esc(logo)}" alt="Logo">` : '<span>Aucun logo</span>';
+    $$('.pastille[data-c]', zone).forEach((b) => b.classList.toggle('actif', b.dataset.c === couleur));
+  };
+  $$('.pastille[data-c]', zone).forEach((b) => (b.onclick = () => { couleur = b.dataset.c; apercu(); }));
+  $('#mq-perso', zone).oninput = (e) => { couleur = e.target.value.toLowerCase(); apercu(); };
+  $('#mq-fichier', zone).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { logo = await preparerLogo(f); apercu(); } catch (err) { toast(err.message || 'Image illisible.', 'err'); }
+  };
+  zone.addEventListener('click', (e) => { if (e.target.id === 'mq-sans') { logo = null; apercu(); } });
+  $('#mq-defaut', zone).onclick = () => { couleur = MARQUE_DEFAUT; logo = null; apercu(); };
+  $('#mq-ok', zone).onclick = async () => {
+    try {
+      await q(sb.rpc('maj_marque', { p_logo: logo, p_couleur: couleur === MARQUE_DEFAUT ? null : couleur }));
+      S.entreprise = { ...S.entreprise, logo, couleur_marque: couleur === MARQUE_DEFAUT ? null : couleur };
+      memoriser('profil', { ...S.profil, entreprises: S.entreprise }, S.profil.id);
+      appliquerMarque(); logoPDF = { src: null };
+      const b = $('.topbar .company'); if (b) b.innerHTML = entrepriseHTML();
+      toast('🎨 Votre marque est enregistrée : toute l’équipe la verra.');
+    } catch (err) {
+      const m = String(err?.message || '');
+      toast(/^MARQUE_/.test(m) && err?.hint ? err.hint : /maj_marque|schema cache|does not exist/i.test(m) ? 'Cette fonction nécessite la mise à jour 3.8 de la base de données (kit d’installation).' : messageErreur(err), 'err', 7000);
+    }
+  };
+  apercu();
+}
+
 // ═══════════════════════════════ TABLEAUX DE BORD ═══════════════════════════════
 
 PAGES.dashboard = async () => {
@@ -3222,7 +3346,7 @@ async function dashMagasinier() {
   const [stock, commandes, mouvements] = await Promise.all([
     q(sb.from('v_stock').select('*').order('nom')),
     q(sb.from('commandes').select('*, projets(nom), fournisseurs(nom)').eq('statut', 'commandee').order('date_commande')),
-    q(sb.from('mouvements_stock').select('*, articles(nom, unite), projets(nom)').order('created_at', { ascending: false }).limit(10)),
+    q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(10)),
   ]);
   const alertes = stock.filter((a) => a.alerte);
   const valeur = stock.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0);
@@ -3647,9 +3771,10 @@ async function ecranSuiviClient(jeton) {
   const ligneTache = (t) => `<div class="suivi-tache"><div><b>${esc(t.nom)}</b><span>${esc([t.lot, `${fdate(t.date_debut)} → ${fdate(t.date_fin)}`].filter(Boolean).join(' · '))}</span></div>
     <div class="suivi-mini"><div class="suivi-barre"><i style="width:${num(t.avancement)}%"></i></div><b>${num(t.avancement)} %</b></div></div>`;
 
+  if (d.couleur) appliquerMarque({ couleur_marque: d.couleur, nom: d.entreprise, logo: null });
   zone.innerHTML = `
     <div class="suivi-entete">
-      <div class="brand"><div class="hex"></div><div><div class="suivi-ent">${esc(d.entreprise)}</div><div class="suivi-sous">Suivi de votre chantier</div></div></div>
+      <div class="brand">${d.logo ? `<img class="brand-logo" src="${esc(d.logo)}" alt="">` : '<div class="hex"></div>'}<div><div class="suivi-ent">${esc(d.entreprise)}</div><div class="suivi-sous">Suivi de votre chantier</div></div></div>
     </div>
     <section class="suivi-hero">
       ${pr.photo && u(pr.photo) ? `<img src="${esc(u(pr.photo))}" alt="">` : sceneChantier(empreinte(pr.nom))}
@@ -5628,15 +5753,24 @@ function presenterPDF(blob, nom, message) {
   attendreFermeture(m.el).then(() => setTimeout(() => URL.revokeObjectURL(url), 60000));
 }
 
+const couleurPDF = () => hexRgb(S.entreprise?.couleur_marque || MARQUE_DEFAUT);
+const couleurPDFClaire = () => { const [r, g, b] = couleurPDF(); const lum = 0.299 * r + 0.587 * g + 0.114 * b; const k = lum < 120 ? 0.45 : 0; return [r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k].map(Math.round); };
 async function enteteDocumentPDF(doc, titre, sousTitre, droite) {
   const L = 210, M = 16;
   doc.setFillColor(17, 21, 33); doc.rect(0, 0, L, 34, 'F');
-  doc.setFillColor(232, 160, 32); doc.rect(0, 34, L, 1.2, 'F');
+  doc.setFillColor(...couleurPDF()); doc.rect(0, 34, L, 1.2, 'F');
+  let x = M;
+  const dl = await dimensionsLogo();
+  if (dl) {
+    const h = 22, l = Math.min(44, (dl.l / dl.h) * h), hh = (dl.h / dl.l) * l;
+    doc.setFillColor(255, 255, 255); doc.roundedRect(M - 2, 17 - hh / 2 - 2, l + 4, hh + 4, 2, 2, 'F');
+    try { doc.addImage(S.entreprise.logo, /webp/.test(S.entreprise.logo) ? 'WEBP' : /jpeg/.test(S.entreprise.logo) ? 'JPEG' : 'PNG', M, 17 - hh / 2, l, hh); x = M + l + 7; } catch { /* logo illisible */ }
+  }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.setTextColor(255, 255, 255);
-  doc.text(textePDF(S.entreprise?.nom || ''), M, 15);
+  doc.text(textePDF(S.entreprise?.nom || ''), x, 15);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(200, 205, 220);
-  doc.text(textePDF(S.entreprise?.pays || ''), M, 22);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(232, 160, 32);
+  doc.text(textePDF(S.entreprise?.pays || ''), x, 22);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...couleurPDFClaire());
   doc.text(textePDF(titre), L - M, 15, { align: 'right' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(220, 224, 235);
   doc.text(textePDF(sousTitre), L - M, 22, { align: 'right' });
@@ -5650,7 +5784,7 @@ function piedPDF(doc, libelle) {
     doc.setDrawColor(226, 229, 238); doc.setLineWidth(0.3); doc.line(16, 284, 194, 284);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 108, 128);
     doc.text(textePDF(`${libelle}  ·  page ${i}/${n}`), 16, 289);
-    doc.setFont('helvetica', 'bold'); doc.setTextColor(232, 160, 32); doc.text('Document généré avec KOORDIN', 194, 289, { align: 'right' });
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...couleurPDF()); doc.text('Document généré avec KOORDIN', 194, 289, { align: 'right' });
   }
 }
 
@@ -7634,13 +7768,25 @@ function tableauStock(articles, { compact = false } = {}) {
   if (!articles.length) return empty('📦', compact ? 'Aucun article sous le seuil ✅' : 'Aucun article');
   const mouv = can('direction', 'magasinier', 'technicien');
   const gerer = can('direction', 'magasinier', 'achats');
-  return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Article</th><th class="num">Quantité</th><th class="num">Seuil</th><th>État</th>${compact ? '' : '<th class="num">Valeur</th>'}${!compact && (mouv || gerer) ? '<th></th>' : ''}</tr></thead><tbody>
+  return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Article</th><th class="num">Quantité</th><th class="num">Seuil</th><th>État</th>${compact || can('technicien') ? '' : '<th class="num">Valeur</th>'}${!compact && (mouv || gerer) ? '<th></th>' : ''}</tr></thead><tbody>
     ${articles.map((a) => `<tr class="${a.alerte ? 'over' : ''}"><td><b>${esc(a.nom)}</b></td>
-      <td class="num"><b>${nf.format(num(a.quantite))}</b> ${esc(a.unite)}</td><td class="num muted">${nf.format(num(a.seuil_min))}</td>
+      <td class="num"><b>${esc(qteLisible(a, a.quantite))}</b></td><td class="num muted">${esc(qteLisible(a, a.seuil_min))}</td>
       <td>${a.alerte ? badge(['crit', '🚨 À réapprovisionner']) : badge(['ok', '✅ OK'])}</td>
-      ${compact ? '' : `<td class="num">${money(num(a.quantite) * num(a.prix_unitaire))}</td>`}
-      ${!compact && (mouv || gerer) ? `<td class="right nowrap">${mouv ? `<button class="btn sm" data-mv="entree" data-art="${a.id}">⬇️ Entrée</button><button class="btn sm" data-mv="sortie" data-art="${a.id}">⬆️ Sortie</button>` : ''}
+      ${compact || can('technicien') ? '' : `<td class="num">${money(num(a.quantite) * num(a.prix_unitaire))}</td>`}
+      ${!compact && (mouv || gerer) ? `<td class="right nowrap">${mouv ? `<button class="btn sm" data-mv="sortie" data-art="${a.id}">⬆️ ${can('technicien') ? 'Prendre' : 'Sortie'}</button><button class="btn sm" data-mv="entree" data-art="${a.id}">⬇️ ${can('technicien') ? 'Rendre' : 'Entrée'}</button>` : ''}
         ${gerer ? `<button class="btn sm" data-ea="${a.id}">Modifier</button>` : ''}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+}
+
+// Sur téléphone : une carte par article, gros chiffres et boutons faciles à toucher
+function cartesStock(articles) {
+  if (!articles.length) return empty('📦', 'Aucun article');
+  const mouv = can('direction', 'magasinier', 'technicien'), gerer = can('direction', 'magasinier', 'achats'), tech = can('technicien');
+  return `<div class="sk-cartes">${articles.map((a) => `<div class="sk-carte ${a.alerte ? 'bas' : ''}">
+    <div class="sk-carte-tete"><span class="sk-emoji">${emojiArticle(a.nom)}</span><div class="sk-art-txt"><b>${esc(a.nom)}</b><small>${a.alerte ? '🚨 À réapprovisionner' : '✅ OK'} · seuil ${esc(qteLisible(a, a.seuil_min))}</small></div>
+      ${gerer ? `<button class="btn sm ghost" data-ea="${a.id}" aria-label="Modifier ${esc(a.nom)}">✏️</button>` : ''}</div>
+    <div class="sk-carte-qte">${esc(qteLisible(a, a.quantite))}</div>
+    ${mouv ? `<div class="sk-carte-btns"><button class="btn" data-mv="sortie" data-art="${a.id}">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button class="btn" data-mv="entree" data-art="${a.id}">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
+  </div>`).join('')}</div>`;
 }
 
 function tableauMouvements(mouvements) {
@@ -7648,7 +7794,7 @@ function tableauMouvements(mouvements) {
   return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Article</th><th>Mouvement</th><th>Projet</th><th>Par</th><th>Commentaire</th></tr></thead><tbody>
     ${mouvements.map((m) => `<tr><td class="nowrap">${new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
       <td><b>${esc(m.articles?.nom)}</b></td>
-      <td>${m.type === 'entree' ? badge(['ok', `⬇️ +${nf.format(num(m.quantite))} ${m.articles?.unite || ''}`]) : badge(['info', `⬆️ −${nf.format(num(m.quantite))} ${m.articles?.unite || ''}`])}</td>
+      <td>${m.type === 'entree' ? badge(['ok', `⬇️ +${qteLisible(m.articles, m.quantite)}`]) : badge(['info', `⬆️ −${qteLisible(m.articles, m.quantite)}`])}</td>
       <td>${esc(m.projets?.nom || '—')}</td><td>${esc(nomMembre(m.created_by))}</td><td class="muted">${esc(m.commentaire || '')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -7935,7 +8081,8 @@ function formulaireOuvrier(o, apres) {
 PAGES.stock = async () => {
   const p = page(`
     ${entete('Stock', 'Magasin central : quantités, seuils d’alerte et mouvements',
-      `${can('direction', 'magasinier') ? '<button class="btn" id="mv">🔄 Entrée / sortie</button>' : ''}${can('technicien') ? '<button class="btn primary" id="mv">📦 Prendre / rendre du matériel</button>' : ''}${can('direction', 'magasinier', 'achats') ? '<button class="btn primary" id="na">＋ Nouvel article</button>' : ''}`)}
+      `${can('direction', 'magasinier') ? '<button class="btn" id="mv">🔄 Entrée / sortie</button>' : ''}${can('direction', 'magasinier', 'achats') ? '<button class="btn primary" id="na">＋ Nouvel article</button>' : ''}`)}
+    ${can('technicien') ? `<div class="sk-gros"><button type="button" class="sk-gros-btn prendre" data-gros="sortie"><span>⬆️</span><b>Je prends</b><small>du matériel pour mon chantier</small></button><button type="button" class="sk-gros-btn rendre" data-gros="entree"><span>⬇️</span><b>Je rends</b><small>ce qui reste au magasin</small></button></div>` : ''}
     <div class="tabs"><button class="tab ${ongletStock === 'articles' ? 'active' : ''}" data-o="articles">Articles</button><button class="tab ${ongletStock === 'mouvements' ? 'active' : ''}" data-o="mouvements">Historique des mouvements</button></div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
@@ -7945,42 +8092,95 @@ PAGES.stock = async () => {
     articles = await q(sb.from('v_stock').select('*').order('nom'));
     if (ongletStock === 'articles') {
       zone.innerHTML = `<div class="card"><div class="toolbar"><input class="input" id="fq" placeholder="🔍 Rechercher un article…"><span class="muted" style="margin-left:auto;font-size:13px">
-        Valeur totale : <b>${money(articles.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0))}</b> · ${articles.filter((a) => a.alerte).length} alerte(s)</span></div><div id="ta"></div></div>`;
+        ${can('technicien') ? '' : `Valeur totale : <b>${money(articles.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0))}</b> · `}${articles.filter((a) => a.alerte).length} alerte(s)</span></div><div id="ta"></div></div>`;
       const filtrer = (txt) => {
         const l = articles.filter((a) => !txt || a.nom.toLowerCase().includes(txt));
-        $('#ta', zone).innerHTML = tableauStock(l);
+        $('#ta', zone).innerHTML = window.matchMedia('(max-width: 760px)').matches ? cartesStock(l) : tableauStock(l);
         $$('[data-mv]', zone).forEach((b) => (b.onclick = () => formulaireMouvement(articles, b.dataset.mv, b.dataset.art, rendre)));
         $$('[data-ea]', zone).forEach((b) => (b.onclick = () => formulaireArticle(articles.find((a) => a.id === b.dataset.ea), rendre)));
       };
       $('#fq', zone).oninput = (e) => filtrer(e.target.value.toLowerCase());
       filtrer('');
     } else {
-      const mouvements = await q(sb.from('mouvements_stock').select('*, articles(nom, unite), projets(nom)').order('created_at', { ascending: false }).limit(300));
+      const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(300));
       zone.innerHTML = `<div class="card">${tableauMouvements(mouvements)}</div>`;
     }
   };
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletStock = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
   $('#na', p)?.addEventListener('click', () => formulaireArticle(null, rendre));
-  $('#mv', p)?.addEventListener('click', () => formulaireMouvement(articles, 'sortie', null, rendre));
+  $('#mv', p)?.addEventListener('click', () => formulaireMouvement(articles, 'entree', null, rendre));
+  $$('[data-gros]', p).forEach((b) => (b.onclick = () => formulaireMouvement(articles, b.dataset.gros, null, rendre)));
   await rendre();
 };
 
+// ─── 3.9 : acier en bottes et saisie simplifiée ───
+const estEnBottes = (a) => num(a?.barres_par_botte) > 1;
+const pluriel = (n, un, plusieurs) => `${nf.format(n)} ${Math.abs(n) > 1 ? plusieurs : un}`;
+// « 3 bottes + 4 barres » pour l'acier, « 12 sac » sinon
+function qteLisible(a, qte) {
+  const v = num(qte);
+  if (!estEnBottes(a)) return `${nf.format(v)} ${a?.unite || ''}`.trim();
+  const bpb = num(a.barres_par_botte), abs = Math.abs(v);
+  const b = Math.floor(abs / bpb), r = Math.round((abs - b * bpb) * 100) / 100;
+  const t = [b ? pluriel(b, 'botte', 'bottes') : '', r ? pluriel(r, 'barre', 'barres') : ''].filter(Boolean).join(' + ') || '0 botte';
+  return (v < 0 ? '−' : '') + t;
+}
+const ressembleAcier = (nom) => /\b(ha|fer|acier|t\s?\d|tor|rond)\b|ha\s?\d/i.test(nom || '');
+const EMOJI_ARTICLE = [[/ciment|cpj|cem/i, '🧱'], [/ha\s?\d|acier|fer|\btor/i, '🔩'], [/sable/i, '⏳'], [/gravier|gravillon|caillou|concass/i, '🪨'], [/bois|planche|chevron|madrier|contreplaqu/i, '🪵'], [/clou|pointe|vis|fil\b|attache/i, '📌'], [/tuyau|pvc|tube/i, '🧪'], [/peinture/i, '🎨'], [/carreau|faïence/i, '◻️'], [/c[aâ]ble|électr|gaine/i, '🔌'], [/eau/i, '💧']];
+const emojiArticle = (nom) => (EMOJI_ARTICLE.find(([r]) => r.test(nom || '')) || [0, '📦'])[1];
+const recentsStock = () => { try { return JSON.parse(localStorage.getItem('koordin:stock-recents') || '[]'); } catch { return []; } };
+const noterRecents = (ids) => { try { localStorage.setItem('koordin:stock-recents', JSON.stringify([...new Set([...ids, ...recentsStock()])].slice(0, 12))); } catch { /* rien */ } };
+
 function formulaireArticle(a, refresh) {
+  const bottes = a ? estEnBottes(a) : false;
+  const bpb = num(a?.barres_par_botte) || '';
   ouvrirModale({
     titre: a ? `Modifier « ${a.nom} »` : 'Nouvel article',
     corps: `<div class="form-grid">
-      ${F.text('nom', 'Désignation', a?.nom, { required: true, full: true, placeholder: 'Ex. Ciment CPJ 42.5' })}
-      ${F.text('unite', 'Unité', a?.unite || 'sac', { required: true, hint: 'sac, barre, m³, kg, u…' })}
-      ${F.text('seuil_min', 'Seuil d’alerte', a?.seuil_min ?? 0, { type: 'number', min: 0, step: 'any', hint: 'Alerte quand le stock passe en dessous' })}
-      ${F.text('prix_unitaire', `Prix unitaire (${devise()})`, a?.prix_unitaire ?? 0, { type: 'number', min: 0, step: 'any' })}
-      ${!a && can('direction', 'magasinier') ? F.text('stock_initial', 'Stock initial', 0, { type: 'number', min: 0, step: 'any' }) : ''}
+      ${F.text('nom', 'Désignation', a?.nom, { required: true, full: true, placeholder: 'Ex. Ciment CPJ 42.5, Acier HA 10…' })}
+      <label class="field full sk-bascule"><input type="checkbox" name="en_bottes" id="sk-bottes" ${bottes ? 'checked' : ''}> <span><b>🔩 Acier compté en bottes</b><small>Pour les fers HA : le stock s’affiche en bottes et barres.</small></span></label>
+      <div class="full sk-si-bottes form-grid" style="${bottes ? '' : 'display:none'}">
+        ${F.text('barres_par_botte', 'Nombre de barres dans une botte', bpb, { type: 'number', min: 2, step: 1, inputmode: 'numeric', placeholder: 'Ex. 10', hint: 'Indiqué par votre fournisseur ou sur le bon de livraison.', full: true })}
+      </div>
+      <div class="sk-si-unite" style="${bottes ? 'display:none' : ''}">${F.text('unite', 'Unité', a && !bottes ? a.unite : 'sac', { hint: 'sac, m³, kg, u…' })}</div>
+      <label class="field">Seuil d’alerte <span class="sk-lib-seuil">${bottes ? '(en bottes)' : ''}</span>
+        <input name="seuil_min" type="number" min="0" step="any" inputmode="decimal" value="${esc(bottes ? num(a.seuil_min) / num(a.barres_par_botte) : a?.seuil_min ?? 0)}">
+        <span class="hint">Alerte quand le stock passe en dessous</span></label>
+      <label class="field">Prix <span class="sk-lib-prix">${bottes ? 'd’une barre' : 'unitaire'}</span> (${esc(devise())})
+        <input name="prix_unitaire" type="number" min="0" step="any" inputmode="decimal" value="${esc(a?.prix_unitaire ?? 0)}"></label>
+      ${!a && can('direction', 'magasinier') ? `<label class="field">Stock initial <span class="sk-lib-seuil"></span>
+        <input name="stock_initial" type="number" min="0" step="any" inputmode="decimal" value="0">
+        <span class="hint">Ce que vous avez déjà au magasin</span></label>` : ''}
     </div>`,
+    onOpen: (ov) => {
+      const cb = $('#sk-bottes', ov), nom = $('[name="nom"]', ov);
+      const maj = () => {
+        const on = cb.checked;
+        $('.sk-si-bottes', ov).style.display = on ? '' : 'none';
+        $('.sk-si-unite', ov).style.display = on ? 'none' : '';
+        $$('.sk-lib-seuil', ov).forEach((s) => (s.textContent = on ? '(en bottes)' : ''));
+        $('.sk-lib-prix', ov).textContent = on ? 'd’une barre' : 'unitaire';
+        $('[name="barres_par_botte"]', ov).required = on;
+      };
+      cb.onchange = maj;
+      if (!a) nom.addEventListener('input', () => { if (!cb.dataset.touche && ressembleAcier(nom.value) !== cb.checked) { cb.checked = ressembleAcier(nom.value); maj(); } });
+      cb.addEventListener('click', () => (cb.dataset.touche = '1'));
+      maj();
+    },
     onSubmit: async (d) => {
-      const data = { nom: d.nom, unite: d.unite, seuil_min: num(d.seuil_min), prix_unitaire: num(d.prix_unitaire) };
-      if (a) await q(sb.from('articles').update(data).eq('id', a.id));
-      else {
-        const cree = await q(sb.from('articles').insert(data).select('id').single());
-        if (num(d.stock_initial) > 0) await q(sb.from('mouvements_stock').insert({ article_id: cree.id, type: 'entree', quantite: num(d.stock_initial), commentaire: 'Stock initial' }));
+      const enB = !!d.en_bottes, n = Math.round(num(d.barres_par_botte));
+      if (enB && n < 2) throw new Error('Indiquez le nombre de barres dans une botte (au moins 2).');
+      const k = enB ? n : 1;
+      const data = { nom: d.nom.trim(), unite: enB ? 'barre' : (d.unite || 'u').trim() || 'u', barres_par_botte: enB ? n : null, seuil_min: Math.round(num(d.seuil_min) * k * 100) / 100, prix_unitaire: num(d.prix_unitaire) };
+      try {
+        if (a) await q(sb.from('articles').update(data).eq('id', a.id));
+        else {
+          const cree = await q(sb.from('articles').insert(data).select('id').single());
+          if (num(d.stock_initial) > 0) await q(sb.from('mouvements_stock').insert({ article_id: cree.id, type: 'entree', quantite: Math.round(num(d.stock_initial) * k * 100) / 100, commentaire: 'Stock initial' }));
+        }
+      } catch (e) {
+        if (/barres_par_botte/.test(String(e?.message))) throw new Error('Les bottes nécessitent la mise à jour 3.9 de la base de données (kit d’installation).');
+        throw e;
       }
       toast('Article enregistré.');
       refresh();
@@ -7988,27 +8188,116 @@ function formulaireArticle(a, refresh) {
   });
 }
 
+// Saisie en 3 gestes : je prends / je rends → mon chantier → je touche le matériel et je règle la quantité
 async function formulaireMouvement(articles, type, articleId, refresh) {
   if (!articles.length) return toast('Créez d’abord un article.', 'warn');
+  const tech = can('technicien');
   const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
-  ouvrirModale({
-    titre: can('technicien') ? '📦 Matériel du chantier' : 'Mouvement de stock',
-    corps: `<div class="form-grid">
-      ${can('technicien') ? F.select('type', 'Je…', [['sortie', '⬆️ Prends du matériel pour mon chantier'], ['entree', '⬇️ Rends du matériel au magasin']], type, { full: true })
-        : F.select('type', 'Type', [['entree', '⬇️ Entrée (livraison, retour chantier)'], ['sortie', '⬆️ Sortie (vers un chantier)']], type, { full: true })}
-      ${F.select('article_id', 'Article', articles.map((a) => [a.id, `${a.nom} — ${nf.format(num(a.quantite))} ${a.unite} en stock`]), articleId, { required: true, full: true, vide: '— Choisir —' })}
-      ${F.text('quantite', 'Quantité', '', { type: 'number', min: 0.01, step: 'any', required: true, inputmode: 'decimal' })}
-      ${can('technicien') ? F.select('projet_id', 'Mon chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, vide: '— Choisir —' }) : F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), '', { vide: '— Aucun —' })}
-      ${F.text('commentaire', 'Commentaire', '', { full: true, placeholder: can('technicien') ? 'Ex. Pour le coulage de la dalle du R+1' : 'Ex. BL n° 4512, bon de sortie…' })}
-    </div>`,
+  const st = { type: tech ? (type === 'entree' ? 'entree' : 'sortie') : type || 'entree', projet: projets.length === 1 ? projets[0].id : '', panier: new Map(), filtre: '' };
+  if (articleId) { const a0 = articles.find((a) => a.id === articleId); st.panier.set(articleId, estEnBottes(a0) ? num(a0.barres_par_botte) : 1); }
+  const rec = recentsStock();
+  const trie = [...articles].sort((x, y) => {
+    const ix = rec.indexOf(x.id), iy = rec.indexOf(y.id);
+    return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || x.nom.localeCompare(y.nom, 'fr');
+  });
+  const choixType = tech
+    ? [['sortie', '⬆️', 'Je prends', 'du magasin pour mon chantier'], ['entree', '⬇️', 'Je rends', 'au magasin ce qui reste']]
+    : [['entree', '⬇️', 'Entrée', 'livraison, retour chantier'], ['sortie', '⬆️', 'Sortie', 'vers un chantier']];
+  const m = ouvrirModale({
+    titre: tech ? '📦 Matériel du chantier' : '🔄 Entrée / sortie de stock',
+    boutonOk: 'Valider',
+    corps: `<input type="hidden" name="_">
+      <div class="sk-etape"><div class="sk-num">1</div><div class="sk-quoi">${tech ? 'Je…' : 'Type'}</div></div>
+      <div class="sk-types">${choixType.map(([v, e, t, s]) => `<button type="button" class="sk-type" data-t="${v}"><span>${e}</span><b>${t}</b><small>${s}</small></button>`).join('')}</div>
+      <div class="sk-etape"><div class="sk-num">2</div><div class="sk-quoi">${tech ? 'Mon chantier' : 'Chantier'}</div></div>
+      <div class="sk-chips" id="sk-projets">${tech ? '' : '<button type="button" class="sk-chip" data-p="">🏬 Aucun (dépôt)</button>'}${projets.map((x) => `<button type="button" class="sk-chip" data-p="${x.id}">🏗️ ${esc(x.nom)}</button>`).join('') || '<span class="muted">Aucun chantier en cours.</span>'}</div>
+      <div class="sk-etape"><div class="sk-num">3</div><div class="sk-quoi">Le matériel <small>touchez pour ajouter</small></div></div>
+      ${articles.length > 6 ? '<input class="input sk-cherche" type="search" placeholder="🔍 Chercher : ciment, HA 10, sable…" aria-label="Chercher un article">' : ''}
+      <div class="sk-liste" id="sk-liste"></div>
+      <details class="sk-note"><summary>📝 Ajouter une note (facultatif)</summary><input class="input" name="commentaire" placeholder="${tech ? 'Ex. Pour le coulage de la dalle du R+1' : 'Ex. BL n° 4512, bon de sortie…'}"></details>
+      <div class="sk-resume" id="sk-resume"></div>`,
+    onOpen: (ov) => {
+      ov.querySelector('.modal')?.classList.add('sk-modale');
+      const liste = $('#sk-liste', ov);
+      const art = (id) => articles.find((a) => a.id === id);
+      const dispo = (a) => num(a.quantite);
+      const carte = (a) => {
+        const dans = st.panier.has(a.id), qte = st.panier.get(a.id) || 0;
+        const trop = st.type === 'sortie' && qte > dispo(a);
+        let regl = '';
+        if (dans) {
+          if (estEnBottes(a)) {
+            const bpb = num(a.barres_par_botte), b = Math.floor(qte / bpb), r = Math.round((qte - b * bpb) * 100) / 100;
+            regl = `<div class="sk-regl"><div class="sk-pas"><span>Bottes</span><button type="button" data-moins="${bpb}" aria-label="Une botte de moins">−</button><input inputmode="numeric" data-champ="b" value="${b}" aria-label="Nombre de bottes"><button type="button" data-plus="${bpb}" aria-label="Une botte de plus">+</button></div>
+              <div class="sk-pas"><span>Barres en plus</span><button type="button" data-moins="1" aria-label="Une barre de moins">−</button><input inputmode="numeric" data-champ="r" value="${r}" aria-label="Barres en plus"><button type="button" data-plus="1" aria-label="Une barre de plus">+</button></div>
+              <small class="muted">1 botte = ${pluriel(bpb, 'barre', 'barres')}</small></div>`;
+          } else {
+            regl = `<div class="sk-regl"><div class="sk-pas"><span>${esc(a.unite)}</span><button type="button" data-moins="1" aria-label="Un de moins">−</button><input inputmode="decimal" data-champ="q" value="${qte || ''}" placeholder="0" aria-label="Quantité"><button type="button" data-plus="1" aria-label="Un de plus">+</button></div>
+              <div class="sk-rapides">${[5, 10, 20, 50].map((n) => `<button type="button" data-ajout="${n}">+${n}</button>`).join('')}</div></div>`;
+          }
+        }
+        return `<div class="sk-art ${dans ? 'choisi' : ''} ${trop ? 'trop' : ''}" data-a="${a.id}">
+          <button type="button" class="sk-art-tete" data-basc="${a.id}"><span class="sk-emoji">${emojiArticle(a.nom)}</span><span class="sk-art-txt"><b>${esc(a.nom)}</b><small>En stock : ${esc(qteLisible(a, dispo(a)))}</small></span><span class="sk-coche">${dans ? '✓' : '＋'}</span></button>
+          ${regl}${trop ? `<div class="sk-alerte">Il n’en reste que ${esc(qteLisible(a, dispo(a)))} au magasin.</div>` : ''}</div>`;
+      };
+      const resume = () => {
+        const l = [...st.panier].filter(([, q]) => q > 0);
+        const bouton = $('button[type="submit"]', ov);
+        const verbe = st.type === 'sortie' ? (tech ? 'Je prends' : 'Sortie de') : (tech ? 'Je rends' : 'Entrée de');
+        $('#sk-resume', ov).innerHTML = l.length ? `<b>${verbe} :</b> ${l.map(([id, q]) => `${esc(qteLisible(art(id), q))} de ${esc(art(id).nom)}`).join(', ')}` : '';
+        bouton.textContent = l.length ? `✅ Valider (${l.length} article${l.length > 1 ? 's' : ''})` : 'Valider';
+      };
+      const dessiner = () => {
+        const f = st.filtre;
+        const vus = trie.filter((a) => st.panier.has(a.id) || !f || a.nom.toLowerCase().includes(f));
+        const choisis = vus.filter((a) => st.panier.has(a.id)), autres = vus.filter((a) => !st.panier.has(a.id));
+        liste.innerHTML = [...choisis, ...autres].map(carte).join('') || '<p class="muted">Aucun article ne correspond.</p>';
+        resume();
+      };
+      const redessinerCarte = (id) => { const el = $(`.sk-art[data-a="${id}"]`, liste); if (el) { el.outerHTML = carte(art(id)); } resume(); };
+      const regler = (id, v) => { st.panier.set(id, Math.max(0, Math.round(v * 100) / 100)); redessinerCarte(id); };
+      liste.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        const id = b.closest('.sk-art')?.dataset.a; const a = art(id);
+        if (b.dataset.basc) {
+          if (st.panier.has(id)) st.panier.delete(id); else st.panier.set(id, estEnBottes(a) ? num(a.barres_par_botte) : 1);
+          dessiner();
+          if (st.panier.has(id)) $(`.sk-art[data-a="${id}"]`, liste)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else if (b.dataset.plus) regler(id, (st.panier.get(id) || 0) + num(b.dataset.plus));
+        else if (b.dataset.moins) regler(id, (st.panier.get(id) || 0) - num(b.dataset.moins));
+        else if (b.dataset.ajout) regler(id, (st.panier.get(id) || 0) + num(b.dataset.ajout));
+      });
+      liste.addEventListener('change', (e) => {
+        const i = e.target.closest('[data-champ]'); if (!i) return;
+        const el = i.closest('.sk-art'), id = el.dataset.a, a = art(id);
+        if (i.dataset.champ === 'q') regler(id, num(i.value));
+        else {
+          const b = num($('[data-champ="b"]', el).value), r = num($('[data-champ="r"]', el).value);
+          regler(id, b * num(a.barres_par_botte) + r);
+        }
+      });
+      liste.addEventListener('focusin', (e) => { if (e.target.matches('[data-champ]')) e.target.select?.(); });
+      $('.sk-cherche', ov)?.addEventListener('input', (e) => { st.filtre = e.target.value.trim().toLowerCase(); dessiner(); });
+      const choisirType = (v) => { st.type = v; $$('.sk-type', ov).forEach((x) => x.classList.toggle('actif', x.dataset.t === v)); dessiner(); };
+      $$('.sk-type', ov).forEach((x) => (x.onclick = () => choisirType(x.dataset.t)));
+      const choisirProjet = (v) => { st.projet = v; $$('.sk-chip', ov).forEach((x) => x.classList.toggle('actif', x.dataset.p === v)); };
+      $$('.sk-chip', ov).forEach((x) => (x.onclick = () => choisirProjet(x.dataset.p)));
+      choisirType(st.type); choisirProjet(st.projet);
+    },
     onSubmit: async (d) => {
-      if (num(d.quantite) <= 0) throw new Error('La quantité doit être positive.');
-      if ((d.type === 'sortie' || can('technicien')) && !d.projet_id) throw new Error('Indiquez le chantier concerné.');
-      await q(sb.from('mouvements_stock').insert({ article_id: d.article_id, type: d.type, quantite: num(d.quantite), projet_id: d.projet_id, commentaire: d.commentaire }));
-      toast(can('technicien') ? (d.type === 'entree' ? 'Retour au magasin enregistré ✅ Le magasin est prévenu.' : 'Prise de matériel enregistrée ✅ Le magasin est prévenu.') : d.type === 'entree' ? 'Entrée enregistrée.' : 'Sortie enregistrée.');
+      const lignes = [...st.panier].filter(([, q]) => q > 0);
+      if (!lignes.length) throw new Error('Touchez au moins un article et indiquez la quantité.');
+      if ((st.type === 'sortie' || tech) && !st.projet) throw new Error('Choisissez le chantier concerné (étape 2).');
+      const manque = lignes.find(([id, q]) => st.type === 'sortie' && q > num(articles.find((a) => a.id === id).quantite));
+      if (manque) { const a = articles.find((x) => x.id === manque[0]); throw new Error(`Stock insuffisant pour « ${a.nom} » : il reste ${qteLisible(a, a.quantite)}.`); }
+      await q(sb.from('mouvements_stock').insert(lignes.map(([id, qte]) => ({ article_id: id, type: st.type, quantite: qte, projet_id: st.projet || null, commentaire: d.commentaire || null }))));
+      noterRecents(lignes.map(([id]) => id));
+      const n = lignes.length > 1 ? ` (${lignes.length} articles)` : '';
+      toast(tech ? (st.type === 'entree' ? `Retour au magasin enregistré${n} ✅ Le magasin est prévenu.` : `Prise de matériel enregistrée${n} ✅ Le magasin est prévenu.`) : st.type === 'entree' ? `Entrée enregistrée${n}.` : `Sortie enregistrée${n}.`);
       refresh();
     },
   });
+  return m;
 }
 
 // ═══════════════════════════════ ÉQUIPE ═══════════════════════════════
@@ -8220,10 +8509,12 @@ PAGES.parametres = async () => {
       <p style="font-size:13px;margin-bottom:12px">Aucun propriétaire n’est encore déclaré. Si vous êtes l’éditeur de KOORDIN, activez votre console : vous pourrez fixer les prix, valider les paiements et gérer les licences de toutes les entreprises clientes. Votre propre entreprise n’aura pas de date d’expiration.</p>
       <p class="notice warn" style="margin-bottom:12px">⚠️ À faire une seule fois, par vous seul : le premier compte qui l’active devient propriétaire.</p>
       <button class="btn primary" id="devenir-admin">Je suis le propriétaire de KOORDIN : activer ma console</button></div>` : ''}
+    ${can('direction') && !DEMO ? carteMarque() : ''}
     <div class="card section"><div class="card-title">Installer KOORDIN sur un téléphone</div>
       <p style="font-size:13px;line-height:1.8">• <b>Android (Chrome)</b> : ouvrez l’adresse de l’application → menu ⋮ → « Ajouter à l’écran d’accueil ».<br>
       • <b>iPhone (Safari)</b> : ouvrez l’adresse → bouton Partager → « Sur l’écran d’accueil ».<br>
       Adresse à partager avec votre équipe : <b>${esc(location.origin + location.pathname)}</b></p></div>`);
+  brancherMarque(p);
   $('#f-ent', p).onsubmit = async (ev) => {
     ev.preventDefault();
     const d = lireFormulaire(ev.target);

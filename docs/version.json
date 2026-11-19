@@ -1,9 +1,8 @@
 {
-  "version": "3.7",
+  "version": "3.9",
   "date": "2026-11-19",
   "nouveautes": [
-    "🎬 Film du chantier : toutes les photos deviennent une petite vidéo animée de l’avancement (dates et pourcentages), à envoyer au client sur WhatsApp.",
-    "↔️ Avant / Après : comparez deux photos du même chantier en glissant le doigt, et partagez l’image.",
-    "📱 Story de la semaine : sur l’accueil, touchez une bulle pour revivre la semaine en 30 secondes (chiffres, plus belles photos, étapes validées, points d’attention) et la partager en vidéo."
+    "🔩 Acier en bottes : les fers HA sont comptés en bottes et barres (« 3 bottes + 4 barres »). Indiquez une fois le nombre de barres par botte dans l’article.",
+    "📦 Stock plus simple pour les techniciens : deux gros boutons « Je prends » / « Je rends », on touche le matériel, on règle la quantité avec + et −, et on peut prendre plusieurs articles d’un coup."
   ]
 }
