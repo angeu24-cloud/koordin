@@ -1,10 +1,8 @@
 {
-  "version": "3.11.1",
-  "date": "2026-11-19",
+  "version": "3.12",
+  "date": "2026-11-20",
   "nouveautes": [
-    "📷 Envoi des photos plus solide : chaque photo est réessayée 3 fois si le réseau coupe.",
-    "Si des photos ne passent pas, elles sont gardées sur le téléphone et renvoyées automatiquement (seulement celles qui manquent).",
-    "Nouveau bouton « 📷 Ajouter des photos à ce rapport » dans un rapport déjà envoyé.",
-    "🎥 Vidéos dans les rapports et 📞 appels vocaux (3.11)."
+    "📅 Salaires : la Direction peut corriger le mois d’un versement, même déjà signé ou validé (bouton « Changer le mois » dans la fiche du versement). Le montant et la signature ne changent pas, le mois d’origine est gardé et le bénéficiaire est prévenu.",
+    "📷 Envoi des photos plus solide : réessais automatiques et bouton « Ajouter des photos à ce rapport »."
   ]
 }

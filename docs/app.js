@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.11.1';
+const VERSION = '3.12';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -6727,10 +6727,11 @@ const STATUT_VERSEMENT = {
 };
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const libellePeriode = (per) => `${MOIS_FR[Number(per.slice(5, 7)) - 1]} ${per.slice(0, 4)}`;
-const libelleVersement = (v) => `${TYPE_VERSEMENT[v.type] || 'Versement'} de ${libellePeriode(v.periode)}`;
+const libelleVersement = (v) => `${TYPE_VERSEMENT[v.type] || 'Versement'} ${/^[aeiouéè]/i.test(libellePeriode(v.periode)) ? 'd’' : 'de '}${libellePeriode(v.periode)}`;
 const erreurVersement = (e) => {
   const m = String(e?.message || '');
   if (/^VERSEMENT_/.test(m) && e?.hint) return e.hint;
+  if (/corriger_mois_versement/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Cette fonction nécessite la mise à jour 3.12 de la base de données (kit d’installation).';
   if (/relation .*versements/i.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Cette fonction nécessite la mise à jour 2.8 de la base de données (kit d’installation).';
   return messageErreur(e);
 };
@@ -6960,7 +6961,10 @@ function ficheVersement(v, rendre) {
       ${v.statut === 'conteste' ? `<div class="notice warn">⚠️ ${esc(pr?.nom || '')} signale : « ${esc(v.commentaire_employe || '')} »</div>` : ''}
       ${v.signature ? `<div class="detail-block"><h4>Signature du bénéficiaire (${new Date(v.confirme_le).toLocaleString('fr-FR')})</h4><img class="signature-img" src="${esc(v.signature)}" alt="Signature"></div>` : ''}
       ${v.valide_le ? `<p class="muted" style="font-size:12px">Validé le ${new Date(v.valide_le).toLocaleString('fr-FR')} par ${esc(nomMembre(v.valide_par))}.</p>` : ''}
+      ${v.note ? `<div class="detail-block"><h4>Note</h4><p>${esc(v.note)}</p></div>` : ''}
+      ${v.periode_initiale && v.periode_initiale !== v.periode ? `<p class="muted" style="font-size:12px">📅 Mois corrigé le ${new Date(v.periode_corrigee_le).toLocaleString('fr-FR')} par ${esc(nomMembre(v.periode_corrigee_par))} (au départ : ${esc(libellePeriode(v.periode_initiale))}).</p>` : ''}
       <div class="rc-boutons mt">
+        ${can('direction') ? '<button type="button" class="btn" id="fv-mois">📅 Changer le mois</button>' : ''}
         ${v.statut === 'recu' ? '<button type="button" class="btn primary" id="fv-valider">✅ Valider</button>' : ''}
         ${['verse', 'conteste'].includes(v.statut) ? '<button type="button" class="btn primary" id="fv-corriger">✏️ Corriger</button>' : ''}
         ${v.statut === 'verse' ? `<a class="btn" target="_blank" rel="noopener" href="https://wa.me/${numeroAuteur(pr)}?text=${encodeURIComponent(`Bonjour ${String(pr?.nom || '').split(' ')[0]}, votre ${libelleVersement(v).toLowerCase()} (${money(v.montant)}) a été versé par ${v.moyen}. Merci de confirmer la réception dans KOORDIN (Mon espace). ${S.profil.nom}`)}">📲 Rappeler par WhatsApp</a>` : ''}
@@ -6972,10 +6976,33 @@ function ficheVersement(v, rendre) {
     try { await q(sb.from('versements').update({ statut: 'valide' }).eq('id', v.id)); toast('Versement validé ✅'); m.fermer(); rendre(); } catch (e) { toast(erreurVersement(e), 'err'); }
   });
   $('#fv-corriger', m.el)?.addEventListener('click', () => { m.fermer(); formulaireVersement(v, rendre); });
+  $('#fv-mois', m.el)?.addEventListener('click', () => { m.fermer(); changerMoisVersement(v, rendre); });
   $('#fv-pdf', m.el)?.addEventListener('click', () => pdfAccuseVersement(v, pr));
   $('#fv-suppr', m.el)?.addEventListener('click', async () => {
     if (!(await confirmer('Supprimer ce versement ?', 'Supprimer'))) return;
     try { await q(sb.from('versements').delete().eq('id', v.id)); toast('Versement supprimé.'); m.fermer(); rendre(); } catch (e) { toast(erreurVersement(e), 'err'); }
+  });
+}
+
+// La Direction corrige le mois d'un versement, même déjà signé : le montant et la signature ne bougent pas
+function changerMoisVersement(v, rendre) {
+  const pr = S.equipe.find((x) => x.id === v.profil_id);
+  ouvrirModale({
+    titre: '📅 Changer le mois du versement',
+    boutonOk: 'Enregistrer le nouveau mois',
+    corps: `<p style="margin-bottom:10px"><b>${esc(pr?.nom || '')}</b> · ${esc(TYPE_VERSEMENT[v.type] || 'Versement')} de <b>${money(v.montant)}</b>, actuellement noté <b>${esc(libellePeriode(v.periode))}</b>.</p>
+      ${['recu', 'valide'].includes(v.statut) ? '<div class="notice">Ce versement est déjà confirmé : seul le mois change. Le montant, la signature et la validation restent tels quels. Le bénéficiaire est prévenu.</div>' : ''}
+      <div class="form-grid">
+        ${F.text('periode', 'Mois concerné', v.periode, { type: 'month', required: true })}
+        ${F.area('note', 'Note (facultatif)', v.note || '', { placeholder: 'Ex. Salaire d’octobre versé en retard.' })}
+      </div>`,
+    onSubmit: async (d) => {
+      if (!/^\d{4}-\d{2}$/.test(d.periode || '')) throw new Error('Choisissez un mois.');
+      try { await q(sb.rpc('corriger_mois_versement', { p_versement: v.id, p_periode: d.periode, p_note: d.note || '' })); }
+      catch (e) { throw new Error(erreurVersement(e)); }
+      toast(d.periode === v.periode ? 'Note enregistrée.' : `📅 Versement reclassé en ${libellePeriode(d.periode)} : le bénéficiaire est prévenu.`);
+      rendre();
+    },
   });
 }
 
@@ -6998,6 +7025,7 @@ async function pdfAccuseVersement(v, pr) {
     y += 46;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(100, 108, 128);
     doc.text(textePDF(`Confirmé et signé électroniquement dans KOORDIN le ${v.confirme_le ? new Date(v.confirme_le).toLocaleString('fr-FR') : '-'}.${v.valide_le ? ` Validé par la société le ${new Date(v.valide_le).toLocaleDateString('fr-FR')}.` : ''}`), 16, y);
+    if (v.periode_initiale && v.periode_initiale !== v.periode) { y += 5; doc.text(textePDF(`Mois corrigé par la Direction le ${new Date(v.periode_corrigee_le).toLocaleDateString('fr-FR')} (enregistré au départ en ${libellePeriode(v.periode_initiale)}).`), 16, y); }
     piedPDF(doc, `${S.entreprise?.nom || ''} - Accusé de réception - ${pr?.nom || ''}`);
     const nom = `Accuse-${libelleVersement(v)}-${pr?.nom || ''}.pdf`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9.]+/g, '-');
     presenterPDF(doc.output('blob'), nom, `Accusé de réception : ${libelleVersement(v)} (${money(v.montant)}) - ${pr?.nom || ''}`);
