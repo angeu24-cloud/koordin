@@ -2056,3 +2056,13 @@ body.en-film .koko { display: none; }
 .appel-ecran.vocal .ap-tuile video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .ap-avatar { width: 112px; height: 112px; border-radius: 50%; display: grid; place-items: center; font-size: 38px; font-weight: 800; color: #fff; background: linear-gradient(145deg, #3ecf8e, #138a5e); box-shadow: 0 0 0 10px rgba(62, 207, 142, .12), 0 0 0 22px rgba(62, 207, 142, .06); }
 .appel-ecran.vocal .ap-tuile .ap-nom { position: static; margin-top: 18px; font-size: 18px; background: none; }
+
+/* 3.13 : Koko comprend mieux */
+.koko-bulle { max-height: 60vh; overflow-y: auto; }
+.koko-sugg { display: flex; flex-direction: column; gap: 6px; margin: 9px 0 4px; }
+.koko-sugg button { text-align: left; padding: 8px 11px; border-radius: 12px; border: 1px solid var(--liseré-or, var(--border)); background: color-mix(in srgb, var(--gold) 10%, transparent); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.koko-sugg button:active { transform: scale(.97); }
+.koko-ecrire { display: flex; gap: 6px; margin: 9px 0 4px; }
+.koko-ecrire input { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
+.koko-ecrire button { width: 40px; border-radius: 12px; border: 0; background: var(--gold); color: var(--gold-ink, #1a1203); font-size: 16px; font-weight: 800; cursor: pointer; }
+.koko-clavier { background: none; border: 0; font-size: 15px; cursor: pointer; padding: 2px 4px; }

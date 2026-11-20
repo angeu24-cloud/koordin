@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.12';
+const VERSION = '3.13';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1797,7 +1797,7 @@ function initKoko() {
   const el = document.createElement('div');
   el.className = `koko koko-${KOKO.cote}`;
   el.dataset.humeur = 'sourire';
-  el.innerHTML = `<div class="koko-bulle hidden" role="status" aria-live="polite"><span class="koko-texte"></span><div class="koko-outils">${Reconnaissance ? '<button type="button" class="koko-micro" aria-label="Parler à Koko">🎤 Me parler</button>' : ''}<button type="button" class="koko-voix" aria-label="Voix de Koko">🔊</button><button type="button" class="koko-masquer" aria-label="Masquer Koko">Masquer</button></div></div>
+  el.innerHTML = `<div class="koko-bulle hidden" role="status" aria-live="polite"><span class="koko-texte"></span><div class="koko-outils">${Reconnaissance ? '<button type="button" class="koko-micro" aria-label="Parler à Koko">🎤 Me parler</button>' : ''}<button type="button" class="koko-clavier" aria-label="Écrire à Koko">⌨️</button><button type="button" class="koko-voix" aria-label="Voix de Koko">🔊</button><button type="button" class="koko-masquer" aria-label="Masquer Koko">Masquer</button></div></div>
     <button type="button" class="koko-corps" aria-label="Koko, votre assistant : touchez pour un conseil">${svgKoko()}<span class="koko-pouf" aria-hidden="true"></span></button>`;
   document.body.appendChild(el);
   KOKO.el = el;
@@ -1846,10 +1846,11 @@ function initKoko() {
   $('.koko-masquer', el).onclick = () => masquerKoko(true);
   $('.koko-voix', el).onclick = kokoBasculerVoix;
   $('.koko-micro', el)?.addEventListener('click', kokoEcouter);
+  $('.koko-clavier', el)?.addEventListener('click', (e) => { e.stopPropagation(); kokoEcrire(); });
   majBoutonsKoko();
   // Il se pousse quand on fait défiler la page
-  document.addEventListener('scroll', () => {
-    if (!KOKO.el) return;
+  document.addEventListener('scroll', (e) => {
+    if (!KOKO.el || KOKO.el.contains(e.target)) return;
     KOKO.el.classList.add('cache');
     clearTimeout(KOKO.minuterieDefile);
     KOKO.minuterieDefile = setTimeout(() => KOKO.el?.classList.remove('cache'), 1100);
@@ -1894,6 +1895,7 @@ function kokoDire(texte, duree = 5000, parler = true) {
   if (!el) return;
   if (parler) kokoParler(texte);
   const b = $('.koko-bulle', el);
+  $$('.koko-sugg, .koko-ecrire', b).forEach((x) => x.remove());
   $('.koko-texte', b).textContent = texte;
   b.classList.remove('hidden', 'sort');
   clearTimeout(KOKO.minuterieBulle);
@@ -1915,7 +1917,7 @@ function kokoNaviguer(page, forcer = false) {
     KOKO.vus.add(page);
     if (KOKO.vus.size > 1 || forcer) {
       const c = KOKO_CONSEILS[page];
-      if (c) setTimeout(() => kokoDire(c[0], 4500), 450);
+      if (c) setTimeout(() => { if (!(KOKO.occupe > Date.now())) kokoDire(c[0], 4500); }, 450);
     }
   }
 }
@@ -2106,46 +2108,195 @@ const KOKO_ROUTES = [
   [/norme|bael|eurocode|dtu|conseil|savoir|quiz/, 'savoir'],
 ];
 
+// ─── 3.13 : Koko comprend mieux (avancement, retards, suggestions, écrire) ───
+// Mots proches tolérés (fautes de frappe, reconnaissance vocale approximative)
+const KOKO_MOTS = [
+  ['comptabilite', 'compta'], ['facture', 'compta'], ['depenses', 'compta'], ['devis', 'ventes'], ['encaissement', 'ventes'], ['situation', 'ventes'],
+  ['contrat', 'contrats'], ['prestataire', 'contrats'], ['salaire', 'salaires'], ['pointage', 'pointage'], ['presences', 'pointage'],
+  ['commande', 'achats'], ['fournisseur', 'achats'], ['stock', 'stock'], ['magasin', 'stock'], ['materiel', 'materiel'], ['securite', 'securite'],
+  ['reunion', 'appels'], ['appel', 'appels'], ['equipe', 'equipe'], ['communique', 'communiques'], ['parametres', 'parametres'],
+  ['abonnement', 'abonnement'], ['chantier', 'projets'], ['projet', 'projets'], ['accueil', 'dashboard'], ['rapport', 'rapports'], ['controle', 'controles'],
+];
+function distanceMots(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+const motsDe = (t) => sansAccents(t).replace(/[^a-z0-9%\s]/g, ' ').split(/\s+/).filter(Boolean);
+
+// Bulle avec boutons de suggestions
+function kokoSuggerer(texte, suggestions = [], duree = 14000) {
+  kokoDire(texte, duree);
+  const b = $('.koko-bulle', KOKO.el || document); if (!b || !suggestions.length) return;
+  const zone = document.createElement('div'); zone.className = 'koko-sugg';
+  suggestions.slice(0, 4).forEach(([libelle, phrase]) => {
+    const bt = document.createElement('button'); bt.type = 'button'; bt.textContent = libelle;
+    bt.onclick = (e) => { e.stopPropagation(); kokoComprendre(phrase || libelle); };
+    zone.appendChild(bt);
+  });
+  $('.koko-texte', b).after(zone);
+}
+function kokoEcrire() {
+  const b = $('.koko-bulle', KOKO.el || document); if (!b) return;
+  kokoDire('Écrivez-moi votre question 👇', 60000, false);
+  const f = document.createElement('form'); f.className = 'koko-ecrire';
+  f.innerHTML = '<input type="text" placeholder="Ex. pourquoi Villa Cocody est à 6 % ?" aria-label="Votre question à Koko" enterkeyhint="send"><button type="submit" aria-label="Envoyer">➤</button>';
+  f.onsubmit = (e) => { e.preventDefault(); const v = $('input', f).value.trim(); if (v) kokoComprendre(v); };
+  $('.koko-texte', b).after(f);
+  setTimeout(() => $('input', f).focus(), 50);
+}
+const kokoSuggestionsBase = () => [
+  ['📊 Où en sont mes chantiers ?', 'avancement des chantiers'],
+  ...(can('direction', 'coordinateur') ? [['📋 Rapports à valider', 'combien de rapports à valider']] : [['📝 Nouveau rapport', 'nouveau rapport']]),
+  ['⏰ Chantiers en retard', 'chantiers en retard'],
+  ['⌨️ Écrire ma question', '__ecrire'],
+];
+
+async function kokoProjets() {
+  return avecCache('koko-projets', () => q(sb.from('v_projets').select('id, nom, statut, avancement, avancement_attendu, sante, jours_de_retard, rapports_en_attente, date_fin_prevue').neq('statut', 'termine').order('nom')), { defaut: [] });
+}
+// Le chantier cité dans la phrase (mots du nom, avec tolérance)
+function projetCite(t, projets) {
+  const mots = motsDe(t);
+  let meilleur = null, score = 0;
+  for (const pr of projets) {
+    const nm = motsDe(pr.nom).filter((m) => m.length > 2 && !['villa', 'immeuble', 'chantier', 'projet', 'residence', 'batiment'].includes(m));
+    const s = nm.filter((m) => mots.some((x) => x === m || (m.length > 4 && distanceMots(x, m) <= 1))).length;
+    if (s > score) { score = s; meilleur = pr; }
+  }
+  return meilleur;
+}
+
+async function kokoExpliquerAvancement(pr) {
+  const [lots, sansLot] = await Promise.all([
+    q(sb.from('lots').select('nom, avancement, budget').eq('projet_id', pr.id).order('ordre')).catch(() => []),
+    can('direction', 'coordinateur')
+      ? sb.from('rapports').select('id', { count: 'exact', head: true }).eq('projet_id', pr.id).is('lot_id', null).gte('date_rapport', decalerJour(todayISO(), -30)).then((r) => r.count || 0, () => 0)
+      : Promise.resolve(0),
+  ]);
+  const phrases = [`${pr.nom} est à ${pr.avancement} %.`];
+  if (!lots.length) phrases.push('Ce chantier n’a pas encore de lots : ajoutez-en dans l’onglet « Lots », sinon l’avancement reste à 0.');
+  else {
+    const tries = [...lots].sort((a, b) => num(b.budget) - num(a.budget));
+    const zero = lots.filter((l) => !num(l.avancement)).length;
+    phrases.push(lots.length === 1 ? `Il n’a qu’un lot : ${lots[0].nom}, à ${lots[0].avancement} %.` : `Il se calcule sur ${lots.length} lots, les plus gros comptant davantage : ${tries.slice(0, 3).map((l) => `${l.nom} ${l.avancement} %`).join(', ')}${lots.length > 3 ? '…' : '.'}`);
+    if (zero) phrases.push(`${zero} lot${zero > 1 ? 's sont' : ' est'} encore à 0 %.`);
+  }
+  if (pr.avancement_attendu != null && pr.avancement_attendu - pr.avancement > 5) phrases.push(`D’après les dates du chantier, il devrait être vers ${pr.avancement_attendu} %.`);
+  if (pr.rapports_en_attente) phrases.push(`${pr.rapports_en_attente} rapport${pr.rapports_en_attente > 1 ? 's attendent' : ' attend'} ${can('direction') ? 'votre validation finale' : 'une validation'} : l’avancement bougera après.`);
+  if (sansLot) phrases.push(`${sansLot} rapport${sansLot > 1 ? 's' : ''} récent${sansLot > 1 ? 's' : ''} n’indique${sansLot > 1 ? 'nt' : ''} pas de lot : ils ne font pas monter le chiffre.`);
+  if (lots.length && !pr.rapports_en_attente && pr.avancement < 15) phrases.push('Astuce : l’avancement d’un lot monte quand un rapport choisit ce lot, indique un pourcentage, puis est validé.');
+  return phrases.join(' ');
+}
+
+async function kokoAvancement(t) {
+  const projets = await kokoProjets();
+  if (!projets.length) return kokoSuggerer('Vous n’avez aucun chantier en cours pour le moment.', [['🏗️ Ouvrir les chantiers', 'ouvre les chantiers']]);
+  const pr = projetCite(t, projets) || (projets.length === 1 ? projets[0] : null);
+  if (pr) {
+    kokoDire(`Je regarde ${pr.nom}… 🔎`, 3000, false);
+    const txt = await kokoExpliquerAvancement(pr);
+    ongletProjet = 'lots';
+    allerA(`#/projet/${pr.id}`);
+    setTimeout(() => kokoSuggerer(txt, [
+      ...(pr.rapports_en_attente && can('direction', 'coordinateur') ? [['📋 Voir les rapports à valider', 'rapports à valider']] : []),
+      ['📅 Voir le planning', `__planning:${pr.id}`],
+    ], 26000), 600);
+    return;
+  }
+  const moyen = Math.round(projets.reduce((s, x) => s + num(x.avancement), 0) / projets.length);
+  const bas = [...projets].sort((a, b) => a.avancement - b.avancement);
+  allerA('#/projets');
+  setTimeout(() => kokoSuggerer(`Vos ${projets.length} chantiers sont en moyenne à ${moyen} %. Les moins avancés : ${bas.slice(0, 3).map((x) => `${x.nom} (${x.avancement} %)`).join(', ')}. Touchez un chantier pour que je vous explique son chiffre.`,
+    bas.slice(0, 3).map((x) => [`🔎 ${x.nom}`, `pourquoi avancement ${x.nom}`]), 24000), 600);
+}
+
+async function kokoRetards() {
+  const projets = await kokoProjets();
+  const soucis = projets.filter((x) => x.jours_de_retard > 0 || x.sante === 'critique' || (x.avancement_attendu != null && x.avancement_attendu - x.avancement > 10));
+  if (!soucis.length) return kokoSuggerer('Aucun chantier en retard pour le moment ✅', [['📊 Où en sont mes chantiers ?', 'avancement des chantiers']]);
+  allerA('#/projets');
+  setTimeout(() => kokoSuggerer(`${soucis.length} chantier${soucis.length > 1 ? 's' : ''} à surveiller : ${soucis.slice(0, 3).map((x) => `${x.nom} (${x.jours_de_retard > 0 ? `${x.jours_de_retard} j de retard` : `${x.avancement} % au lieu de ${x.avancement_attendu} %`})`).join(', ')}.`,
+    soucis.slice(0, 3).map((x) => [`🔎 ${x.nom}`, `pourquoi avancement ${x.nom}`]), 22000), 600);
+}
+
+let kokoIncompris = 0;
 async function kokoComprendre(phrase) {
+  KOKO.occupe = Date.now() + 5000;
+  if (phrase === '__ecrire') return kokoEcrire();
+  if (phrase.startsWith('__planning:')) { ongletProjet = 'planning'; allerA(`#/projet/${phrase.slice(11)}`); return kokoDire('Voici le planning 📅', 3000); }
   const t = sansAccents(phrase);
   const visibles = new Set(menuVisible().map((m) => m.r));
   const repondre = (txt) => kokoDire(txt, 5500);
-  if (/^(bonjour|salut|bonsoir|coucou|hello)/.test(t)) return repondre(`Bonjour ${String(S.profil.nom).split(' ')[0]} ! Que puis-je faire pour vous ?`);
-  if (/merci/.test(t)) return repondre('Avec plaisir ! 😊');
-  if (/quelle heure|l heure/.test(t)) return repondre(`Il est ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`);
-  if (/aide|que sais.tu|tu sais faire|comment ca marche/.test(t)) return repondre('Dites par exemple : « ouvre la compta », « nouveau rapport », « appelle Koffi », « combien de rapports à valider ».');
-  // Appeler quelqu'un
-  const appel = /(appelle|appeler|telephone a|lance un appel avec|visio avec)\s+(.+)/.exec(t);
-  if (appel) {
-    const nom = appel[2].replace(/^(le |la |l |monsieur |madame |m )/, '').trim();
-    const qui = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id).find((x) => sansAccents(x.nom).split(/\s+/).some((m) => m.length > 1 && nom.split(/\s+/).includes(m)) || sansAccents(x.nom).includes(nom));
-    if (qui) {
-      const video = /video|camera|chantier en direct/.test(t);
-      repondre(`J’appelle ${qui.nom} ${video ? '📹' : '📞'}`);
-      setTimeout(() => lancerAppel({ mode: !video ? 'audio' : role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return;
+  try {
+    if (/^(bonjour|salut|bonsoir|coucou|hello)\b/.test(t) && t.split(' ').length < 4) return kokoSuggerer(`Bonjour ${String(S.profil.nom).split(' ')[0]} ! Que puis-je faire pour vous ?`, kokoSuggestionsBase());
+    if (/^merci/.test(t)) return repondre('Avec plaisir ! 😊');
+    if (/quelle heure|l heure/.test(t)) return repondre(`Il est ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`);
+    if (/aide|que sais.tu|tu sais faire|comment ca marche|tu peux faire/.test(t)) return kokoSuggerer('Je peux ouvrir les pages, expliquer l’avancement d’un chantier, trouver les retards, compter les rapports à valider, appeler quelqu’un… Essayez :', kokoSuggestionsBase());
+    // Appeler quelqu'un
+    const appel = /(appelle|appeler|telephone a|lance un appel avec|visio avec)\s+(.+)/.exec(t);
+    if (appel) {
+      const nom = appel[2].replace(/^(le |la |l |monsieur |madame |m )/, '').replace(/\b(en )?(video|vocal)\b/g, '').trim();
+      const qui = (S.equipe || []).filter((x) => x.actif && x.id !== S.profil.id).find((x) => sansAccents(x.nom).split(/\s+/).some((m) => m.length > 1 && nom.split(/\s+/).includes(m)) || sansAccents(x.nom).includes(nom));
+      if (qui) {
+        const video = /video|camera|chantier en direct/.test(t);
+        repondre(`J’appelle ${qui.nom} ${video ? '📹' : '📞'}`);
+        setTimeout(() => lancerAppel({ mode: !video ? 'audio' : role() === 'technicien' || qui.role === 'technicien' ? 'chantier' : 'reunion', invites: [qui.id] }), 900); return;
+      }
+      return repondre(`Je ne trouve pas « ${nom} » dans votre équipe.`);
     }
-    repondre(`Je ne trouve pas « ${nom} » dans votre équipe.`); return;
-  }
-  if (/(savoir|conseil|astuce|regle) du jour/.test(t)) { const sj = savoirDuJour(); kokoDire(`${sj.t}. ${sj.x}`, 12000); return; }
-  if (/combien/.test(t) && /rapport/.test(t) && !DEMO) {
-    try {
-      const p = await q(sb.from('v_projets').select('rapports_en_attente'));
-      const n = p.reduce((s, x) => s + num(x.rapports_en_attente), 0);
-      return repondre(n ? `Vous avez ${n} rapport${n > 1 ? 's' : ''} à valider.` : 'Aucun rapport en attente. Tout est à jour ✅');
-    } catch { return repondre('Je n’arrive pas à compter les rapports pour le moment.'); }
-  }
-  if (/combien/.test(t) && /chantier|projet/.test(t) && !DEMO) {
-    try { const p = await q(sb.from('projets').select('id').neq('statut', 'termine')); return repondre(`Vous avez ${p.length} chantier${p.length > 1 ? 's' : ''} en cours.`); } catch { /* rien */ }
-  }
-  for (const [motif, r] of KOKO_ROUTES) {
-    if (motif.test(t) && (visibles.has(r) || (r === 'nouveau-rapport' && can(...ROLES_RAPPORT)))) {
-      const nom = menuVisible().find((m) => m.r === r)?.label || 'Nouveau rapport';
-      repondre(`J’ouvre ${nom} 👍`);
-      setTimeout(() => allerA(`#/${r}`), 700);
-      return;
+    if (/(savoir|conseil|astuce|regle) du jour/.test(t)) { const sj = savoirDuJour(); kokoDire(`${sj.t}. ${sj.x}`, 12000); return; }
+    // Avancement : « où en est… », « pourquoi 6 % », « état d'avancement »…
+    if (!DEMO && /avancement|avancer|progression|ou en (est|sont)|pourquoi.*(%|pour ?cent|chiffre|bas|faible)|\d+ ?(%|pour ?cent)|etat des (travaux|chantiers)|niveau des travaux/.test(t)) return kokoAvancement(t);
+    if (!DEMO && /retard|a surveiller|en danger|critique|qui traine|en panne de/.test(t) && !/salaire|paie/.test(t)) return kokoRetards();
+    if (/combien/.test(t) && /rapport/.test(t) || /rapports? (a|en attente de) valid/.test(t)) {
+      if (DEMO) return allerA('#/rapports');
+      try {
+        const p = await q(sb.from('v_projets').select('rapports_en_attente'));
+        const n = p.reduce((s, x) => s + num(x.rapports_en_attente), 0);
+        if (n && visibles.has('rapports')) setTimeout(() => allerA('#/rapports'), 700);
+        return repondre(n ? `Vous avez ${n} rapport${n > 1 ? 's' : ''} à valider. Je vous les ouvre 📋` : 'Aucun rapport en attente. Tout est à jour ✅');
+      } catch { return repondre('Je n’arrive pas à compter les rapports pour le moment.'); }
     }
-  }
-  repondre(`Je n’ai pas compris « ${phrase} ». Dites par exemple « ouvre la compta » ou « appelle Koffi ».`);
+    if (/combien/.test(t) && /chantier|projet/.test(t) && !DEMO) {
+      try { const p = await kokoProjets(); return repondre(`Vous avez ${p.length} chantier${p.length > 1 ? 's' : ''} en cours.`); } catch { /* rien */ }
+    }
+    // Un chantier cité par son nom : on l'ouvre
+    if (!DEMO) {
+      const pr = projetCite(t, await kokoProjets());
+      if (pr && !/stock|salaire|compta|devis|contrat/.test(t)) {
+        if (/planning|calendrier|taches/.test(t)) ongletProjet = 'planning';
+        else if (/photo|galerie/.test(t)) ongletProjet = 'galerie';
+        else if (/lot|budget/.test(t)) ongletProjet = 'lots';
+        repondre(`J’ouvre ${pr.nom} 🏗️`);
+        setTimeout(() => allerA(`#/projet/${pr.id}`), 700);
+        return;
+      }
+    }
+    const nettoye = t.replace(/\b(ouvre|ouvrir|ouvres|va|aller|vas|montre|montrer|affiche|afficher|la|le|les|des|de|du|page|moi|sur|l|stp|svp|s il te plait|je veux|voir)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const [motif, r] of KOKO_ROUTES) {
+      if ((motif.test(t) || motif.test(nettoye)) && (visibles.has(r) || (r === 'nouveau-rapport' && can(...ROLES_RAPPORT)))) {
+        const nom = menuVisible().find((m) => m.r === r)?.label || 'Nouveau rapport';
+        kokoIncompris = 0;
+        repondre(`J’ouvre ${nom} 👍`);
+        setTimeout(() => allerA(`#/${r}`), 700);
+        return;
+      }
+    }
+    // Mot mal reconnu : on cherche le plus proche
+    for (const m of motsDe(nettoye).filter((x) => x.length >= 4)) {
+      const proche = KOKO_MOTS.find(([mot]) => distanceMots(m, mot) <= (mot.length > 6 ? 2 : 1));
+      if (proche && visibles.has(proche[1])) {
+        const nom = menuVisible().find((x) => x.r === proche[1])?.label;
+        return kokoSuggerer(`Vous voulez ouvrir « ${nom} » ?`, [[`✅ Oui, ${nom}`, `ouvre ${proche[1]}`], ['Non', '__ecrire']], 12000);
+      }
+    }
+  } catch (e) { console.warn('koko', e); return repondre('Oups, je n’ai pas réussi à trouver l’information. Réessayez dans un instant 🙏'); }
+  kokoIncompris++;
+  const debuts = ['Je n’ai pas bien compris', 'Hmm, je ne suis pas sûr de comprendre', 'Désolé, ça je ne sais pas encore faire'];
+  kokoSuggerer(`${debuts[(kokoIncompris - 1) % debuts.length]} « ${phrase} ». Voulez-vous plutôt :`, kokoSuggestionsBase(), 16000);
 }
 
 function kokoEcouter() {

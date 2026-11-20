@@ -1,8 +1,11 @@
 {
-  "version": "3.12",
+  "version": "3.13",
   "date": "2026-11-20",
   "nouveautes": [
-    "📅 Salaires : la Direction peut corriger le mois d’un versement, même déjà signé ou validé (bouton « Changer le mois » dans la fiche du versement). Le montant et la signature ne changent pas, le mois d’origine est gardé et le bénéficiaire est prévenu.",
-    "📷 Envoi des photos plus solide : réessais automatiques et bouton « Ajouter des photos à ce rapport »."
+    "🧒 Koko comprend beaucoup mieux : « où en est Villa Cocody », « pourquoi c’est à 6 % », « chantiers en retard », « ouvre le planning de Cocody »…",
+    "Il explique l’avancement d’un chantier (lots, rapports en attente, rapports sans lot) et ouvre la bonne page.",
+    "Quand il hésite, il propose des boutons au lieu de répéter la même phrase. Il comprend aussi les mots mal prononcés.",
+    "⌨️ Nouveau : on peut écrire à Koko (bouton clavier dans sa bulle).",
+    "📅 Salaires : la Direction peut corriger le mois d’un versement (3.12)."
   ]
 }
