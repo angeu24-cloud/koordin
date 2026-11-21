@@ -2119,3 +2119,17 @@ body.en-film .koko { display: none; }
 .sk-fiche-lieux div.bas b { color: var(--crit, #ff6b6b); }
 .sk-nouveau { margin-top: 8px; }
 .sk-pas .input { height: 46px; }
+
+/* 3.18 : correcteur des rapports */
+.correcteur-barre { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.texte-origine { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--border); font-size: 13px; }
+.texte-origine summary { cursor: pointer; color: var(--text-2); }
+.texte-origine p { margin: 8px 0 0; color: var(--text-3); }
+.rc-relecture { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rc-texte { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 14px; border: 1px solid var(--border); }
+.rc-texte b { font-size: 13px; color: var(--gold); }
+.rc-texte b::first-letter { text-transform: uppercase; }
+.rc-texte small { color: var(--text-3); font-size: 12px; }
+.rc-texte textarea { min-height: 70px; width: 100%; box-sizing: border-box; }
+.rc-texte textarea { background: var(--surface-2, var(--surface)); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; color: var(--text); font: inherit; font-size: 14.5px; line-height: 1.5; resize: vertical; }
+.rc-texte textarea:focus { outline: none; border-color: var(--gold); }

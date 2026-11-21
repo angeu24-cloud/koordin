@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.17';
+const VERSION = '3.18';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -4010,7 +4010,18 @@ async function fabriquerPDFClient(projet, d, { du, au, message }) {
 
   if (message?.trim()) {
     titre('Le mot de l’entreprise');
-    paragraphe(message, { taille: 10.5 });
+    paragraphe(corrigerTexte(message).texte, { taille: 10.5 });
+  }
+
+  // Résumé de la période, écrit automatiquement
+  if (d.rapports.length) {
+    const jours = new Set(d.rapports.map((r) => r.date_rapport)).size;
+    const lotsTouches = [...new Set(d.rapports.map((r) => nomLot(r.lot_id)).filter(Boolean))];
+    const pluie = new Set(d.rapports.filter((r) => /pluie|orage/i.test(r.meteo || '')).map((r) => r.date_rapport)).size;
+    const attention = d.rapports.filter((r) => r.incidents?.trim()).length;
+    titre('En résumé');
+    paragraphe(`${jours} jour${jours > 1 ? 's' : ''} de travail sur la période${lotsTouches.length ? `, principalement sur : ${lotsTouches.slice(0, 4).join(', ')}` : ''}. `
+      + `${pluie ? `${pluie} jour${pluie > 1 ? 's' : ''} de pluie. ` : ''}${attention ? `${attention} point${attention > 1 ? 's' : ''} d’attention détaillé${attention > 1 ? 's' : ''} plus bas.` : 'Aucun incident à signaler.'}`, { taille: 10.5 });
   }
 
   if (d.lots.length) {
@@ -4030,14 +4041,14 @@ async function fabriquerPDFClient(projet, d, { du, au, message }) {
     place(10);
     const lot = nomLot(r.lot_id);
     police(9.5, true, OR); doc.text(textePDF(`${jourLong(r.date_rapport)}${lot ? `  ·  ${lot}` : ''}${r.meteo ? `  ·  ${r.meteo}` : ''}`), M, y); y += 4.8;
-    paragraphe(r.travaux, { retrait: 0 });
+    paragraphe(corrigerTexte(r.travaux).texte, { retrait: 0 });
     y += 2;
   });
 
   const incidents = d.rapports.filter((r) => r.incidents?.trim());
   titre('Points d’attention');
   if (!incidents.length) paragraphe('Aucun incident signalé sur cette période.', { couleur: GRIS });
-  incidents.forEach((r) => { paragraphe(`${jourLong(r.date_rapport)} : ${r.incidents}`); y += 1.5; });
+  incidents.forEach((r) => { paragraphe(`${jourLong(r.date_rapport)} : ${corrigerTexte(r.incidents).texte}`); y += 1.5; });
 
   if (d.prochaines.length) {
     titre('En cours et à venir (15 prochains jours)');
@@ -4094,18 +4105,51 @@ function rapportClient(projet) {
         <label class="field full" style="flex-direction:row;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="valides" style="width:auto"> N’inclure que les rapports validés</label>
       </form>
       <div class="rc-resultat hidden"></div>
-      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" id="rc-creer">📄 Créer le rapport</button></div>`,
+      <div class="rc-relecture hidden"></div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" id="rc-creer">👀 Préparer et relire</button></div>`,
   });
   const btn = $('#rc-creer', m.el);
   const zone = $('.rc-resultat', m.el);
   let lienPDF = null;
   m.el.addEventListener('click', (e) => { if ((e.target === m.el || e.target.closest('[data-close]')) && lienPDF) URL.revokeObjectURL(lienPDF); });
+  const relecture = $('.rc-relecture', m.el);
+  let donnees = null, etapeRelue = false;
+  $('#f-rc', m.el).addEventListener('change', (e) => { if (e.target.name === 'periode' || e.target.name === 'valides') { etapeRelue = false; relecture.classList.add('hidden'); zone.classList.add('hidden'); btn.textContent = '👀 Préparer et relire'; btn.classList.add('primary'); } });
   btn.onclick = async () => {
     const d = lireFormulaire($('#f-rc', m.el));
     const { du, au } = periodeRapport(d.periode);
-    btn.disabled = true; btn.textContent = 'Préparation…';
+    btn.disabled = true;
     try {
-      const donnees = await donneesRapportClient(projet, { du, au, valides: !!d.valides });
+      // Étape 1 : préparer et montrer les textes corrigés, à relire
+      if (!etapeRelue) {
+        btn.textContent = 'Préparation…';
+        donnees = await donneesRapportClient(projet, { du, au, valides: !!d.valides });
+        let n = 0;
+        donnees.rapports.forEach((r) => { ['travaux', 'incidents'].forEach((k) => { if (r[k]) { const c = corrigerTexte(r[k]); n += c.n; r[`${k}_propre`] = c.texte; } }); });
+        relecture.innerHTML = donnees.rapports.length ? `<div class="notice">👀 <b>Relisez ce que verra le client.</b> ${n ? `✨ ${n} correction${n > 1 ? 's' : ''} automatique${n > 1 ? 's' : ''} déjà faite${n > 1 ? 's' : ''}.` : ''} Vous pouvez modifier chaque texte.</div>
+          ${donnees.rapports.map((r) => `<div class="rc-texte" data-rid="${r.id}"><b>${esc(parseDay(r.date_rapport).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }))}</b>
+            <textarea class="input" data-k="travaux" rows="3">${esc(r.travaux_propre || r.travaux || '')}</textarea>
+            ${r.incidents ? `<small>Point d’attention (visible par le client)</small><textarea class="input" data-k="incidents" rows="2">${esc(r.incidents_propre || r.incidents)}</textarea>` : ''}</div>`).join('')}
+          <label class="reunion-membre"><input type="checkbox" id="rc-enregistrer" checked><span><b>Enregistrer aussi ces corrections dans les rapports</b><small>Le texte d’origine du technicien reste consultable</small></span></label>`
+          : '<div class="notice">Aucun rapport sur cette période : le PDF contiendra l’avancement, le planning et les photos.</div>';
+        relecture.classList.remove('hidden');
+        activerCorrecteurNavigateur(relecture);
+        etapeRelue = true;
+        btn.textContent = '📄 Créer le PDF';
+        return;
+      }
+      // Étape 2 : reprendre les textes relus, les enregistrer si demandé, puis faire le PDF
+      const aEnregistrer = [];
+      $$('.rc-texte', relecture).forEach((bloc) => {
+        const r = donnees.rapports.find((x) => x.id === bloc.dataset.rid); if (!r) return;
+        const maj = {};
+        $$('textarea', bloc).forEach((ta) => { const v = ta.value.trim(); if (v && v !== (r[ta.dataset.k] || '').trim()) maj[ta.dataset.k] = v; r[ta.dataset.k] = v || r[ta.dataset.k]; });
+        if (Object.keys(maj).length) aEnregistrer.push([r.id, maj]);
+      });
+      if ($('#rc-enregistrer', relecture)?.checked && aEnregistrer.length) {
+        btn.textContent = 'Enregistrement des corrections…';
+        for (const [id, maj] of aEnregistrer) { try { await q(sb.from('rapports').update(maj).eq('id', id)); } catch (e) { console.warn('correction', e); } }
+      }
       btn.textContent = donnees.photos.length ? 'Mise en page des photos…' : 'Mise en page…';
       const blob = await fabriquerPDFClient(projet, donnees, { du, au, message: d.message });
       const nom = `Rapport-${projet.nom}-${parseDay(au).toLocaleDateString('fr-FR')}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -4126,12 +4170,12 @@ function rapportClient(projet) {
           await navigator.share({ files: [fichier], title: nom, text: `Bonjour, voici le rapport d’avancement du chantier « ${projet.nom} ». Cordialement, ${S.entreprise?.nom || ''}` });
         } catch (err) { if (err?.name !== 'AbortError') toast('Le partage n’a pas fonctionné : téléchargez le PDF puis envoyez-le depuis WhatsApp.', 'warn', 6000); }
       });
-      btn.textContent = '↻ Refaire le rapport';
+      btn.textContent = '↻ Refaire le PDF';
       btn.classList.remove('primary');
     } catch (err) {
       console.error(err);
       toast(messageErreur(err), 'err', 6000);
-      btn.textContent = '📄 Créer le rapport';
+      btn.textContent = etapeRelue ? '📄 Créer le PDF' : '👀 Préparer et relire';
     } finally {
       btn.disabled = false;
     }
@@ -4658,6 +4702,8 @@ async function detailRapport(id) {
       ${urls.length ? `<div class="detail-block"><h4>Photos (${urls.length})</h4><div class="photos">${urls.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo de chantier" loading="lazy"></a>`).join('')}</div></div>` : ''}
       ${r.auteur_id === S.profil.id || can('direction', 'coordinateur') ? `<div class="detail-block"><label class="btn sm">📷 Ajouter des photos à ce rapport<input type="file" id="ajout-photos-rapport" accept="image/*" multiple hidden></label> <span class="hint" id="ajout-photos-etat"></span></div>` : ''}
       ${urlsVideos.length ? `<div class="detail-block"><h4>Vidéos (${urlsVideos.length})</h4><div class="medias-videos">${urlsVideos.map((v, i) => `<div class="video-pick lecture"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video><div class="video-info"><b>🎥 Vidéo ${i + 1}</b><span>${v.duree ? dureeLisible(num(v.duree)) : ''}</span></div><a class="btn sm ghost" href="${esc(v.url)}" target="_blank" rel="noopener">⬇️ Ouvrir</a></div>`).join('')}</div></div>` : ''}
+      ${r.corrige_le ? `<details class="texte-origine"><summary>✏️ Texte corrigé par ${esc(nomMembre(r.corrige_par))} ${ago(r.corrige_le)} · voir le texte d’origine</summary>${['travaux', 'incidents', 'besoins'].filter((k) => r.texte_original?.[k]).map((k) => `<p><b>${{ travaux: 'Travaux', incidents: 'Incidents', besoins: 'Besoins' }[k]} :</b> ${esc(r.texte_original[k])}</p>`).join('')}</details>` : ''}
+      ${can('direction', 'coordinateur') ? '<div class="rc-boutons" style="margin-bottom:12px"><button type="button" class="btn sm" id="corriger-rapport">✏️ Corriger le texte</button></div>' : ''}
       ${circuitValidation(r)}
       ${valider ? `<div class="card" style="background:var(--surface-2)">
         ${dir ? '' : '<p class="muted" style="font-size:13px;margin-bottom:10px">Après votre vérification, le rapport part à la <b>Direction</b> pour la validation finale.</p>'}
@@ -4679,6 +4725,7 @@ async function detailRapport(id) {
       }
     };
     $('#val', m.el)?.addEventListener('click', () => decider(dir ? 'valide' : 'pre_valide'));
+    $('#corriger-rapport', m.el)?.addEventListener('click', () => corrigerRapport(r, () => { m.fermer(); detailRapport(r.id); }));
     $('#ajout-photos-rapport', m.el)?.addEventListener('change', async (e) => {
       const fichiers = [...e.target.files]; e.target.value = '';
       if (!fichiers.length) return;
@@ -4766,6 +4813,96 @@ async function compresserImage(fichier, max = 1600, qualite = 0.8) {
   return fichier;
 }
 
+// ═══════════════════════════════ 3.18 : CORRECTEUR DES RAPPORTS ═══════════════════════════════
+// Correcteur gratuit, sans internet : accents oubliés des mots du chantier, abréviations SMS,
+// ponctuation et majuscules à la française. Seuls des mots sans ambiguïté sont corrigés.
+const CORRECTIONS_MOTS = {
+  beton: 'béton', betons: 'bétons', betonnage: 'bétonnage', betonner: 'bétonner', betonne: 'bétonné', betonniere: 'bétonnière',
+  feraillage: 'ferraillage', ferailleur: 'ferrailleur', ferailleurs: 'ferrailleurs', cofrage: 'coffrage', decoffrage: 'décoffrage', decoffre: 'décoffré',
+  maconnerie: 'maçonnerie', macon: 'maçon', macons: 'maçons', elevation: 'élévation', elevations: 'élévations',
+  chainage: 'chaînage', chainages: 'chaînages', etancheite: 'étanchéité', electricite: 'électricité', electricien: 'électricien', electriciens: 'électriciens',
+  echafaudage: 'échafaudage', echafaudages: 'échafaudages', materiel: 'matériel', materiels: 'matériels', materiaux: 'matériaux',
+  tole: 'tôle', toles: 'tôles', fenetre: 'fenêtre', fenetres: 'fenêtres', etage: 'étage', etages: 'étages', deblai: 'déblai', deblais: 'déblais',
+  equipe: 'équipe', equipes: 'équipes', journee: 'journée', journees: 'journées', degats: 'dégâts', reparation: 'réparation', reparations: 'réparations',
+  controle: 'contrôle', controles: 'contrôles', verification: 'vérification', verifications: 'vérifications', deja: 'déjà', tres: 'très', apres: 'après',
+  premiere: 'première', deuxieme: 'deuxième', troisieme: 'troisième', quatrieme: 'quatrième', cinquieme: 'cinquième', etude: 'étude', securite: 'sécurité',
+  probleme: 'problème', problemes: 'problèmes', pluviometrie: 'pluviométrie', meteo: 'météo', retard: 'retard', reception: 'réception',
+  facade: 'façade', facades: 'façades', canalisation: 'canalisation', regard: 'regard', semelle: 'semelle', hourdis: 'hourdis', plafond: 'plafond',
+  carrelage: 'carrelage', carlage: 'carrelage', peinture: 'peinture', menuiserie: 'menuiserie', serrurerie: 'serrurerie', plomberie: 'plomberie',
+  evacuation: 'évacuation', evacuations: 'évacuations', ecoulement: 'écoulement', electrique: 'électrique', electriques: 'électriques',
+  generateur: 'générateur', cable: 'câble', cables: 'câbles', gaine: 'gaine', gaines: 'gaines', debut: 'début', fondation: 'fondation',
+  arretes: 'arrêtés', arret: 'arrêt', arrets: 'arrêts', realise: 'réalisé', realises: 'réalisés', realisee: 'réalisée', realisees: 'réalisées', termines: 'terminés', terminee: 'terminée', terminees: 'terminées', acheve: 'achevé', acheves: 'achevés', ouvrage: 'ouvrage', reservation: 'réservation', reservations: 'réservations', compacte: 'compacté', nivele: 'nivelé',
+  // Abréviations SMS (le client doit lire un texte complet)
+  rdc: 'RDC', pr: 'pour', pb: 'problème', pbs: 'problèmes', bcp: 'beaucoup', tjrs: 'toujours', tjs: 'toujours', ds: 'dans', qd: 'quand', ms: 'mais', pdt: 'pendant',
+  tt: 'tout', ts: 'tous', qq: 'quelques', qqs: 'quelques', rdv: 'rendez-vous', mvt: 'mouvement', nbr: 'nombre', nb: 'nombre', qte: 'quantité', qtes: 'quantités',
+};
+const CORRECTIONS_EXPRESSIONS = [
+  [/\brez de chauss[eé]e\b/gi, 'rez-de-chaussée'], [/\bb[eé]ton arm[eé]\b/gi, 'béton armé'], [/\bras\b(?=\s*[.!]?\s*$)/gi, 'rien à signaler'],
+  [/\b[rR]\s*\+\s*(\d)\b/g, 'R+$1'], [/(\d\s*h(?:\d\d)?)\s+a\s+(\d)/gi, '$1 à $2'], [/\bdos[eé] a (\d)/gi, 'dosé à $1'], [/\bpr[eé] ?dalle\b/gi, 'prédalle'], [/\bpoteaux? b[eé]ton\b/gi, (m) => m.replace(/b[eé]ton/i, 'béton')],
+];
+const garderCasse = (modele, mot) => (modele === modele.toUpperCase() && modele.length > 1 ? mot.toUpperCase() : modele[0] === modele[0].toUpperCase() ? mot[0].toUpperCase() + mot.slice(1) : mot);
+function corrigerTexte(texte) {
+  if (!texte || !String(texte).trim()) return { texte: texte || '', n: 0 };
+  let n = 0;
+  let t = String(texte).replace(/\r/g, '');
+  const compter = (avant, apres) => { if (avant !== apres) n++; return apres; };
+  // Mots du chantier sans accents et abréviations
+  t = t.replace(/[A-Za-zÀ-ÿ]+/g, (m) => {
+    const bon = CORRECTIONS_MOTS[m.toLowerCase()];
+    return bon && bon !== m.toLowerCase() ? compter(m, garderCasse(m, bon)) : m;
+  });
+  CORRECTIONS_EXPRESSIONS.forEach(([re, par]) => { t = t.replace(re, (...a) => compter(a[0], typeof par === 'function' ? par(a[0]) : a[0].replace(re, par))); });
+  // Ponctuation à la française, espaces, majuscules
+  const lignes = t.split('\n').map((l) => {
+    let x = l.replace(/[ \t]+/g, ' ').trim();
+    if (!x) return x;
+    const avant = x;
+    x = x.replace(/\s+([,.])/g, '$1')                    // pas d'espace avant , et .
+      .replace(/([,.])(?=[A-Za-zÀ-ÿ])/g, '$1 ') // espace après , et . (2,5 reste intact)
+      .replace(/\s*([;:!?])\s*/g, ' $1 ').replace(/\s+$/, '')   // espace avant ; : ! ?
+      .replace(/([!?.])\1+/g, '$1').replace(/ {2,}/g, ' ')
+      .replace(/(^|[.!?]\s+)([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase())
+      .replace(/^[-–•]\s*([a-zà-ÿ])/, (m, b) => `- ${b.toUpperCase()}`);
+    if (!/[.!?:)]$/.test(x) && x.length > 3 && !/^[-–•]/.test(x)) x += '.';
+    if (x !== avant) n++;
+    return x;
+  });
+  return { texte: lignes.join('\n').replace(/\n{3,}/g, '\n\n'), n };
+}
+// Corrige directement des champs de formulaire ; renvoie le nombre de corrections
+function corrigerChamps(champs) {
+  let total = 0;
+  champs.forEach((c) => { if (!c) return; const r = corrigerTexte(c.value); if (r.n) { c.value = r.texte; total += r.n; c.dispatchEvent(new Event('input', { bubbles: true })); } });
+  return total;
+}
+const activerCorrecteurNavigateur = (zone) => $$('textarea, input[type="text"]', zone).forEach((c) => { c.spellcheck = true; c.lang = 'fr'; c.autocapitalize = 'sentences'; });
+
+// Direction / Coordination : relire et corriger un rapport (le texte d'origine est gardé)
+function corrigerRapport(r, apres) {
+  ouvrirModale({
+    titre: '✏️ Corriger le rapport',
+    large: true,
+    boutonOk: 'Enregistrer la correction',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Rapport de <b>${esc(r.auteur?.nom || '')}</b> du ${fdate(r.date_rapport)}. Le texte d’origine reste consultable, et ${esc(String(r.auteur?.nom || 'l’auteur').split(' ')[0])} est prévenu(e).</p>
+      <button type="button" class="btn sm" id="cr-auto">✨ Correction automatique</button> <span class="hint" id="cr-etat"></span>
+      <div class="form-grid" style="margin-top:10px">
+        ${F.area('travaux', 'Travaux réalisés', r.travaux || '', { required: true })}
+        ${F.area('incidents', 'Incidents, retards ou problèmes', r.incidents || '')}
+        ${F.area('besoins', 'Besoins', r.besoins || '')}
+      </div>`,
+    onOpen: (ov) => {
+      activerCorrecteurNavigateur(ov);
+      $('#cr-auto', ov).onclick = () => { const n = corrigerChamps($$('textarea', ov)); $('#cr-etat', ov).textContent = n ? `✨ ${n} correction${n > 1 ? 's' : ''} faite${n > 1 ? 's' : ''} : relisez avant d’enregistrer.` : '✅ Rien à corriger automatiquement.'; };
+    },
+    onSubmit: async (d) => {
+      try { await q(sb.from('rapports').update({ travaux: d.travaux, incidents: d.incidents || null, besoins: d.besoins || null }).eq('id', r.id)); }
+      catch (e) { throw new Error(/texte_original|corrige_par/.test(String(e?.message)) ? 'La correction nécessite la mise à jour 3.18 de la base de données (kit d’installation).' : messageErreur(e)); }
+      toast('✏️ Rapport corrigé. Le texte d’origine est gardé.');
+      apres?.();
+    },
+  });
+}
+
 PAGES['nouveau-rapport'] = async () => {
   const projets = await avecCache('projets-actifs', () => q(sb.from('projets').select('id, nom, statut').neq('statut', 'termine').order('nom')));
   const cle = `koordin-brouillon-${S.profil.id}`;
@@ -4806,9 +4943,15 @@ PAGES['nouveau-rapport'] = async () => {
           <span class="hint">Autant de photos que vous voulez, compressées automatiquement. Vidéos : 3 minutes au plus quand vous filmez ici, 48 Mo au plus depuis la galerie (sinon KOORDIN la réduit).</span>
           <div class="photos mt" id="apercu-photos"></div><div class="medias-videos" id="apercu-videos"></div></div>
       </div>
+      <div class="correcteur-barre"><button type="button" class="btn sm" id="corriger-texte">✨ Corriger mon texte</button><span class="hint" id="corriger-etat">Accents, ponctuation, abréviations : le texte est aussi corrigé à l’envoi.</span></div>
       <div class="form-actions"><button type="button" class="btn ghost" id="effacer">Effacer le brouillon</button><button class="btn primary" type="submit" id="envoyer">📤 Envoyer le rapport</button></div>
     </form>`);
   const form = $('#f-rap', p);
+  activerCorrecteurNavigateur(form);
+  $('#corriger-texte', p).onclick = () => {
+    const n = corrigerChamps(['travaux', 'incidents', 'besoins'].map((k) => $(`[name="${k}"]`, form)));
+    $('#corriger-etat', p).textContent = n ? `✨ ${n} correction${n > 1 ? 's' : ''} faite${n > 1 ? 's' : ''}. Relisez votre texte.` : '✅ Rien à corriger.';
+  };
   const selProjet = $('[name="projet_id"]', form);
   const selLot = $('#sel-lot', p);
   const av = $('#av', p);
@@ -4889,7 +5032,7 @@ PAGES['nouveau-rapport'] = async () => {
     const rapport = {
       id: crypto.randomUUID(), projet_id: d.projet_id, lot_id: d.lot_id, date_rapport: d.date_rapport, meteo: d.meteo,
       effectif: d.effectif != null ? Math.round(num(d.effectif)) : null,
-      travaux: d.travaux, incidents: d.incidents, besoins: d.besoins,
+      travaux: corrigerTexte(d.travaux).texte, incidents: d.incidents ? corrigerTexte(d.incidents).texte : d.incidents, besoins: d.besoins ? corrigerTexte(d.besoins).texte : d.besoins,
       avancement: d.lot_id ? Math.round(num(av.value)) : null,
     };
     const blobs = photos.map((ph) => ph.blob);
