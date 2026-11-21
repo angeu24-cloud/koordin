@@ -2082,3 +2082,24 @@ body.en-film .koko { display: none; }
 .fe-photo-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .fe-actions { display: inline-flex; gap: 4px; }
 .fe-alerte { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* 3.16 : caisse de chantier */
+.cs-solde { border-radius: 20px; padding: 16px; margin-bottom: 14px; text-align: center; background: color-mix(in srgb, var(--ok, #3ecf8e) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok, #3ecf8e) 30%, transparent); display: flex; flex-direction: column; gap: 4px; }
+.cs-solde.negatif { background: color-mix(in srgb, var(--warn, #f5a524) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warn, #f5a524) 40%, transparent); }
+.cs-solde > small { color: var(--text-3); font-size: 12.5px; }
+.cs-solde > b { font-size: 30px; letter-spacing: -.5px; }
+.cs-solde p { font-size: 12.5px; color: var(--text-2); margin: 4px 0 0; }
+.cs-solde-detail { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.cs-ligne { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+.cs-ligne:last-child { border-bottom: 0; }
+.cs-ligne.refusee { opacity: .7; }
+.cs-ic { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; flex-shrink: 0; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.cs-ligne.recu .cs-ic { background: color-mix(in srgb, var(--ok, #3ecf8e) 16%, transparent); }
+.cs-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.cs-txt small { color: var(--text-3); font-size: 12px; }
+.cs-droite { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cs-montant { font-size: 14.5px; white-space: nowrap; }
+.cs-ligne.recu .cs-montant { color: var(--ok, #3ecf8e); }
+.cs-btns { display: inline-flex; gap: 4px; }
+.cs-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cs-neg { color: var(--warn, #f5a524); }

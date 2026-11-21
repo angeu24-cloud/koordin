@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.15';
+const VERSION = '3.16';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -51,6 +51,7 @@ const MENU = [
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
   { r: 'mes-factures', court: 'Factures', label: 'Mes factures', ico: '🧾', roles: ['technicien', 'coordinateur', 'achats', 'magasinier'] },
+  { r: 'caisse', court: 'Caisse', label: 'Caisse et dépenses', ico: '👛', roles: ['direction', 'comptable', 'technicien', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
   { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur', 'technicien'] },
@@ -1556,7 +1557,7 @@ function bonjour() {
 const GROUPES_MENU = [
   ['pilotage', 'Pilotage', ['dashboard', 'projets', 'rapports', 'communiques', 'appels', 'ia']],
   ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'controles', 'securite', 'materiel', 'savoir']],
-  ['argent', 'Argent', ['compta', 'mes-factures', 'ventes', 'contrats', 'salaires', 'achats']],
+  ['argent', 'Argent', ['compta', 'caisse', 'mes-factures', 'ventes', 'contrats', 'salaires', 'achats']],
   ['logistique', 'Logistique', ['stock']],
   ['equipe', 'Équipe', ['equipe', 'mon-espace']],
   ['compte', 'Compte', ['abonnement', 'parametres', 'console']],
@@ -1574,6 +1575,7 @@ function actionsDisponibles() {
     { r: 'projets', ic: 'projets', t: 'Nouveau projet', s: 'Créer un chantier', attr: 'data-nouveau-projet', ok: can('direction', 'coordinateur') },
     { r: 'compta', ic: 'compta', t: 'Facture', s: 'Scanner ou saisir', attr: 'data-nouvelle-facture' },
     { r: 'mes-factures', ic: 'compta', t: 'Facture', s: 'Photo d’un achat', attr: 'data-nouvelle-facture' },
+    { r: 'caisse', ic: 'salaires', t: 'Dépense', s: 'Noter une dépense du jour', attr: 'data-nouvelle-depense', ok: !can('direction', 'comptable') },
     { r: 'achats', ic: 'achats', t: 'Commande', s: 'Achat fournisseur', attr: 'data-nouvelle-commande', ok: can('direction', 'coordinateur', 'achats') },
     { r: 'contrats', ic: 'contrats', t: 'Contrat', s: 'Prestataire' },
     { r: 'securite', ic: 'securite', t: 'Sécurité', s: 'Signaler un risque' },
@@ -2090,7 +2092,8 @@ const KOKO_ROUTES = [
   [/controle|verification|point d arret/, 'controles'],
   [/valider|rapports?/, 'rapports'],
   [/compta|comptabilite|factures? fournisseur|depense/, 'compta'],
-  [/factures?|ticket|depense|achat (fait|paye)/, 'mes-factures'],
+  [/caisse|depense|j ai depense|argent recu|fonds/, 'caisse'],
+  [/factures?|ticket|achat (fait|paye)/, 'mes-factures'],
   [/devis|situation|encaissement|tresorerie|facturation|client/, 'ventes'],
   [/contrat|prestataire|sous.?traitant/, 'contrats'],
   [/salaire|paie|paye/, 'salaires'],
@@ -5776,6 +5779,174 @@ const erreurFactureEquipe = (e) => {
   if (/row-level security|policy/i.test(m)) return 'Vous ne pouvez ajouter une facture que pour un chantier qui vous est affecté.';
   return messageErreur(e);
 };
+
+// ═══════════════════════════════ 3.16 : CAISSE DE CHANTIER ═══════════════════════════════
+// Le terrain note l'argent reçu et les dépenses du jour ; la Direction et la Comptabilité voient, remettent des fonds et vérifient.
+const CATS_CAISSE = { transport: ['🛺', 'Transport'], carburant: ['⛽', 'Carburant'], repas: ['🍛', 'Repas, eau'], petit_materiel: ['🔨', 'Petit matériel'], main_oeuvre: ['👷', 'Journaliers'], reparation: ['🔧', 'Réparation'], autre: ['📦', 'Autre'], fonds: ['💰', 'Argent reçu'] };
+const STATUT_CAISSE = { a_verifier: ['warn', '🔎 À vérifier'], validee: ['ok', '✅ Accepté'], refusee: ['crit', '↩️ Refusé'] };
+const erreurCaisse = (e) => {
+  const m = String(e?.message || '');
+  if (/^CAISSE_/.test(m) && e?.hint) return e.hint;
+  if (/caisse_mouvements|verifier_caisse/.test(m) && /does not exist|schema cache|could not find/i.test(m)) return 'Cette fonction nécessite la mise à jour 3.16 de la base de données (kit d’installation).';
+  if (/row-level security|policy/i.test(m)) return 'Choisissez un chantier qui vous est affecté.';
+  return messageErreur(e);
+};
+// Reçu − dépensé (les dépenses refusées restent sorties de la caisse : l'argent a bien été dépensé)
+function soldeCaisse(mvts) {
+  const recu = mvts.filter((m) => m.type === 'recu' && m.statut !== 'refusee').reduce((s, m) => s + num(m.montant), 0);
+  const depense = mvts.filter((m) => m.type === 'depense').reduce((s, m) => s + num(m.montant), 0);
+  return { recu, depense, solde: recu - depense, attente: mvts.filter((m) => m.statut === 'a_verifier') };
+}
+function ligneCaisse(m, { gerer = false, nom = false } = {}) {
+  const [ic, cat] = CATS_CAISSE[m.categorie] || CATS_CAISSE.autre;
+  const rec = m.type === 'recu';
+  return `<div class="cs-ligne ${rec ? 'recu' : 'depense'} ${m.statut}" data-cs="${m.id}">
+    <span class="cs-ic">${ic}</span>
+    <div class="cs-txt"><b>${esc(m.libelle)}</b><small>${esc([nom ? nomMembre(m.profil_id) : null, cat, m.projets?.nom].filter(Boolean).join(' · '))}${m.statut === 'refusee' && m.motif_refus ? ` · Motif : « ${esc(m.motif_refus)} »` : ''}</small></div>
+    <div class="cs-droite"><b class="cs-montant">${rec ? '+' : '−'}${money(m.montant)}</b>${badge(STATUT_CAISSE[m.statut])}
+      <span class="cs-btns">${m.justificatif ? `<button type="button" class="btn sm ghost" data-justif="${esc(m.justificatif)}" aria-label="Voir le reçu">📎</button>` : ''}${gerer && m.statut === 'a_verifier' ? `<button type="button" class="btn sm primary" data-cs-ok="${m.id}" aria-label="Accepter">✅</button><button type="button" class="btn sm danger" data-cs-non="${m.id}" aria-label="Refuser">↩️</button>` : ''}${!gerer && m.statut === 'a_verifier' ? `<button type="button" class="btn sm ghost" data-cs-suppr="${m.id}" aria-label="Retirer">🗑️</button>` : ''}</span></div></div>`;
+}
+function journalCaisse(mvts, o = {}) {
+  if (!mvts.length) return empty('👛', 'Aucun mouvement pour le moment.');
+  let jour = '';
+  return mvts.map((m) => {
+    const j = jourLisible(`${m.date_mvt}T12:00:00`);
+    let tete = '';
+    if (j !== jour) { const tot = mvts.filter((x) => x.date_mvt === m.date_mvt && x.type === 'depense').reduce((s, x) => s + num(x.montant), 0); tete = `<div class="sk-jour">${esc(j)}${tot ? ` · dépensé ${money(tot)}` : ''}</div>`; jour = j; }
+    return tete + ligneCaisse(m, o);
+  }).join('');
+}
+
+PAGES.caisse = async () => {
+  if (can('direction', 'comptable')) return pageCaissesGestion();
+  const p = page(`
+    ${entete('Caisse et dépenses', 'L’argent reçu pour le chantier et ce que vous dépensez chaque jour')}
+    <div id="cs-solde"></div>
+    <div class="sk-actions n2"><button type="button" class="sk-gros-btn prendre" id="cs-dep"><span>➖</span><b>J’ai dépensé</b><small>transport, carburant, petit matériel…</small></button><button type="button" class="sk-gros-btn rendre" id="cs-recu"><span>➕</span><b>J’ai reçu</b><small>de l’argent pour le chantier</small></button></div>
+    <div class="card"><div class="card-title">Mon journal de caisse</div><div id="cs-journal">${loading()}</div></div>`);
+  const rendre = async () => {
+    let mvts = [];
+    try { mvts = await q(sb.from('caisse_mouvements').select('*, projets(nom)').eq('profil_id', S.profil.id).order('date_mvt', { ascending: false }).order('created_at', { ascending: false }).limit(400)); }
+    catch (e) { $('#cs-journal', p).innerHTML = empty('👛', erreurCaisse(e)); return; }
+    const s = soldeCaisse(mvts);
+    $('#cs-solde', p).innerHTML = `<div class="cs-solde ${s.solde < 0 ? 'negatif' : ''}"><small>Reste dans ma caisse</small><b>${money(s.solde)}</b>
+      <div class="cs-solde-detail"><span>Reçu <b>${money(s.recu)}</b></span><span>Dépensé <b>${money(s.depense)}</b></span>${s.attente.length ? `<span>🔎 ${s.attente.length} à vérifier</span>` : ''}</div>
+      ${s.solde < 0 ? '<p>Vous avez avancé de votre poche : la comptabilité vous le rembourse après vérification.</p>' : ''}</div>`;
+    $('#cs-journal', p).innerHTML = journalCaisse(mvts);
+    $$('[data-justif]', p).forEach((b) => (b.onclick = () => ouvrirJustificatif(b.dataset.justif)));
+    $$('[data-cs-suppr]', p).forEach((b) => (b.onclick = async () => {
+      const m = mvts.find((x) => x.id === b.dataset.csSuppr);
+      if (!(await confirmer(`Retirer « ${m.libelle} » (${money(m.montant)}) ?`, 'Retirer'))) return;
+      try { await q(sb.from('caisse_mouvements').delete().eq('id', m.id)); if (m.justificatif) sb.storage.from('justificatifs').remove([m.justificatif]); toast('Retiré.'); rendre(); } catch (e) { toast(erreurCaisse(e), 'err'); }
+    }));
+  };
+  $('#cs-dep', p).onclick = () => formulaireCaisse('depense', rendre);
+  $('#cs-recu', p).onclick = () => formulaireCaisse('recu', rendre);
+  await rendre();
+  if (memo.get('koordin-ouvrir') === 'depense') { memo.del('koordin-ouvrir'); formulaireCaisse('depense', rendre); }
+};
+
+async function formulaireCaisse(type, apres, { pour = null } = {}) {
+  const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
+  const dep = type === 'depense';
+  if (dep && !projets.length) return toast('Vous n’êtes affecté à aucun chantier en cours.', 'warn');
+  let justif = null, categorie = 'transport';
+  const membres = pour ? (S.equipe || []).filter((x) => x.actif !== false && x.id !== S.profil.id) : [];
+  ouvrirModale({
+    titre: dep ? '➖ Nouvelle dépense' : pour ? '💰 Remettre de l’argent' : '➕ Argent reçu',
+    boutonOk: dep ? 'Enregistrer la dépense' : 'Enregistrer',
+    corps: `<div class="form-grid">
+      ${pour ? F.select('profil_id', 'À qui ?', membres.map((x) => [x.id, `${x.nom} — ${ROLES[x.role]?.label || x.role}`]), pour === true ? '' : pour, { required: true, vide: '— Choisir —', full: true }) : ''}
+      ${F.text('montant', `Montant (${devise()})`, '', { type: 'number', min: 1, required: true, inputmode: 'numeric', placeholder: dep ? 'Ex. 3000' : 'Ex. 100000' })}
+      ${F.text('date_mvt', 'Date', todayISO(), { type: 'date', required: true, max: todayISO() })}
+      ${dep ? `<div class="field full">Pour quoi ?<div class="cs-cats">${Object.entries(CATS_CAISSE).filter(([k]) => k !== 'fonds').map(([k, [ic, l]]) => `<button type="button" class="sk-chip ${k === categorie ? 'actif' : ''}" data-cat="${k}">${ic} ${l}</button>`).join('')}</div></div>` : ''}
+      ${F.text('libelle', dep ? 'Détail' : 'De qui / pourquoi ?', '', { required: true, full: true, placeholder: dep ? 'Ex. Taxi aller-retour quincaillerie' : 'Ex. Fonds de caisse de la semaine remis par la Direction' })}
+      ${F.select('projet_id', dep ? 'Chantier' : 'Chantier (facultatif)', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: dep, vide: dep ? '— Choisir —' : '— Aucun —', full: true })}
+    </div>
+    ${dep ? `<div class="field full" style="margin-top:10px">Reçu ou ticket (facultatif, mais conseillé)
+      <div class="fe-photo-btns"><label class="btn">📷 Photo du reçu<input type="file" class="cs-fichier" accept="image/*" capture="environment" hidden></label><label class="btn ghost">🖼️ Galerie<input type="file" class="cs-fichier" accept="image/*,application/pdf" hidden></label><span class="hint" id="cs-photo-etat"></span></div></div>
+      <label class="reunion-membre" style="margin-top:10px"><input type="checkbox" name="encore"><span><b>J’ai d’autres dépenses à noter</b><small>Le formulaire se rouvre tout de suite</small></span></label>` : ''}`,
+    onOpen: (ov) => {
+      $$('[data-cat]', ov).forEach((b) => (b.onclick = () => { categorie = b.dataset.cat; $$('[data-cat]', ov).forEach((x) => x.classList.toggle('actif', x === b)); }));
+      $$('.cs-fichier', ov).forEach((inp) => (inp.onchange = async (e) => {
+        const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+        const etat = $('#cs-photo-etat', ov); etat.textContent = '⏳ Envoi…';
+        try { justif = await envoyerJustificatif(f); etat.textContent = '✅ Reçu joint'; } catch (err) { justif = null; etat.textContent = ''; toast(err.message, 'err'); }
+      }));
+    },
+    onSubmit: async (d) => {
+      if (num(d.montant) <= 0) throw new Error('Indiquez le montant.');
+      const ligne = { type, montant: num(d.montant), date_mvt: d.date_mvt, libelle: d.libelle.trim(), projet_id: d.projet_id || null, categorie: dep ? categorie : 'fonds', justificatif: justif?.chemin || null, ...(pour ? { profil_id: d.profil_id } : {}) };
+      try { await q(sb.from('caisse_mouvements').insert(ligne)); } catch (e) { throw new Error(erreurCaisse(e)); }
+      toast(dep ? `Dépense de ${money(ligne.montant)} notée ✅` : pour ? `${money(ligne.montant)} remis à ${nomMembre(d.profil_id)} ✅ Il est prévenu.` : `Argent reçu noté ✅ (la comptabilité confirmera).`);
+      apres?.();
+      if (d.encore) setTimeout(() => formulaireCaisse(type, apres), 300);
+    },
+  });
+}
+
+// ─── Direction et Comptabilité : toutes les caisses ───
+async function pageCaissesGestion() {
+  await chargerEquipe();
+  const p = page(`
+    ${entete('Caisses des équipes', 'L’argent remis au terrain, les dépenses du jour, et ce qu’il reste à chacun', '<button type="button" class="btn primary" id="cs-remettre">💰 Remettre de l’argent</button>')}
+    <div id="cs-zone">${loading()}</div>`);
+  const zone = $('#cs-zone', p);
+  let choisi = null;
+  const rendre = async () => {
+    let mvts = [];
+    try { mvts = await q(sb.from('caisse_mouvements').select('*, projets(nom)').order('date_mvt', { ascending: false }).order('created_at', { ascending: false }).limit(2000)); }
+    catch (e) { zone.innerHTML = empty('👛', erreurCaisse(e)); return; }
+    const parPersonne = new Map();
+    mvts.forEach((m) => { if (!parPersonne.has(m.profil_id)) parPersonne.set(m.profil_id, []); parPersonne.get(m.profil_id).push(m); });
+    const tous = soldeCaisse(mvts);
+    const aujourd = mvts.filter((m) => m.type === 'depense' && m.date_mvt === todayISO()).reduce((s, m) => s + num(m.montant), 0);
+    if (choisi && parPersonne.has(choisi)) {
+      const l = parPersonne.get(choisi), s = soldeCaisse(l);
+      zone.innerHTML = `<button type="button" class="btn ghost sm" id="cs-retour">← Toutes les caisses</button>
+        <div class="cs-solde ${s.solde < 0 ? 'negatif' : ''}" style="margin-top:10px"><small>Caisse de ${esc(nomMembre(choisi))}</small><b>${money(s.solde)}</b>
+          <div class="cs-solde-detail"><span>Reçu <b>${money(s.recu)}</b></span><span>Dépensé <b>${money(s.depense)}</b></span></div>
+          ${s.solde < 0 ? `<p>${esc(nomMembre(choisi))} a avancé ${money(-s.solde)} de sa poche.</p>` : ''}</div>
+        <div class="rc-boutons" style="margin:12px 0">${s.attente.length ? `<button type="button" class="btn primary" id="cs-tout">✅ Tout accepter (${s.attente.length} · ${money(s.attente.reduce((x, m) => x + num(m.montant), 0))})</button>` : ''}<button type="button" class="btn" id="cs-donner">💰 Lui remettre de l’argent</button></div>
+        <div class="card">${journalCaisse(l, { gerer: true })}</div>`;
+      $('#cs-retour', zone).onclick = () => { choisi = null; rendre(); };
+      $('#cs-donner', zone).onclick = () => formulaireCaisse('recu', rendre, { pour: choisi });
+      $('#cs-tout', zone)?.addEventListener('click', () => decider(s.attente.map((m) => m.id), true));
+    } else {
+      const lignes = [...parPersonne.entries()].map(([id, l]) => ({ id, ...soldeCaisse(l) })).sort((a, b) => b.attente.length - a.attente.length || a.solde - b.solde);
+      zone.innerHTML = `<div class="grid k4">
+          ${kpi('Remis au terrain', moneyShort(tous.recu))}
+          ${kpi('Dépensé', moneyShort(tous.depense), aujourd ? `Aujourd’hui : ${moneyShort(aujourd)}` : '')}
+          ${kpi('Reste dans les caisses', moneyShort(tous.solde), '', tous.solde < 0 ? 'warn' : '')}
+          ${kpi('À vérifier', tous.attente.length, tous.attente.length ? moneyShort(tous.attente.reduce((s, m) => s + num(m.montant), 0)) : '✅ Rien en attente', tous.attente.length ? 'warn' : '')}
+        </div>
+        <div class="card section"><div class="card-title">Caisse de chaque personne <small>touchez pour voir le détail et vérifier</small></div>
+          ${lignes.length ? `<div class="paie-liste">${lignes.map((x) => `<button type="button" class="paie-ligne vente-ligne" data-pers="${x.id}"><div class="paie-nom"><b>${esc(nomMembre(x.id))}</b><span>Reçu ${money(x.recu)} · dépensé ${money(x.depense)}</span></div>
+            <div class="paie-montant"><b class="${x.solde < 0 ? 'cs-neg' : ''}">${money(x.solde)}</b>${x.attente.length ? badge(['warn', `🔎 ${x.attente.length} à vérifier`]) : badge(['ok', '✅ À jour'])}</div></button>`).join('')}</div>`
+            : empty('👛', 'Aucune caisse pour le moment. Remettez de l’argent à un technicien, ou attendez qu’il note ses premières dépenses.')}</div>
+        ${tous.attente.length ? `<div class="card section"><div class="card-title">🔎 Dernières dépenses à vérifier</div>${tous.attente.slice(0, 15).map((m) => ligneCaisse(m, { gerer: true, nom: true })).join('')}</div>` : ''}`;
+      $$('[data-pers]', zone).forEach((b) => (b.onclick = () => { choisi = b.dataset.pers; rendre(); }));
+    }
+    $$('[data-justif]', zone).forEach((b) => (b.onclick = () => ouvrirJustificatif(b.dataset.justif)));
+    $$('[data-cs-ok]', zone).forEach((b) => (b.onclick = () => decider([b.dataset.csOk], true)));
+    $$('[data-cs-non]', zone).forEach((b) => (b.onclick = () => decider([b.dataset.csNon], false)));
+  };
+  const decider = (ids, accepter) => {
+    const envoyer = async (motif) => {
+      const n = await q(sb.rpc('verifier_caisse', { p_mouvements: ids, p_accepter: accepter, p_motif: motif || null }));
+      toast(accepter ? `✅ ${n} mouvement${n > 1 ? 's' : ''} accepté${n > 1 ? 's' : ''} : les dépenses sont passées en comptabilité.` : 'Refusé : la personne est prévenue avec le motif.');
+      rendre();
+    };
+    if (accepter) return envoyer().catch((e) => toast(erreurCaisse(e), 'err'));
+    ouvrirModale({
+      titre: '↩️ Refuser', boutonOk: 'Refuser',
+      corps: F.area('motif', 'Pourquoi ? (envoyé à la personne)', '', { required: true, placeholder: 'Ex. Pas de reçu, montant trop élevé, dépense personnelle…' }),
+      onSubmit: async (d) => { try { await envoyer(d.motif); } catch (e) { throw new Error(erreurCaisse(e)); } },
+    });
+  };
+  $('#cs-remettre', p).onclick = () => formulaireCaisse('recu', rendre, { pour: true });
+  await rendre();
+}
 
 PAGES['mes-factures'] = async () => {
   const p = page(`
@@ -9800,6 +9971,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-nouveau-projet]')) memo.set('koordin-ouvrir', 'projet');
   if (e.target.closest('[data-nouvelle-commande]')) memo.set('koordin-ouvrir', 'commande');
   if (e.target.closest('[data-nouvelle-facture]')) memo.set('koordin-ouvrir', 'facture');
+  if (e.target.closest('[data-nouvelle-depense]')) memo.set('koordin-ouvrir', 'depense');
 });
 
 demarrer();

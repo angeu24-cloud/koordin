@@ -1,10 +1,10 @@
 {
-  "version": "3.15",
+  "version": "3.16",
   "date": "2026-11-21",
   "nouveautes": [
-    "🧾 Les équipes ajoutent leurs factures : techniciens, coordination, achats et magasin prennent la facture en photo (rubrique « Mes factures » ou le bouton + ).",
-    "La facture arrive « à vérifier » chez la Comptabilité et la Direction, qui l’acceptent ou la refusent avec un motif. La personne est prévenue.",
-    "Chacun ne voit que ses propres factures : les montants des autres restent confidentiels.",
-    "📚 Savoir du jour dans tous les domaines du BTP (3.14)."
+    "👛 Caisse de chantier : chaque technicien note l’argent qu’il reçoit et ses dépenses du jour (transport, carburant, repas, petit matériel, journaliers…), avec la photo du reçu.",
+    "Le reste en caisse se calcule tout seul. La Direction et la Comptabilité voient toutes les caisses, remettent de l’argent et acceptent ou refusent les dépenses.",
+    "Une dépense acceptée passe automatiquement en Comptabilité (dépense payée du chantier) et compte dans le budget.",
+    "🧾 Les équipes ajoutent leurs factures (3.15)."
   ]
 }
