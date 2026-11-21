@@ -1,10 +1,12 @@
 {
-  "version": "3.16",
+  "version": "3.17",
   "date": "2026-11-21",
   "nouveautes": [
-    "👛 Caisse de chantier : chaque technicien note l’argent qu’il reçoit et ses dépenses du jour (transport, carburant, repas, petit matériel, journaliers…), avec la photo du reçu.",
-    "Le reste en caisse se calcule tout seul. La Direction et la Comptabilité voient toutes les caisses, remettent de l’argent et acceptent ou refusent les dépenses.",
-    "Une dépense acceptée passe automatiquement en Comptabilité (dépense payée du chantier) et compte dans le budget.",
-    "🧾 Les équipes ajoutent leurs factures (3.15)."
+    "📦 Un stock par chantier : chaque chantier a son propre stock.",
+    "📥 « Réception de matériel » : le matériel arrivé sur le chantier s’ajoute à son stock (avec la provenance ou le n° du bon de livraison).",
+    "📤 « Sortie de stock » : le matériel utilisé dans la journée sort du stock du chantier (ou perte / casse).",
+    "🔁 Transfert entre chantiers, et transfert de l’ancien stock (non affecté) vers un chantier.",
+    "Les équipes du terrain peuvent ajouter au catalogue un matériel qui vient d’arriver.",
+    "👛 Caisse de chantier et dépenses du jour (3.16)."
   ]
 }

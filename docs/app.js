@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.16';
+const VERSION = '3.17';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -3760,7 +3760,7 @@ async function dashMagasinier() {
   const [stock, commandes, mouvements] = await Promise.all([
     q(sb.from('v_stock').select('*').order('nom')),
     q(sb.from('commandes').select('*, projets(nom), fournisseurs(nom)').eq('statut', 'commandee').order('date_commande')),
-    q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(10)),
+    q(sb.from('mouvements_stock').select('*, articles(*), projets!mouvements_stock_projet_id_fkey(nom)').order('created_at', { ascending: false }).limit(10)),
   ]);
   const alertes = stock.filter((a) => a.alerte);
   const valeur = stock.reduce((s, a) => s + num(a.quantite) * num(a.prix_unitaire), 0);
@@ -8900,26 +8900,36 @@ function formulaireOuvrier(o, apres) {
   });
 }
 
-// ─── 3.9.2 : page Stock réorganisée ───
-// Trois questions simples : qu'est-ce qu'il reste ? qu'est-ce qui a bougé ? qu'est-ce que chaque chantier a consommé ?
-// Tout ce qui concerne un article (entrées, sorties, historique, modifier, supprimer) est réuni dans sa fiche.
-const sensMouvement = (m) => m.type === 'entree'
-  ? (m.projet_id ? `↩️ Retour de ${m.projets?.nom || 'chantier'}` : '🚚 Arrivée au magasin')
-  : `🏗️ Vers ${m.projets?.nom || 'un chantier'}`;
+// ─── 3.17 : UN STOCK PAR CHANTIER ───
+// Deux commandes claires : « Réception de matériel » (arrivé sur le chantier → s'ajoute au stock)
+// et « Sortie de stock » (utilisé dans la journée → sort du stock). Plus le transfert entre chantiers.
+// Les mouvements d'avant la 3.17 (sans chantier) forment le « stock non affecté ».
+const NON_AFFECTE = 'aucun';
 const jourLisible = (ts) => {
   const d = new Date(ts), auj = new Date(); const hier = new Date(); hier.setDate(auj.getDate() - 1);
   if (d.toDateString() === auj.toDateString()) return 'Aujourd’hui';
   if (d.toDateString() === hier.toDateString()) return 'Hier';
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 };
-// Une ligne d'historique, lisible comme une phrase
+// Ce que dit une ligne d'historique
+function sensMouvement(m) {
+  const lieu = m.lieu?.nom || m.projets?.nom;
+  if (m.lieu_id) {
+    if (m.nature === 'transfert') return m.type === 'entree' ? ['🔁', `Transfert reçu sur ${lieu}`] : ['🔁', `Transfert envoyé depuis ${lieu}`];
+    if (m.nature === 'perte') return ['⚠️', `Perte ou casse sur ${lieu}`];
+    return m.type === 'entree' ? ['📥', `Réception : arrivé sur ${lieu}`] : ['📤', `Sortie : utilisé sur ${lieu}`];
+  }
+  if (m.nature === 'transfert') return ['🔁', 'Transfert depuis le stock non affecté'];
+  return m.type === 'entree' ? ['📥', m.projet_id ? `Retour de ${m.projets?.nom || 'chantier'} (ancien)` : 'Arrivée (stock non affecté)'] : ['📤', `Sortie vers ${m.projets?.nom || 'un chantier'} (ancien)`];
+}
 function ligneMouvement(m, { avecArticle = true, supprimer = false } = {}) {
   const ent = m.type === 'entree';
+  const [ic, txt] = sensMouvement(m);
   return `<div class="sk-mv ${ent ? 'entree' : 'sortie'}">
-    <span class="sk-mv-ic">${ent ? '⬇️' : '⬆️'}</span>
+    <span class="sk-mv-ic">${ic}</span>
     <div class="sk-mv-txt"><span><b>${ent ? '+' : '−'}${esc(qteLisible(m.articles, m.quantite))}</b>${avecArticle ? ` · ${esc(m.articles?.nom || '')}` : ''}</span>
-      <small>${esc(sensMouvement(m))} · ${esc(nomMembre(m.created_by))} · ${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.commentaire ? ` · « ${esc(m.commentaire)} »` : ''}</small></div>
-    ${supprimer ? `<button type="button" class="btn sm ghost" data-sm="${m.id}" aria-label="Supprimer ce mouvement" title="Supprimer (erreur de saisie)">🗑️</button>` : ''}</div>`;
+      <small>${esc(txt)} · ${esc(nomMembre(m.created_by))} · ${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.commentaire && m.commentaire !== 'Transfert' ? ` · « ${esc(m.commentaire)} »` : ''}</small></div>
+    ${supprimer && m.nature !== 'transfert' ? `<button type="button" class="btn sm ghost" data-sm="${m.id}" aria-label="Supprimer ce mouvement" title="Supprimer (erreur de saisie)">🗑️</button>` : ''}</div>`;
 }
 function listeMouvementsParJour(mouvements, o = {}) {
   if (!mouvements.length) return empty('🕘', 'Aucun mouvement pour le moment');
@@ -8929,94 +8939,138 @@ function listeMouvementsParJour(mouvements, o = {}) {
     return tete + ligneMouvement(m, o);
   }).join('');
 }
-async function supprimerMouvement(m, a) {
+const SELECT_MVT = '*, articles(*), projets!mouvements_stock_projet_id_fkey(nom), lieu:projets!mouvements_stock_lieu_id_fkey(nom)';
+
+// Charge le catalogue et le stock de chaque chantier
+async function chargerStock() {
+  const [articles, lieux, projets] = await Promise.all([
+    q(sb.from('v_stock').select('*').order('nom')),
+    q(sb.from('v_stock_lieux').select('*')),
+    listeProjets(),
+  ]);
+  const visibles = new Set(projets.map((x) => x.id));
+  const parLieu = new Map(); // `${article}|${lieu}` → quantité
+  lieux.forEach((l) => { if (!l.lieu_id || visibles.has(l.lieu_id)) parLieu.set(`${l.article_id}|${l.lieu_id || NON_AFFECTE}`, num(l.quantite)); });
+  const nonAffecte = lieux.some((l) => !l.lieu_id && Math.abs(num(l.quantite)) > 0.001);
+  return { articles, parLieu, projets: projets.filter((x) => x.statut !== 'termine' || lieux.some((l) => l.lieu_id === x.id && num(l.quantite) > 0)), nonAffecte };
+}
+const qteSur = (st, articleId, lieu) => {
+  if (lieu) return st.parLieu.get(`${articleId}|${lieu}`) || 0;
+  let t = 0; st.parLieu.forEach((v, k) => { if (k.startsWith(`${articleId}|`)) t += v; }); return t;
+};
+const nomLieu = (st, lieu) => (lieu === NON_AFFECTE ? 'Stock non affecté' : st.projets.find((x) => x.id === lieu)?.nom || 'Chantier');
+
+async function supprimerMouvement(m, st) {
   const qteTxt = qteLisible(m.articles, m.quantite);
-  // Supprimer une entrée retire ce stock : impossible si ce stock a déjà été sorti
-  if (m.type === 'entree' && a && num(a.quantite) - num(m.quantite) < 0) {
-    toast(`Impossible : il ne reste que ${qteLisible(a, a.quantite)} de « ${a.nom} ». Une partie de cette entrée est déjà sortie vers un chantier.`, 'warn', 7000);
+  const lieu = m.lieu_id || NON_AFFECTE;
+  if (m.type === 'entree' && qteSur(st, m.article_id, lieu) - num(m.quantite) < 0) {
+    toast(`Impossible : une partie de cette réception a déjà été utilisée sur ${nomLieu(st, lieu)}. Supprimez d’abord les sorties concernées.`, 'warn', 8000);
     return false;
   }
   const effet = m.type === 'entree' ? `Le stock de « ${m.articles?.nom} » baissera de ${qteTxt}.` : `Les ${qteTxt} de « ${m.articles?.nom} » reviendront dans le stock.`;
-  if (!(await confirmer(`Supprimer ce mouvement (${m.type === 'entree' ? 'entrée' : 'sortie'} de ${qteTxt}) ? ${effet}`, 'Supprimer'))) return false;
+  if (!(await confirmer(`Supprimer ce mouvement (${m.type === 'entree' ? 'réception' : 'sortie'} de ${qteTxt}) ? ${effet}`, 'Supprimer'))) return false;
   const r = await q(sb.from('mouvements_stock').delete().eq('id', m.id).select('id'));
   if (!r?.length) { toast('Suppression refusée : seule la Direction peut supprimer un mouvement.', 'err'); return false; }
   toast('Mouvement supprimé, stock recalculé ✅');
   return true;
 }
+const erreurStock = (e) => {
+  const m = String(e?.message || '');
+  if (/^STOCK_/.test(m) && e?.hint) return e.hint;
+  if (/v_stock_lieux|lieu_id|transferer_stock/.test(m) && /does not exist|schema cache|could not find|column/i.test(m)) return 'Le stock par chantier nécessite la mise à jour 3.17 de la base de données (kit d’installation).';
+  return messageErreur(e);
+};
 
 let filtreStock = 'tous';
+let lieuStock = null;
 PAGES.stock = async () => {
-  const tech = can('technicien'), mouv = can('direction', 'magasinier', 'technicien'), gerer = can('direction', 'magasinier', 'achats');
-  const actions = tech
-    ? [['sortie', 'prendre', '⬆️', 'Je prends', 'du matériel pour mon chantier'], ['entree', 'rendre', '⬇️', 'Je rends', 'ce qui reste au magasin']]
-    : [...(mouv ? [['entree', 'rendre', '⬇️', 'Entrée', 'livraison ou retour de chantier'], ['sortie', 'prendre', '⬆️', 'Sortie', 'vers un chantier']] : []),
-      ...(gerer ? [['article', 'nouveau', '＋', 'Nouvel article', 'ajouter au catalogue']] : [])];
+  const tech = can('technicien'), mouv = can('direction', 'magasinier', 'technicien', 'coordinateur'), gerer = can('direction', 'magasinier', 'achats');
   const p = page(`
-    ${entete('Stock', tech ? 'Prenez et rendez le matériel de vos chantiers' : 'Le magasin : ce qui arrive, ce qui part, ce qui reste')}
-    ${actions.length ? `<div class="sk-actions n${actions.length}">${actions.map(([t, c, e, b, s]) => `<button type="button" class="sk-gros-btn ${c}" data-act="${t}"><span>${e}</span><b>${b}</b><small>${s}</small></button>`).join('')}</div>` : ''}
-    <div class="tabs"><button class="tab" data-o="articles">📦 Le stock</button><button class="tab" data-o="mouvements">🕘 Historique</button><button class="tab" data-o="chantiers">🏗️ Chantiers</button></div>
+    ${entete('Stock des chantiers', 'Ce qui arrive sur chaque chantier, ce qui en sort, et ce qui reste')}
+    <div class="sk-lieux" id="sk-lieux"></div>
+    ${mouv ? `<div class="sk-actions n2">
+      <button type="button" class="sk-gros-btn rendre" data-act="entree"><span>📥</span><b>Réception de matériel</b><small>Le matériel est arrivé sur le chantier : il s’ajoute au stock</small></button>
+      <button type="button" class="sk-gros-btn prendre" data-act="sortie"><span>📤</span><b>Sortie de stock</b><small>Matériel utilisé dans la journée : il sort du stock</small></button></div>` : ''}
+    <div class="sk-petites">${mouv ? '<button type="button" class="btn sm" data-act="transfert">🔁 Transfert entre chantiers</button>' : ''}${gerer || can('technicien', 'coordinateur') ? '<button type="button" class="btn sm" data-act="article">＋ Nouveau matériel</button>' : ''}</div>
+    <div class="tabs"><button class="tab" data-o="articles">📦 Ce qui reste</button><button class="tab" data-o="mouvements">🕘 Historique</button><button class="tab" data-o="chantiers">📊 Consommation</button></div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
-  let articles = [];
+  let st = { articles: [], parLieu: new Map(), projets: [], nonAffecte: false };
   if (!['articles', 'mouvements', 'chantiers'].includes(ongletStock)) ongletStock = 'articles';
+  const lieuxDispo = () => [...st.projets.map((x) => [x.id, `🏗️ ${x.nom}`]), ...(st.nonAffecte ? [[NON_AFFECTE, '📦 Non affecté (ancien stock)']] : [])];
+  const dessinerLieux = () => {
+    const l = lieuxDispo();
+    if (lieuStock && !l.some(([k]) => k === lieuStock)) lieuStock = null;
+    if (lieuStock === null && tech && st.projets.length === 1) lieuStock = st.projets[0].id;
+    $('#sk-lieux', p).innerHTML = `<span class="sk-lieux-titre">Stock de :</span>${[['', '🏗️ Tous les chantiers'], ...l].map(([k, n]) => `<button type="button" class="sk-chip ${(lieuStock || '') === k ? 'actif' : ''}" data-lieu="${k}">${esc(n)}</button>`).join('')}`;
+  };
   const rendre = async () => {
     $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x.dataset.o === ongletStock));
     zone.innerHTML = loading();
-    articles = await q(sb.from('v_stock').select('*').order('nom'));
+    try { st = await chargerStock(); } catch (e) { zone.innerHTML = `<div class="card">${empty('📦', erreurStock(e))}</div>`; return; }
+    dessinerLieux();
     if (ongletStock === 'articles') vueReste();
     else if (ongletStock === 'mouvements') await vueHistorique();
-    else await vueChantiers();
+    else await vueConso();
   };
 
-  // ── Onglet 1 : ce qui reste ──
+  // ── Ce qui reste (sur le chantier choisi, ou partout) ──
   const vueReste = () => {
-    if (!articles.length) {
+    const lieu = lieuStock || '';
+    if (!st.articles.length) {
       zone.innerHTML = `<div class="card sk-guide"><div class="card-title">Comment ça marche ?</div>
-        <ol><li><b>Créez vos articles une seule fois</b> : ciment, acier HA 10, sable… (bouton « ＋ Nouvel article »).</li>
-          <li><b>Notez chaque arrivée</b> au magasin : bouton « ⬇️ Entrée ».</li>
-          <li><b>Notez chaque sortie</b> vers un chantier : bouton « ⬆️ Sortie ». Les techniciens peuvent le faire eux-mêmes.</li></ol>
-        <p class="muted">KOORDIN calcule tout seul ce qui reste et vous prévient quand un article passe sous son seuil.</p>
-        ${gerer ? '<button type="button" class="btn primary" id="sk-premier">＋ Créer mon premier article</button>' : ''}</div>`;
-      $('#sk-premier', zone)?.addEventListener('click', () => formulaireArticle(null, rendre));
+        <ol><li><b>Quand du matériel arrive sur un chantier</b> : touchez « 📥 Réception de matériel ». Il s’ajoute au stock de ce chantier.</li>
+          <li><b>Quand on utilise du matériel dans la journée</b> : touchez « 📤 Sortie de stock ». Il sort du stock du chantier.</li>
+          <li>KOORDIN calcule tout seul ce qui reste sur chaque chantier et prévient quand un matériel passe sous son seuil.</li></ol>
+        ${gerer || can('technicien', 'coordinateur') ? '<button type="button" class="btn primary" data-act="article">＋ Ajouter mon premier matériel</button>' : ''}</div>`;
       return;
     }
-    const bas = articles.filter((a) => a.alerte);
-    const valeur = articles.reduce((s, a) => s + Math.max(0, num(a.quantite)) * num(a.prix_unitaire), 0);
+    const qte = (a) => qteSur(st, a.id, lieu);
+    const bas = (a) => (lieu ? num(a.seuil_min) > 0 && qte(a) < num(a.seuil_min) : st.projets.some((x) => num(a.seuil_min) > 0 && qteSur(st, a.id, x.id) > 0 && qteSur(st, a.id, x.id) < num(a.seuil_min)));
+    const presents = st.articles.filter((a) => Math.abs(qte(a)) > 0.001);
+    const aRacheter = st.articles.filter(bas);
+    const valeur = presents.reduce((s, a) => s + Math.max(0, qte(a)) * num(a.prix_unitaire), 0);
     zone.innerHTML = `<div class="sk-bilan">
-        <div><b>${articles.length}</b><span>article${articles.length > 1 ? 's' : ''}</span></div>
-        <div class="${bas.length ? 'mauvais' : 'bon'}"><b>${bas.length}</b><span>à racheter</span></div>
-        ${tech ? '' : `<div class="valeur"><b>${moneyShort(valeur)}</b><span>valeur du stock</span></div>`}</div>
-      <div class="sk-filtres"><input class="input" type="search" id="fq" placeholder="🔍 Chercher un article…" aria-label="Chercher un article">
-        <div class="sk-chips"><button type="button" class="sk-chip" data-f="tous">Tous</button><button type="button" class="sk-chip" data-f="bas">🚨 À racheter (${bas.length})</button></div></div>
+        <div><b>${presents.length}</b><span>matériel${presents.length > 1 ? 's' : ''} en stock</span></div>
+        <div class="${aRacheter.length ? 'mauvais' : 'bon'}"><b>${aRacheter.length}</b><span>presque épuisé${aRacheter.length > 1 ? 's' : ''}</span></div>
+        ${tech ? '' : `<div class="valeur"><b>${moneyShort(valeur)}</b><span>valeur</span></div>`}</div>
+      <div class="sk-filtres"><input class="input" type="search" id="fq" placeholder="🔍 Chercher : ciment, HA 10, sable…" aria-label="Chercher un matériel">
+        <div class="sk-chips"><button type="button" class="sk-chip" data-f="tous">En stock</button><button type="button" class="sk-chip" data-f="bas">🚨 Presque épuisés (${aRacheter.length})</button><button type="button" class="sk-chip" data-f="tout">Tout le catalogue</button></div></div>
       <div id="ta"></div>
-      <p class="muted sk-astuce">Touchez un article pour voir sa fiche : son historique${gerer ? ', le modifier ou le supprimer' : ''}.</p>`;
+      <p class="muted sk-astuce">Touchez un matériel pour voir sa fiche : stock sur chaque chantier, historique${gerer ? ', modifier ou supprimer' : ''}.</p>`;
     const filtrer = () => {
       const txt = $('#fq', zone).value.trim().toLowerCase();
       $$('[data-f]', zone).forEach((x) => x.classList.toggle('actif', x.dataset.f === filtreStock));
-      const l = articles.filter((a) => (!txt || a.nom.toLowerCase().includes(txt)) && (filtreStock !== 'bas' || a.alerte));
-      $('#ta', zone).innerHTML = l.length ? `<div class="sk-cartes">${l.map(carteArticle).join('')}</div>` : empty('🔍', 'Aucun article ne correspond');
+      const l = st.articles.filter((a) => (!txt || a.nom.toLowerCase().includes(txt)) && (filtreStock === 'tout' || (filtreStock === 'bas' ? bas(a) : Math.abs(qte(a)) > 0.001)));
+      $('#ta', zone).innerHTML = l.length ? `<div class="sk-cartes">${l.map((a) => carteArticle(a, qte(a), bas(a), lieu)).join('')}</div>`
+        : empty('📦', filtreStock === 'tous' ? `Rien en stock${lieu ? ` sur ${nomLieu(st, lieu)}` : ''} pour le moment. Touchez « 📥 Réception de matériel » quand du matériel arrive.` : 'Aucun matériel ne correspond');
     };
     $('#fq', zone).oninput = filtrer;
     $$('[data-f]', zone).forEach((x) => (x.onclick = () => { filtreStock = x.dataset.f; filtrer(); }));
     filtrer();
   };
-  const carteArticle = (a) => {
-    const qte = num(a.quantite), seuil = num(a.seuil_min);
+  const carteArticle = (a, qte, bas, lieu) => {
+    const seuil = num(a.seuil_min);
     const pct = seuil > 0 ? Math.min(100, Math.round((qte / (seuil * 3)) * 100)) : (qte > 0 ? 100 : 0);
-    return `<div class="sk-carte ${a.alerte ? 'bas' : ''}" data-fiche="${a.id}" role="button" tabindex="0">
-      <div class="sk-carte-tete"><span class="sk-emoji">${emojiArticle(a.nom)}</span><div class="sk-art-txt"><b>${esc(a.nom)}</b><small>${a.alerte ? '🚨 À racheter' : '✅ En stock'}${seuil ? ` · alerte sous ${esc(qteLisible(a, seuil))}` : ''}</small></div><span class="sk-chevron">›</span></div>
-      <div class="sk-carte-qte">${esc(qteLisible(a, qte))}<small> au magasin</small></div>
+    const repartition = !lieu ? lieuxDispo().map(([k, n]) => [n.replace(/^\S+\s/, ''), qteSur(st, a.id, k)]).filter(([, v]) => Math.abs(v) > 0.001) : [];
+    return `<div class="sk-carte ${bas ? 'bas' : ''}" data-fiche="${a.id}" role="button" tabindex="0">
+      <div class="sk-carte-tete"><span class="sk-emoji">${emojiArticle(a.nom)}</span><div class="sk-art-txt"><b>${esc(a.nom)}</b><small>${bas ? '🚨 Presque épuisé' : qte > 0 ? '✅ En stock' : 'Pas de stock'}${seuil ? ` · alerte sous ${esc(qteLisible(a, seuil))}` : ''}</small></div><span class="sk-chevron">›</span></div>
+      <div class="sk-carte-qte">${esc(qteLisible(a, qte))}<small> ${lieu ? `sur ${esc(nomLieu(st, lieu))}` : 'en tout'}</small></div>
+      ${repartition.length > 1 ? `<div class="sk-repartition">${repartition.map(([n, v]) => `<span>${esc(n)} : <b>${esc(qteLisible(a, v))}</b></span>`).join('')}</div>` : ''}
       <div class="sk-jauge"><i style="width:${pct}%"></i></div>
-      ${mouv ? `<div class="sk-carte-btns"><button type="button" class="btn" data-mv="sortie" data-art="${a.id}">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button type="button" class="btn" data-mv="entree" data-art="${a.id}">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
+      ${mouv ? `<div class="sk-carte-btns"><button type="button" class="btn" data-mv="entree" data-art="${a.id}">📥 Réception</button><button type="button" class="btn" data-mv="sortie" data-art="${a.id}">📤 Sortie</button></div>` : ''}
     </div>`;
   };
 
-  // ── Onglet 2 : historique, jour par jour ──
+  // ── Historique du chantier choisi ──
   const vueHistorique = async () => {
-    const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').order('created_at', { ascending: false }).limit(300));
+    let req = sb.from('mouvements_stock').select(SELECT_MVT).order('created_at', { ascending: false }).limit(300);
+    if (lieuStock === NON_AFFECTE) req = req.is('lieu_id', null);
+    else if (lieuStock) req = req.eq('lieu_id', lieuStock);
+    const mouvements = await q(req);
     const peut = can('direction');
     let sens = 'tout';
-    zone.innerHTML = `<div class="card"><div class="sk-chips sk-sens"><button type="button" class="sk-chip" data-s="tout">Tout</button><button type="button" class="sk-chip" data-s="entree">⬇️ Entrées</button><button type="button" class="sk-chip" data-s="sortie">⬆️ Sorties</button></div>
+    zone.innerHTML = `<div class="card"><div class="sk-chips sk-sens"><button type="button" class="sk-chip" data-s="tout">Tout</button><button type="button" class="sk-chip" data-s="entree">📥 Réceptions</button><button type="button" class="sk-chip" data-s="sortie">📤 Sorties</button></div>
       ${peut ? '<p class="muted sk-astuce">Une erreur de saisie ? Touchez 🗑️ sur la ligne : le stock est recalculé tout seul.</p>' : ''}
       <div id="sk-hist"></div></div>`;
     const dessiner = () => {
@@ -9026,86 +9080,143 @@ PAGES.stock = async () => {
     $$('[data-s]', zone).forEach((x) => (x.onclick = () => { sens = x.dataset.s; dessiner(); }));
     $('#sk-hist', zone).addEventListener('click', async (e) => {
       const b = e.target.closest('[data-sm]'); if (!b) return;
-      const m = mouvements.find((x) => x.id === b.dataset.sm);
-      if (await supprimerMouvement(m, articles.find((x) => x.id === m.article_id))) rendre();
+      if (await supprimerMouvement(mouvements.find((x) => x.id === b.dataset.sm), st)) rendre();
     });
     dessiner();
   };
 
-  // ── Onglet 3 : ce que chaque chantier a consommé (sorties moins retours) ──
-  const vueChantiers = async () => {
-    const mouvements = await q(sb.from('mouvements_stock').select('article_id, projet_id, type, quantite, projets(nom)').not('projet_id', 'is', null).limit(5000));
+  // ── Consommation : ce que chaque chantier a utilisé ──
+  const vueConso = async () => {
+    const mouvements = await q(sb.from('mouvements_stock').select('article_id, projet_id, lieu_id, type, nature, quantite').eq('type', 'sortie').not('projet_id', 'is', null).limit(5000));
     const parProjet = new Map();
     for (const m of mouvements) {
-      const pr = parProjet.get(m.projet_id) || { nom: m.projets?.nom || 'Chantier', art: new Map() };
-      pr.art.set(m.article_id, (pr.art.get(m.article_id) || 0) + (m.type === 'sortie' ? num(m.quantite) : -num(m.quantite)));
-      parProjet.set(m.projet_id, pr);
+      if (m.nature === 'transfert') continue;
+      const id = m.lieu_id || m.projet_id;
+      if (lieuStock && lieuStock !== NON_AFFECTE && id !== lieuStock) continue;
+      const pr = parProjet.get(id) || { nom: st.projets.find((x) => x.id === id)?.nom || 'Chantier', art: new Map() };
+      pr.art.set(m.article_id, (pr.art.get(m.article_id) || 0) + num(m.quantite));
+      parProjet.set(id, pr);
     }
     const blocs = [...parProjet.values()].sort((x, y) => x.nom.localeCompare(y.nom, 'fr')).map((pr) => {
-      const lignes = [...pr.art].map(([id, qte]) => [articles.find((a) => a.id === id), qte]).filter(([a, qte]) => a && qte > 0);
+      const lignes = [...pr.art].map(([id, qte]) => [st.articles.find((a) => a.id === id), qte]).filter(([a, qte]) => a && qte > 0);
       if (!lignes.length) return '';
       const total = lignes.reduce((s, [a, qte]) => s + qte * num(a.prix_unitaire), 0);
       return `<div class="card sk-chantier"><div class="card-title">🏗️ ${esc(pr.nom)}${tech ? '' : `<span class="sk-total">${money(total)}</span>`}</div>
         ${lignes.map(([a, qte]) => `<div class="sk-conso"><span class="sk-emoji">${emojiArticle(a.nom)}</span><span>${esc(a.nom)}</span><b>${esc(qteLisible(a, qte))}</b></div>`).join('')}</div>`;
     }).join('');
-    zone.innerHTML = `<p class="muted sk-astuce">Ce que chaque chantier a reçu du magasin, retours déduits.</p>${blocs || empty('🏗️', 'Aucun matériel envoyé sur un chantier pour le moment')}`;
+    zone.innerHTML = `<p class="muted sk-astuce">Tout le matériel sorti du stock et utilisé sur chaque chantier (les transferts ne comptent pas).</p>${blocs || empty('📊', 'Aucune sortie de stock pour le moment.')}`;
   };
 
-  // Fiche d'un article : tout au même endroit
+  // Fiche d'un matériel : stock sur chaque chantier, historique, actions
   const ouvrirFiche = async (a) => {
     const peutSuppr = can('direction');
+    const repartition = lieuxDispo().map(([k, n]) => [k, n, qteSur(st, a.id, k)]);
+    const total = qteSur(st, a.id, '');
     const fiche = ouvrirModale({
       titre: `${emojiArticle(a.nom)} ${a.nom}`,
       corps: `<div class="sk-fiche">
-        <div class="sk-fiche-qte ${a.alerte ? 'bas' : ''}"><small>Au magasin</small><b>${esc(qteLisible(a, a.quantite))}</b><span>${a.alerte ? '🚨 Sous le seuil : à racheter' : '✅ Stock suffisant'}</span></div>
+        <div class="sk-fiche-qte"><small>Sur tous les chantiers</small><b>${esc(qteLisible(a, total))}</b></div>
+        <div class="sk-fiche-lieux">${repartition.map(([k, n, v]) => `<div class="${num(a.seuil_min) > 0 && v > 0 && v < num(a.seuil_min) ? 'bas' : ''}"><span>${esc(n)}</span><b>${esc(qteLisible(a, v))}</b></div>`).join('')}</div>
         <div class="sk-fiche-infos">
           <div><span>Alerte sous</span><b>${esc(qteLisible(a, a.seuil_min))}</b></div>
           ${estEnBottes(a) ? `<div><span>1 botte</span><b>${pluriel(num(a.barres_par_botte), 'barre', 'barres')}</b></div>` : `<div><span>Unité</span><b>${esc(a.unite)}</b></div>`}
-          ${tech ? '' : `<div><span>Prix ${estEnBottes(a) ? 'd’une barre' : 'unitaire'}</span><b>${money(a.prix_unitaire)}</b></div><div><span>Valeur</span><b>${money(Math.max(0, num(a.quantite)) * num(a.prix_unitaire))}</b></div>`}
+          ${tech ? '' : `<div><span>Prix ${estEnBottes(a) ? 'd’une barre' : 'unitaire'}</span><b>${money(a.prix_unitaire)}</b></div><div><span>Valeur</span><b>${money(Math.max(0, total) * num(a.prix_unitaire))}</b></div>`}
         </div>
-        ${mouv ? `<div class="sk-carte-btns"><button type="button" class="btn primary" data-fmv="sortie">⬆️ ${tech ? 'Prendre' : 'Sortie'}</button><button type="button" class="btn" data-fmv="entree">⬇️ ${tech ? 'Rendre' : 'Entrée'}</button></div>` : ''}
+        ${mouv ? '<div class="sk-carte-btns"><button type="button" class="btn" data-fmv="entree">📥 Réception</button><button type="button" class="btn primary" data-fmv="sortie">📤 Sortie</button></div>' : ''}
         <div class="sk-fiche-titre">Ses derniers mouvements</div>
         <div id="sk-fiche-hist">${loading()}</div>
-        ${gerer ? '<div class="sk-fiche-bas"><button type="button" class="btn" data-fmod>✏️ Modifier</button><button type="button" class="btn danger" data-fsuppr>🗑️ Supprimer l’article</button></div>' : ''}
+        ${gerer ? '<div class="sk-fiche-bas"><button type="button" class="btn" data-fmod>✏️ Modifier</button><button type="button" class="btn danger" data-fsuppr>🗑️ Supprimer</button></div>' : ''}
       </div>`,
       large: true,
     });
     const el = fiche.el;
-    const mouvements = await q(sb.from('mouvements_stock').select('*, articles(*), projets(nom)').eq('article_id', a.id).order('created_at', { ascending: false }).limit(40));
+    const mouvements = await q(sb.from('mouvements_stock').select(SELECT_MVT).eq('article_id', a.id).order('created_at', { ascending: false }).limit(40));
     $('#sk-fiche-hist', el).innerHTML = listeMouvementsParJour(mouvements, { avecArticle: false, supprimer: peutSuppr });
     el.addEventListener('click', async (e) => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.fmv) { fiche.fermer(); formulaireMouvement(articles, b.dataset.fmv, a.id, rendre); }
+      if (b.dataset.fmv) { fiche.fermer(); formulaireMouvement(st, b.dataset.fmv, a.id, rendre); }
       else if ('fmod' in b.dataset) { fiche.fermer(); formulaireArticle(a, rendre); }
-      else if ('fsuppr' in b.dataset) { if (await supprimerArticle(a)) { fiche.fermer(); rendre(); } }
-      else if (b.dataset.sm) { const m = mouvements.find((x) => x.id === b.dataset.sm); if (await supprimerMouvement(m, a)) { fiche.fermer(); await rendre(); const n = articles.find((x) => x.id === a.id); if (n) ouvrirFiche(n); } }
+      else if ('fsuppr' in b.dataset) { if (await supprimerArticle(a, total)) { fiche.fermer(); rendre(); } }
+      else if (b.dataset.sm) { if (await supprimerMouvement(mouvements.find((x) => x.id === b.dataset.sm), st)) { fiche.fermer(); await rendre(); } }
     });
   };
 
-  zone.addEventListener('click', (e) => {
+  p.addEventListener('click', (e) => {
+    const l = e.target.closest('[data-lieu]');
+    if (l) { lieuStock = l.dataset.lieu || null; dessinerLieux(); return ongletStock === 'articles' ? vueReste() : ongletStock === 'mouvements' ? vueHistorique() : vueConso(); }
+    const act = e.target.closest('[data-act]');
+    if (act) {
+      const t = act.dataset.act;
+      if (t === 'article') return formulaireArticle(null, rendre);
+      if (t === 'transfert') return formulaireTransfert(st, rendre);
+      return formulaireMouvement(st, t, null, rendre);
+    }
     const mv = e.target.closest('[data-mv]');
-    if (mv) { e.stopPropagation(); return formulaireMouvement(articles, mv.dataset.mv, mv.dataset.art, rendre); }
+    if (mv) { e.stopPropagation(); return formulaireMouvement(st, mv.dataset.mv, mv.dataset.art, rendre); }
     const c = e.target.closest('[data-fiche]');
-    if (c) ouvrirFiche(articles.find((a) => a.id === c.dataset.fiche));
+    if (c) ouvrirFiche(st.articles.find((a) => a.id === c.dataset.fiche));
   });
-  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-fiche]')) ouvrirFiche(articles.find((a) => a.id === e.target.dataset.fiche)); });
+  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-fiche]')) ouvrirFiche(st.articles.find((a) => a.id === e.target.dataset.fiche)); });
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletStock = b.dataset.o; rendre(); }));
-  $$('[data-act]', p).forEach((b) => (b.onclick = () => (b.dataset.act === 'article' ? formulaireArticle(null, rendre) : formulaireMouvement(articles, b.dataset.act, null, rendre))));
   await rendre();
 };
 
-async function supprimerArticle(a) {
-  const reste = num(a.quantite);
+async function supprimerArticle(a, reste = 0) {
   const msg = reste > 0
-    ? `Supprimer « ${a.nom} » ? Il reste ${qteLisible(a, reste)} au magasin. L’article et tout son historique d’entrées et de sorties seront effacés.`
-    : `Supprimer « ${a.nom} » ? L’article et tout son historique d’entrées et de sorties seront effacés.`;
+    ? `Supprimer « ${a.nom} » ? Il en reste ${qteLisible(a, reste)} sur les chantiers. Le matériel et tout son historique seront effacés.`
+    : `Supprimer « ${a.nom} » ? Le matériel et tout son historique seront effacés.`;
   if (!(await confirmer(msg, 'Supprimer'))) return false;
   try {
     const r = await q(sb.from('articles').delete().eq('id', a.id).select('id'));
-    if (!r?.length) throw new Error('Suppression refusée : seuls la Direction, le Magasin et les Achats peuvent supprimer un article.');
+    if (!r?.length) throw new Error('Suppression refusée : seuls la Direction, le Magasin et les Achats peuvent supprimer un matériel.');
     toast(`« ${a.nom} » supprimé.`);
     return true;
   } catch (e) { toast(messageErreur(e), 'err', 6000); return false; }
+}
+
+// Quantité en bottes + barres, ou dans l'unité de l'article
+function champsQuantite(a, prefixe = 'q') {
+  if (estEnBottes(a)) return `<div class="sk-pas"><span>Bottes</span><input class="input" inputmode="numeric" name="${prefixe}_b" value="0"></div><div class="sk-pas"><span>Barres en plus</span><input class="input" inputmode="numeric" name="${prefixe}_r" value="0"></div>`;
+  return F.text(`${prefixe}_q`, `Quantité (${a?.unite || ''})`, '', { type: 'number', min: 0.01, step: 'any', inputmode: 'decimal', required: true });
+}
+const lireQuantite = (a, d, prefixe = 'q') => (estEnBottes(a) ? num(d[`${prefixe}_b`]) * num(a.barres_par_botte) + num(d[`${prefixe}_r`]) : num(d[`${prefixe}_q`]));
+
+async function formulaireTransfert(st, refresh) {
+  const lieux = [...st.projets.map((x) => [x.id, x.nom]), ...(st.nonAffecte && can('direction', 'magasinier', 'coordinateur') ? [[NON_AFFECTE, 'Stock non affecté (ancien stock)']] : [])];
+  if (st.projets.length < 1) return toast('Il faut au moins un chantier.', 'warn');
+  let article = st.articles[0];
+  ouvrirModale({
+    titre: '🔁 Transfert entre chantiers',
+    boutonOk: 'Transférer',
+    corps: `<p class="muted" style="font-size:13px;margin-bottom:10px">Du matériel part d’un chantier vers un autre : il sort du stock du premier et s’ajoute au stock du second.</p>
+      <div class="form-grid">
+        ${F.select('article', 'Matériel', st.articles.map((a) => [a.id, a.nom]), article?.id, { required: true, full: true })}
+        ${F.select('de', 'Depuis', lieux, lieuStock || '', { required: true, vide: '— Choisir —' })}
+        ${F.select('vers', 'Vers le chantier', st.projets.map((x) => [x.id, x.nom]), '', { required: true, vide: '— Choisir —' })}
+        <div class="full" id="tr-qte">${champsQuantite(article, 't')}</div>
+        <p class="hint full" id="tr-dispo"></p>
+        ${F.text('note', 'Note (facultatif)', '', { full: true, placeholder: 'Ex. Fin du gros œuvre sur Cocody' })}
+      </div>`,
+    onOpen: (ov) => {
+      const maj = () => {
+        article = st.articles.find((a) => a.id === $('[name="article"]', ov).value);
+        const de = $('[name="de"]', ov).value;
+        $('#tr-dispo', ov).textContent = de ? `Disponible : ${qteLisible(article, qteSur(st, article.id, de))}` : '';
+      };
+      $('[name="article"]', ov).onchange = () => { maj(); $('#tr-qte', ov).innerHTML = champsQuantite(article, 't'); };
+      $('[name="de"]', ov).onchange = maj; maj();
+    },
+    onSubmit: async (d) => {
+      const a = st.articles.find((x) => x.id === d.article);
+      const qte = lireQuantite(a, d, 't');
+      if (qte <= 0) throw new Error('Indiquez la quantité à transférer.');
+      if (qte > qteSur(st, a.id, d.de)) throw new Error(`Il n’y a que ${qteLisible(a, qteSur(st, a.id, d.de))} à cet endroit.`);
+      try { await q(sb.rpc('transferer_stock', { p_article: a.id, p_quantite: qte, p_de: d.de === NON_AFFECTE ? null : d.de, p_vers: d.vers, p_note: d.note || null })); }
+      catch (e) { throw new Error(erreurStock(e)); }
+      toast(`🔁 ${qteLisible(a, qte)} de ${a.nom} transféré vers ${nomLieu(st, d.vers)} ✅`);
+      refresh();
+    },
+  });
 }
 
 // ─── 3.9 : acier en bottes et saisie simplifiée ───
@@ -9140,12 +9251,10 @@ function formulaireArticle(a, refresh) {
       <div class="sk-si-unite" style="${bottes ? 'display:none' : ''}">${F.text('unite', 'Unité', a && !bottes ? a.unite : 'sac', { hint: 'sac, m³, kg, u…' })}</div>
       <label class="field">Seuil d’alerte <span class="sk-lib-seuil">${bottes ? '(en bottes)' : ''}</span>
         <input name="seuil_min" type="number" min="0" step="any" inputmode="decimal" value="${esc(bottes ? num(a.seuil_min) / num(a.barres_par_botte) : a?.seuil_min ?? 0)}">
-        <span class="hint">Alerte quand le stock passe en dessous</span></label>
-      <label class="field">Prix <span class="sk-lib-prix">${bottes ? 'd’une barre' : 'unitaire'}</span> (${esc(devise())})
+        <span class="hint">Alerte quand le stock d’un chantier passe en dessous</span></label>
+      <label class="field" ${can('technicien') ? 'hidden' : ''}>Prix <span class="sk-lib-prix">${bottes ? 'd’une barre' : 'unitaire'}</span> (${esc(devise())})
         <input name="prix_unitaire" type="number" min="0" step="any" inputmode="decimal" value="${esc(a?.prix_unitaire ?? 0)}"></label>
-      ${!a && can('direction', 'magasinier') ? `<label class="field">Stock initial <span class="sk-lib-seuil"></span>
-        <input name="stock_initial" type="number" min="0" step="any" inputmode="decimal" value="0">
-        <span class="hint">Ce que vous avez déjà au magasin</span></label>` : ''}
+      ${!a ? '<p class="hint full">Pour mettre ce matériel en stock sur un chantier, faites ensuite une « 📥 Réception de matériel ».</p>' : ''}
     </div>
     ${a ? '<button type="button" class="btn danger sk-suppr" id="sk-suppr">🗑️ Supprimer cet article</button>' : ''}`,
     onOpen: (ov) => {
@@ -9186,42 +9295,38 @@ function formulaireArticle(a, refresh) {
 }
 
 // Saisie en 3 gestes : je prends / je rends → mon chantier → je touche le matériel et je règle la quantité
-async function formulaireMouvement(articles, type, articleId, refresh) {
-  if (!articles.length) return toast('Créez d’abord un article.', 'warn');
-  const tech = can('technicien');
-  const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
-  const st = { type: tech ? (type === 'entree' ? 'entree' : 'sortie') : type || 'entree', projet: '', panier: new Map(), filtre: '' };
-  if (projets.length === 1 && (tech || st.type === 'sortie')) st.projet = projets[0].id;
-  if (articleId) { const a0 = articles.find((a) => a.id === articleId); st.panier.set(articleId, estEnBottes(a0) ? num(a0.barres_par_botte) : 1); }
+// « 📥 Réception de matériel » ou « 📤 Sortie de stock » : 1. le chantier, 2. le matériel et les quantités, 3. une note
+async function formulaireMouvement(st, type, articleId, refresh) {
+  const recep = type === 'entree';
+  if (!st.projets.length) return toast('Aucun chantier en cours : créez d’abord un chantier.', 'warn');
+  const etat = { lieu: lieuStock && lieuStock !== NON_AFFECTE ? lieuStock : (st.projets.length === 1 ? st.projets[0].id : ''), panier: new Map(), filtre: '', perte: false };
+  const ajouter = (a) => etat.panier.set(a.id, estEnBottes(a) ? num(a.barres_par_botte) : 1);
+  if (articleId) { const a0 = st.articles.find((a) => a.id === articleId); if (a0) ajouter(a0); }
   const rec = recentsStock();
-  const trie = [...articles].sort((x, y) => {
-    const ix = rec.indexOf(x.id), iy = rec.indexOf(y.id);
-    return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || x.nom.localeCompare(y.nom, 'fr');
-  });
-  const choixType = tech
-    ? [['sortie', '⬆️', 'Je prends', 'du magasin pour mon chantier'], ['entree', '⬇️', 'Je rends', 'au magasin ce qui reste']]
-    : [['entree', '⬇️', 'Entrée', 'arrive au magasin'], ['sortie', '⬆️', 'Sortie', 'part vers un chantier']];
+  const peutCreer = can('direction', 'magasinier', 'achats', 'technicien', 'coordinateur');
   const m = ouvrirModale({
-    titre: tech ? '📦 Matériel du chantier' : '📦 Entrée ou sortie de matériel',
+    titre: recep ? '📥 Réception de matériel' : '📤 Sortie de stock',
     boutonOk: 'Valider',
     corps: `<input type="hidden" name="_">
-      <div class="sk-etape"><div class="sk-num">1</div><div class="sk-quoi">${tech ? 'Je…' : 'Type'}</div></div>
-      <div class="sk-types">${choixType.map(([v, e, t, s]) => `<button type="button" class="sk-type" data-t="${v}"><span>${e}</span><b>${t}</b><small>${s}</small></button>`).join('')}</div>
-      <div class="sk-etape"><div class="sk-num">2</div><div class="sk-quoi" id="sk-q2"></div></div>
-      <div class="sk-chips" id="sk-projets"></div>
-      <div class="sk-etape"><div class="sk-num">3</div><div class="sk-quoi">Le matériel <small>touchez pour ajouter</small></div></div>
-      ${articles.length > 6 ? '<input class="input sk-cherche" type="search" placeholder="🔍 Chercher : ciment, HA 10, sable…" aria-label="Chercher un article">' : ''}
+      <p class="sk-explique">${recep ? 'Le matériel <b>est arrivé sur le chantier</b> : il <b>s’ajoute</b> au stock de ce chantier.' : 'Le matériel <b>a été utilisé</b> sur le chantier : il <b>sort</b> du stock de ce chantier.'}</p>
+      <div class="sk-etape"><div class="sk-num">1</div><div class="sk-quoi">${recep ? 'Sur quel chantier est-il arrivé ?' : 'Sur quel chantier a-t-il été utilisé ?'}</div></div>
+      <div class="sk-chips" id="sk-projets">${st.projets.map((x) => `<button type="button" class="sk-chip" data-p="${x.id}">🏗️ ${esc(x.nom)}</button>`).join('')}</div>
+      <div class="sk-etape"><div class="sk-num">2</div><div class="sk-quoi">${recep ? 'Quel matériel est arrivé ?' : 'Quel matériel est sorti ?'} <small>touchez pour ajouter</small></div></div>
+      ${st.articles.length > 6 ? '<input class="input sk-cherche" type="search" placeholder="🔍 Chercher : ciment, HA 10, sable…" aria-label="Chercher un matériel">' : ''}
       <div class="sk-liste" id="sk-liste"></div>
-      <details class="sk-note"><summary>📝 Ajouter une note (facultatif)</summary><input class="input" name="commentaire" placeholder="${tech ? 'Ex. Pour le coulage de la dalle du R+1' : 'Ex. BL n° 4512, bon de sortie…'}"></details>
+      ${recep && peutCreer ? '<button type="button" class="btn sm ghost sk-nouveau" id="sk-nouveau">＋ Ce matériel n’est pas dans la liste</button>' : ''}
+      <div class="sk-etape"><div class="sk-num">3</div><div class="sk-quoi">${recep ? 'D’où vient-il ? <small>facultatif</small>' : 'Pour quel travail ? <small>facultatif</small>'}</div></div>
+      ${recep ? '' : '<div class="sk-chips" style="margin-bottom:8px"><button type="button" class="sk-chip actif" data-nat="utilisation">🔨 Utilisé pour les travaux</button><button type="button" class="sk-chip" data-nat="perte">⚠️ Perte, casse ou vol</button></div>'}
+      <input class="input" name="commentaire" placeholder="${recep ? 'Ex. Livraison Quincaillerie du Plateau, BL n° 4512' : 'Ex. Coulage de la dalle du R+1'}">
       <div class="sk-resume" id="sk-resume"></div>`,
     onOpen: (ov) => {
       ov.querySelector('.modal')?.classList.add('sk-modale');
       const liste = $('#sk-liste', ov);
-      const art = (id) => articles.find((a) => a.id === id);
-      const dispo = (a) => num(a.quantite);
+      const art = (id) => st.articles.find((a) => a.id === id);
+      const dispo = (a) => (etat.lieu ? qteSur(st, a.id, etat.lieu) : 0);
       const carte = (a) => {
-        const dans = st.panier.has(a.id), qte = st.panier.get(a.id) || 0;
-        const trop = st.type === 'sortie' && qte > dispo(a);
+        const dans = etat.panier.has(a.id), qte = etat.panier.get(a.id) || 0;
+        const trop = !recep && etat.lieu && qte > dispo(a);
         let regl = '';
         if (dans) {
           if (estEnBottes(a)) {
@@ -9235,72 +9340,71 @@ async function formulaireMouvement(articles, type, articleId, refresh) {
           }
         }
         return `<div class="sk-art ${dans ? 'choisi' : ''} ${trop ? 'trop' : ''}" data-a="${a.id}">
-          <button type="button" class="sk-art-tete" data-basc="${a.id}"><span class="sk-emoji">${emojiArticle(a.nom)}</span><span class="sk-art-txt"><b>${esc(a.nom)}</b><small>En stock : ${esc(qteLisible(a, dispo(a)))}</small></span><span class="sk-coche">${dans ? '✓' : '＋'}</span></button>
-          ${regl}${trop ? `<div class="sk-alerte">Il n’en reste que ${esc(qteLisible(a, dispo(a)))} au magasin.</div>` : ''}</div>`;
+          <button type="button" class="sk-art-tete" data-basc="${a.id}"><span class="sk-emoji">${emojiArticle(a.nom)}</span><span class="sk-art-txt"><b>${esc(a.nom)}</b><small>${etat.lieu ? `Sur ce chantier : ${esc(qteLisible(a, dispo(a)))}` : 'Choisissez d’abord le chantier'}</small></span><span class="sk-coche">${dans ? '✓' : '＋'}</span></button>
+          ${regl}${trop ? `<div class="sk-alerte">Il n’y en a que ${esc(qteLisible(a, dispo(a)))} sur ce chantier.</div>` : ''}</div>`;
       };
       const resume = () => {
-        const l = [...st.panier].filter(([, q]) => q > 0);
-        const bouton = $('button[type="submit"]', ov);
-        const verbe = st.type === 'sortie' ? (tech ? 'Je prends' : 'Sortie de') : (tech ? 'Je rends' : 'Entrée de');
-        $('#sk-resume', ov).innerHTML = l.length ? `<b>${verbe} :</b> ${l.map(([id, q]) => `${esc(qteLisible(art(id), q))} de ${esc(art(id).nom)}`).join(', ')}` : '';
-        bouton.textContent = l.length ? `✅ Valider (${l.length} article${l.length > 1 ? 's' : ''})` : 'Valider';
+        const l = [...etat.panier].filter(([, q]) => q > 0);
+        const lieu = etat.lieu ? nomLieu(st, etat.lieu) : '…';
+        $('#sk-resume', ov).innerHTML = l.length ? `<b>${recep ? `📥 Arrivé sur ${esc(lieu)}` : `📤 Sorti du stock de ${esc(lieu)}`} :</b> ${l.map(([id, q]) => `${esc(qteLisible(art(id), q))} de ${esc(art(id).nom)}`).join(', ')}` : '';
+        $('button[type="submit"]', ov).textContent = l.length ? `✅ ${recep ? 'Ajouter au stock' : 'Sortir du stock'} (${l.length} matériel${l.length > 1 ? 's' : ''})` : 'Valider';
       };
       const dessiner = () => {
-        const f = st.filtre;
-        const vus = trie.filter((a) => st.panier.has(a.id) || !f || a.nom.toLowerCase().includes(f));
-        const choisis = vus.filter((a) => st.panier.has(a.id)), autres = vus.filter((a) => !st.panier.has(a.id));
-        liste.innerHTML = [...choisis, ...autres].map(carte).join('') || '<p class="muted">Aucun article ne correspond.</p>';
+        const f = etat.filtre;
+        // En sortie : d'abord ce qui est présent sur le chantier ; en réception : les plus utilisés
+        const ordre = (a) => (recep ? (rec.indexOf(a.id) < 0 ? 99 : rec.indexOf(a.id)) : (dispo(a) > 0 ? 0 : 1));
+        const vus = st.articles.filter((a) => etat.panier.has(a.id) || !f || a.nom.toLowerCase().includes(f)).sort((x, y) => ordre(x) - ordre(y) || x.nom.localeCompare(y.nom, 'fr'));
+        const choisis = vus.filter((a) => etat.panier.has(a.id)), autres = vus.filter((a) => !etat.panier.has(a.id));
+        liste.innerHTML = [...choisis, ...autres].map(carte).join('') || `<p class="muted">${st.articles.length ? 'Aucun matériel ne correspond.' : 'Le catalogue est vide : ajoutez le matériel avec le bouton ci-dessous.'}</p>`;
         resume();
       };
-      const redessinerCarte = (id) => { const el = $(`.sk-art[data-a="${id}"]`, liste); if (el) { el.outerHTML = carte(art(id)); } resume(); };
-      const regler = (id, v) => { st.panier.set(id, Math.max(0, Math.round(v * 100) / 100)); redessinerCarte(id); };
+      const redessinerCarte = (id) => { const el = $(`.sk-art[data-a="${id}"]`, liste); if (el) el.outerHTML = carte(art(id)); resume(); };
+      const regler = (id, v) => { etat.panier.set(id, Math.max(0, Math.round(v * 100) / 100)); redessinerCarte(id); };
       liste.addEventListener('click', (e) => {
         const b = e.target.closest('button'); if (!b) return;
         const id = b.closest('.sk-art')?.dataset.a; const a = art(id);
         if (b.dataset.basc) {
-          if (st.panier.has(id)) st.panier.delete(id); else st.panier.set(id, estEnBottes(a) ? num(a.barres_par_botte) : 1);
+          if (etat.panier.has(id)) etat.panier.delete(id); else ajouter(a);
           dessiner();
-          if (st.panier.has(id)) $(`.sk-art[data-a="${id}"]`, liste)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        } else if (b.dataset.plus) regler(id, (st.panier.get(id) || 0) + num(b.dataset.plus));
-        else if (b.dataset.moins) regler(id, (st.panier.get(id) || 0) - num(b.dataset.moins));
-        else if (b.dataset.ajout) regler(id, (st.panier.get(id) || 0) + num(b.dataset.ajout));
+          if (etat.panier.has(id)) $(`.sk-art[data-a="${id}"]`, liste)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else if (b.dataset.plus) regler(id, (etat.panier.get(id) || 0) + num(b.dataset.plus));
+        else if (b.dataset.moins) regler(id, (etat.panier.get(id) || 0) - num(b.dataset.moins));
+        else if (b.dataset.ajout) regler(id, (etat.panier.get(id) || 0) + num(b.dataset.ajout));
       });
       liste.addEventListener('change', (e) => {
         const i = e.target.closest('[data-champ]'); if (!i) return;
         const el = i.closest('.sk-art'), id = el.dataset.a, a = art(id);
         if (i.dataset.champ === 'q') regler(id, num(i.value));
-        else {
-          const b = num($('[data-champ="b"]', el).value), r = num($('[data-champ="r"]', el).value);
-          regler(id, b * num(a.barres_par_botte) + r);
-        }
+        else regler(id, num($('[data-champ="b"]', el).value) * num(a.barres_par_botte) + num($('[data-champ="r"]', el).value));
       });
       liste.addEventListener('focusin', (e) => { if (e.target.matches('[data-champ]')) e.target.select?.(); });
-      $('.sk-cherche', ov)?.addEventListener('input', (e) => { st.filtre = e.target.value.trim().toLowerCase(); dessiner(); });
-      const choisirProjet = (v) => { st.projet = v; $$('.sk-chip', ov).forEach((x) => x.classList.toggle('actif', x.dataset.p === v)); };
-      // L'étape 2 change selon le sens : d'où vient le matériel (entrée) ou vers quel chantier il part (sortie)
-      const etape2 = () => {
-        const ent = st.type === 'entree', livraison = !tech && ent;
-        $('#sk-q2', ov).textContent = tech ? (ent ? 'Depuis quel chantier ?' : 'Pour quel chantier ?') : ent ? 'D’où vient le matériel ?' : 'Vers quel chantier ?';
-        $('#sk-projets', ov).innerHTML = (livraison ? '<button type="button" class="sk-chip" data-p="">🚚 Livraison du fournisseur</button>' : '')
-          + (projets.map((x) => `<button type="button" class="sk-chip" data-p="${x.id}">${livraison ? '↩️ Retour de ' : '🏗️ '}${esc(x.nom)}</button>`).join('') || (livraison ? '' : '<span class="muted">Aucun chantier en cours.</span>'));
-        if (!ent && st.projet === '' && projets.length === 1) st.projet = projets[0].id;
-        choisirProjet(st.projet);
-      };
-      $('#sk-projets', ov).addEventListener('click', (e) => { const c = e.target.closest('.sk-chip'); if (c) choisirProjet(c.dataset.p); });
-      const choisirType = (v) => { st.type = v; $$('.sk-type', ov).forEach((x) => x.classList.toggle('actif', x.dataset.t === v)); etape2(); dessiner(); };
-      $$('.sk-type', ov).forEach((x) => (x.onclick = () => choisirType(x.dataset.t)));
-      choisirType(st.type);
+      $('.sk-cherche', ov)?.addEventListener('input', (e) => { etat.filtre = e.target.value.trim().toLowerCase(); dessiner(); });
+      const choisirLieu = (v) => { etat.lieu = v; $$('#sk-projets .sk-chip', ov).forEach((x) => x.classList.toggle('actif', x.dataset.p === v)); dessiner(); };
+      $('#sk-projets', ov).addEventListener('click', (e) => { const c = e.target.closest('.sk-chip'); if (c) choisirLieu(c.dataset.p); });
+      $$('[data-nat]', ov).forEach((b) => (b.onclick = () => { etat.perte = b.dataset.nat === 'perte'; $$('[data-nat]', ov).forEach((x) => x.classList.toggle('actif', x === b)); }));
+      $('#sk-nouveau', ov)?.addEventListener('click', () => formulaireArticle(null, async () => {
+        const avant = new Set(st.articles.map((a) => a.id));
+        st.articles = await q(sb.from('v_stock').select('*').order('nom'));
+        st.articles.filter((a) => !avant.has(a.id)).forEach(ajouter);
+        dessiner();
+      }));
+      choisirLieu(etat.lieu);
     },
     onSubmit: async (d) => {
-      const lignes = [...st.panier].filter(([, q]) => q > 0);
-      if (!lignes.length) throw new Error('Touchez au moins un article et indiquez la quantité.');
-      if ((st.type === 'sortie' || tech) && !st.projet) throw new Error('Choisissez le chantier concerné (étape 2).');
-      const manque = lignes.find(([id, q]) => st.type === 'sortie' && q > num(articles.find((a) => a.id === id).quantite));
-      if (manque) { const a = articles.find((x) => x.id === manque[0]); throw new Error(`Stock insuffisant pour « ${a.nom} » : il reste ${qteLisible(a, a.quantite)}.`); }
-      await q(sb.from('mouvements_stock').insert(lignes.map(([id, qte]) => ({ article_id: id, type: st.type, quantite: qte, projet_id: st.projet || null, commentaire: d.commentaire || null }))));
+      const lignes = [...etat.panier].filter(([, q]) => q > 0);
+      if (!etat.lieu) throw new Error('Choisissez le chantier (étape 1).');
+      if (!lignes.length) throw new Error('Touchez au moins un matériel et indiquez la quantité (étape 2).');
+      if (!recep) {
+        const manque = lignes.find(([id, q]) => q > qteSur(st, id, etat.lieu));
+        if (manque) { const a = st.articles.find((x) => x.id === manque[0]); throw new Error(`Il n’y a que ${qteLisible(a, qteSur(st, a.id, etat.lieu))} de « ${a.nom} » sur ${nomLieu(st, etat.lieu)}. Faites d’abord une réception ou un transfert.`); }
+      }
+      try {
+        await q(sb.from('mouvements_stock').insert(lignes.map(([id, qte]) => ({ article_id: id, type, quantite: qte, projet_id: etat.lieu, lieu_id: etat.lieu, nature: recep ? 'livraison' : etat.perte ? 'perte' : 'utilisation', commentaire: d.commentaire || null }))));
+      } catch (e) { throw new Error(erreurStock(e)); }
       noterRecents(lignes.map(([id]) => id));
-      const n = lignes.length > 1 ? ` (${lignes.length} articles)` : '';
-      toast(tech ? (st.type === 'entree' ? `Retour au magasin enregistré${n} ✅ Le magasin est prévenu.` : `Prise de matériel enregistrée${n} ✅ Le magasin est prévenu.`) : st.type === 'entree' ? `Entrée enregistrée${n}.` : `Sortie enregistrée${n}.`);
+      const n = `${lignes.length} matériel${lignes.length > 1 ? 's' : ''}`;
+      toast(recep ? `📥 Réception enregistrée : ${n} ajouté${lignes.length > 1 ? 's' : ''} au stock de ${nomLieu(st, etat.lieu)} ✅` : `📤 Sortie enregistrée : ${n} sorti${lignes.length > 1 ? 's' : ''} du stock de ${nomLieu(st, etat.lieu)} ✅`);
+      lieuStock = etat.lieu;
       refresh();
     },
   });
