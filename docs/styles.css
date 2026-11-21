@@ -2070,3 +2070,15 @@ body.en-film .koko { display: none; }
 /* 3.14 : nouveaux domaines du savoir */
 .savoir-carte.s-topo::before { content: '📏'; } .savoir-carte.s-metre::before { content: '🧮'; } .savoir-carte.s-ogc::before { content: '📋'; } .savoir-carte.s-rdm::before { content: '⚖️'; }
 .savoir-carte.s-geo::before { content: '🪨'; } .savoir-carte.s-vrd::before { content: '🛣️'; } .savoir-carte.s-hydro::before { content: '💧'; } .savoir-carte.s-metal::before { content: '🔩'; }
+
+/* 3.15 : factures des équipes */
+.fe-gros { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 18px; margin-bottom: 16px; border-radius: 20px; border: 1px solid var(--liseré-or, var(--border)); background: linear-gradient(150deg, color-mix(in srgb, var(--gold) 20%, var(--surface)), var(--surface)); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.fe-gros span { font-size: 30px; } .fe-gros b { font-size: 18px; } .fe-gros small { color: var(--text-3); font-size: 13px; }
+.fe-photo { border: 2px dashed var(--border); border-radius: 16px; min-height: 140px; display: grid; place-items: center; overflow: hidden; position: relative; background: var(--surface-2, var(--surface)); }
+.fe-photo img { width: 100%; max-height: 260px; object-fit: contain; display: block; }
+.fe-photo-vide { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 18px; text-align: center; }
+.fe-photo-vide span { font-size: 34px; } .fe-photo-vide small { color: var(--text-3); font-size: 12px; }
+.fe-ok { position: absolute; bottom: 8px; left: 8px; background: rgba(0, 0, 0, .65); color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.fe-photo-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.fe-actions { display: inline-flex; gap: 4px; }
+.fe-alerte { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

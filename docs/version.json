@@ -1,9 +1,10 @@
 {
-  "version": "3.14",
-  "date": "2026-11-20",
+  "version": "3.15",
+  "date": "2026-11-21",
   "nouveautes": [
-    "📚 Savoir du jour : tous les domaines du BTP. En plus du béton armé, des Eurocodes et de la sécurité : topographie, métré et quantités, OGC (organisation et gestion de chantier), RDM, géotechnique et fondations, routes et VRD, hydraulique et assainissement, charpente métallique et bois.",
-    "113 fiches et 24 questions de quiz. Chaque jour, la fiche change de domaine.",
-    "🧒 Koko comprend mieux (3.13)."
+    "🧾 Les équipes ajoutent leurs factures : techniciens, coordination, achats et magasin prennent la facture en photo (rubrique « Mes factures » ou le bouton + ).",
+    "La facture arrive « à vérifier » chez la Comptabilité et la Direction, qui l’acceptent ou la refusent avec un motif. La personne est prévenue.",
+    "Chacun ne voit que ses propres factures : les montants des autres restent confidentiels.",
+    "📚 Savoir du jour dans tous les domaines du BTP (3.14)."
   ]
 }

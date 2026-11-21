@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.14';
+const VERSION = '3.15';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -50,6 +50,7 @@ const MENU = [
   { r: 'pointage', court: 'Pointage', label: 'Pointage', ico: '👷', roles: ['direction', 'coordinateur', 'technicien', 'comptable'] },
   { r: 'achats', court: 'Achats',          label: 'Achats',          ico: '🛒', roles: ['direction', 'coordinateur', 'achats', 'comptable', 'magasinier'] },
   { r: 'compta', court: 'Compta',          label: 'Comptabilité',    ico: '💰', roles: ['direction', 'comptable'] },
+  { r: 'mes-factures', court: 'Factures', label: 'Mes factures', ico: '🧾', roles: ['technicien', 'coordinateur', 'achats', 'magasinier'] },
   { r: 'ventes', court: 'Clients', label: 'Facturation client', ico: '💼', roles: ['direction', 'comptable', 'coordinateur'] },
   { r: 'salaires', court: 'Salaires', label: 'Salaires', ico: '💵', roles: ['direction', 'comptable'] },
   { r: 'contrats', court: 'Contrats', label: 'Contrats et prestataires', ico: '📑', roles: ['direction', 'comptable', 'coordinateur', 'technicien'] },
@@ -1555,7 +1556,7 @@ function bonjour() {
 const GROUPES_MENU = [
   ['pilotage', 'Pilotage', ['dashboard', 'projets', 'rapports', 'communiques', 'appels', 'ia']],
   ['terrain', 'Terrain', ['nouveau-rapport', 'pointage', 'controles', 'securite', 'materiel', 'savoir']],
-  ['argent', 'Argent', ['compta', 'ventes', 'contrats', 'salaires', 'achats']],
+  ['argent', 'Argent', ['compta', 'mes-factures', 'ventes', 'contrats', 'salaires', 'achats']],
   ['logistique', 'Logistique', ['stock']],
   ['equipe', 'Équipe', ['equipe', 'mon-espace']],
   ['compte', 'Compte', ['abonnement', 'parametres', 'console']],
@@ -1572,6 +1573,7 @@ function actionsDisponibles() {
     { r: 'controles', ic: 'controles', t: 'Contrôle', s: 'Vérifier une étape' },
     { r: 'projets', ic: 'projets', t: 'Nouveau projet', s: 'Créer un chantier', attr: 'data-nouveau-projet', ok: can('direction', 'coordinateur') },
     { r: 'compta', ic: 'compta', t: 'Facture', s: 'Scanner ou saisir', attr: 'data-nouvelle-facture' },
+    { r: 'mes-factures', ic: 'compta', t: 'Facture', s: 'Photo d’un achat', attr: 'data-nouvelle-facture' },
     { r: 'achats', ic: 'achats', t: 'Commande', s: 'Achat fournisseur', attr: 'data-nouvelle-commande', ok: can('direction', 'coordinateur', 'achats') },
     { r: 'contrats', ic: 'contrats', t: 'Contrat', s: 'Prestataire' },
     { r: 'securite', ic: 'securite', t: 'Sécurité', s: 'Signaler un risque' },
@@ -2088,6 +2090,7 @@ const KOKO_ROUTES = [
   [/controle|verification|point d arret/, 'controles'],
   [/valider|rapports?/, 'rapports'],
   [/compta|comptabilite|factures? fournisseur|depense/, 'compta'],
+  [/factures?|ticket|depense|achat (fait|paye)/, 'mes-factures'],
   [/devis|situation|encaissement|tresorerie|facturation|client/, 'ventes'],
   [/contrat|prestataire|sous.?traitant/, 'contrats'],
   [/salaire|paie|paye/, 'salaires'],
@@ -5329,11 +5332,11 @@ function tableauFactures(factures, { compact = false } = {}) {
       const echue = f.statut === 'a_payer' && f.date_echeance && f.date_echeance < auj;
       return `<tr><td class="nowrap">${fdate(f.date_facture)}</td>
         <td><b>${esc(f.libelle)}</b>${f.justificatif ? ` <button type="button" class="btn-justif" data-justif="${esc(f.justificatif)}" title="Voir le justificatif" aria-label="Voir le justificatif">📎</button>` : ''}<div class="muted" style="font-size:12px">${esc([f.numero, CATEGORIES[f.categorie], compact ? f.projets?.nom : null].filter(Boolean).join(' · '))}</div></td>
-        ${compact ? '' : `<td>${esc(f.projets?.nom || '')}<div class="muted" style="font-size:12px">${esc(f.lots?.nom || '')}</div></td><td>${esc(f.fournisseurs?.nom || '—')}</td>`}
+        ${compact ? '' : `<td>${esc(f.projets?.nom || '')}<div class="muted" style="font-size:12px">${esc(f.lots?.nom || '')}</div></td><td>${esc(f.fournisseurs?.nom || f.fournisseur_libre || '—')}</td>`}
         <td class="num">${money(f.montant)}</td>
         <td class="nowrap">${f.date_echeance ? `${fdate(f.date_echeance)}${echue ? ' <span class="badge crit">⏰ Échue</span>' : ''}` : '—'}</td>
-        <td>${badge(STATUT_FACTURE[f.statut])}</td>
-        ${gerer ? `<td class="right nowrap">${f.statut === 'a_payer' ? `<button class="btn sm" data-payer="${f.id}">💳 Payée</button>` : ''}<button class="btn sm" data-edit-fac="${f.id}">Modifier</button></td>` : ''}</tr>`;
+        <td>${f.validation === 'a_verifier' ? `${badge(['warn', '🔎 À vérifier'])}<div class="muted" style="font-size:11px">par ${esc(nomMembre(f.created_by))}</div>` : badge(STATUT_FACTURE[f.statut])}</td>
+        ${gerer ? `<td class="right nowrap">${f.validation === 'a_verifier' ? `<button class="btn sm primary" data-accepter="${f.id}">✅ Accepter</button><button class="btn sm danger" data-refuser="${f.id}">↩️ Refuser</button>` : f.statut === 'a_payer' ? `<button class="btn sm" data-payer="${f.id}">💳 Payée</button>` : ''}<button class="btn sm" data-edit-fac="${f.id}">Modifier</button></td>` : ''}</tr>`;
     }).join('')}</tbody></table></div>`;
 }
 
@@ -5347,6 +5350,8 @@ function brancherFactures(zone, factures, refresh) {
     } catch (e) { toast(messageErreur(e), 'err'); }
   }));
   $$('[data-edit-fac]', zone).forEach((b) => (b.onclick = () => formulaireFacture(factures.find((f) => f.id === b.dataset.editFac), refresh)));
+  $$('[data-accepter]', zone).forEach((b) => (b.onclick = () => verifierFactureEquipe(factures.find((f) => f.id === b.dataset.accepter), true, refresh)));
+  $$('[data-refuser]', zone).forEach((b) => (b.onclick = () => verifierFactureEquipe(factures.find((f) => f.id === b.dataset.refuser), false, refresh)));
 }
 
 // ─── Justificatifs (photos / PDF des factures) ───
@@ -5761,6 +5766,117 @@ async function boutonExcel(factures, projets) {
 
 let ongletCompta = 'factures';
 
+// ═══════════════════════════════ 3.15 : LES ÉQUIPES AJOUTENT LEURS FACTURES ═══════════════════════════════
+// Techniciens, Coordination, Achats et Magasin prennent la facture en photo ; la Comptabilité ou la Direction vérifie.
+const ROLES_FACTURE_EQUIPE = ['technicien', 'coordinateur', 'achats', 'magasinier'];
+const erreurFactureEquipe = (e) => {
+  const m = String(e?.message || '');
+  if (/^FACTURE_/.test(m) && e?.hint) return e.hint;
+  if (/verifier_facture|fournisseur_libre|validation/.test(m) && /does not exist|schema cache|could not find|column/i.test(m)) return 'Cette fonction nécessite la mise à jour 3.15 de la base de données (kit d’installation).';
+  if (/row-level security|policy/i.test(m)) return 'Vous ne pouvez ajouter une facture que pour un chantier qui vous est affecté.';
+  return messageErreur(e);
+};
+
+PAGES['mes-factures'] = async () => {
+  const p = page(`
+    ${entete('Mes factures', 'Vos achats pour les chantiers : prenez la facture en photo, la comptabilité la vérifie')}
+    <button type="button" class="fe-gros" id="fe-nouvelle"><span>📷</span><b>Ajouter une facture</b><small>Photo du ticket ou de la facture, montant, chantier</small></button>
+    <div class="card"><div class="card-title">Factures que j’ai ajoutées</div><div id="fe-liste">${loading()}</div></div>`);
+  const zone = $('#fe-liste', p);
+  const rendre = async () => {
+    let l = [];
+    try {
+      l = await q(sb.from('factures').select('id, libelle, montant, date_facture, statut, validation, justificatif, fournisseur_libre, categorie, created_at, projets(nom)').eq('created_by', S.profil.id).order('created_at', { ascending: false }).limit(200));
+    } catch (e) { zone.innerHTML = empty('🧾', erreurFactureEquipe(e)); return; }
+    const attente = l.filter((f) => f.validation === 'a_verifier');
+    zone.innerHTML = l.length ? `${attente.length ? `<p class="muted" style="font-size:13px;margin-bottom:8px">🔎 ${attente.length} en attente de vérification par la comptabilité.</p>` : ''}
+      <div class="paie-liste">${l.map((f) => `<div class="paie-ligne"><div class="paie-nom"><b>${esc(f.libelle)}</b><span>${esc([f.projets?.nom, f.fournisseur_libre, fdate(f.date_facture)].filter(Boolean).join(' · '))}</span></div>
+        <div class="paie-montant"><b>${money(f.montant)}</b>${f.validation === 'a_verifier' ? badge(['warn', '🔎 À vérifier']) : f.statut === 'payee' ? badge(['ok', '✅ Acceptée · payée']) : badge(['ok', '✅ Acceptée'])}
+          <span class="fe-actions">${f.justificatif ? `<button type="button" class="btn sm ghost" data-justif="${esc(f.justificatif)}" aria-label="Voir la photo">📎</button>` : ''}${f.validation === 'a_verifier' ? `<button type="button" class="btn sm ghost" data-retirer="${f.id}" aria-label="Retirer">🗑️</button>` : ''}</span></div></div>`).join('')}</div>`
+      : empty('🧾', 'Aucune facture pour le moment. Après un achat pour le chantier, touchez « Ajouter une facture ».');
+    $$('[data-justif]', zone).forEach((b) => (b.onclick = () => ouvrirJustificatif(b.dataset.justif)));
+    $$('[data-retirer]', zone).forEach((b) => (b.onclick = async () => {
+      const f = l.find((x) => x.id === b.dataset.retirer);
+      if (!(await confirmer(`Retirer la facture « ${f.libelle} » ?`, 'Retirer'))) return;
+      try {
+        const r = await q(sb.from('factures').delete().eq('id', f.id).select('id'));
+        if (!r?.length) throw new Error('Cette facture a déjà été vérifiée : demandez à la comptabilité.');
+        if (f.justificatif) sb.storage.from('justificatifs').remove([f.justificatif]);
+        toast('Facture retirée.'); rendre();
+      } catch (e) { toast(erreurFactureEquipe(e), 'err'); }
+    }));
+  };
+  $('#fe-nouvelle', p).onclick = () => formulaireFactureEquipe(rendre);
+  await rendre();
+  if (memo.get('koordin-ouvrir') === 'facture') { memo.del('koordin-ouvrir'); formulaireFactureEquipe(rendre); }
+};
+
+async function formulaireFactureEquipe(apres) {
+  const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
+  if (!projets.length) return toast('Vous n’êtes affecté à aucun chantier en cours.', 'warn');
+  let justif = null;
+  ouvrirModale({
+    titre: '🧾 Ajouter une facture',
+    boutonOk: '📤 Envoyer à la comptabilité',
+    corps: `<div class="fe-photo" id="fe-photo"><div class="fe-photo-vide"><span>📷</span><b>1. La photo de la facture</b><small>Obligatoire : la comptabilité en a besoin</small></div></div>
+      <div class="fe-photo-btns"><label class="btn">📷 Prendre en photo<input type="file" class="fe-fichier" accept="image/*" capture="environment" hidden></label><label class="btn">🖼️ Galerie ou PDF<input type="file" class="fe-fichier" accept="image/*,application/pdf" hidden></label></div>
+      <div class="form-grid" style="margin-top:12px">
+        ${F.select('projet_id', 'Chantier', projets.map((x) => [x.id, x.nom]), projets.length === 1 ? projets[0].id : '', { required: true, vide: '— Choisir —' })}
+        ${F.text('montant', `Montant payé (${devise()})`, '', { type: 'number', min: 1, required: true, inputmode: 'numeric', placeholder: 'Ex. 45000' })}
+        ${F.text('libelle', 'Ce que vous avez acheté', '', { required: true, full: true, placeholder: 'Ex. 10 sacs de ciment, location bétonnière…' })}
+        ${F.text('fournisseur_libre', 'Chez qui ?', '', { placeholder: 'Ex. Quincaillerie du Plateau' })}
+        ${F.select('categorie', 'Type de dépense', Object.entries(CATEGORIES), 'materiaux')}
+        ${F.text('date_facture', 'Date', todayISO(), { type: 'date', required: true, max: todayISO() })}
+        ${F.text('numero', 'N° de facture (facultatif)', '')}
+      </div>`,
+    onOpen: (ov) => {
+      $$('.fe-fichier', ov).forEach((inp) => (inp.onchange = async (e) => {
+        const f = e.target.files[0]; e.target.value = '';
+        if (!f) return;
+        const z = $('#fe-photo', ov);
+        z.innerHTML = '<div class="fe-photo-vide"><span>⏳</span><b>Envoi de la photo…</b></div>';
+        try {
+          justif = await envoyerJustificatif(f);
+          z.innerHTML = justif.type === 'application/pdf' ? '<div class="fe-photo-vide ok"><span>📄</span><b>PDF joint ✅</b></div>' : `<img src="${URL.createObjectURL(justif.blob)}" alt="Facture"><span class="fe-ok">✅ Photo jointe</span>`;
+        } catch (err) { justif = null; z.innerHTML = '<div class="fe-photo-vide"><span>📷</span><b>1. La photo de la facture</b></div>'; toast(err.message || 'Photo illisible.', 'err', 7000); }
+      }));
+    },
+    onSubmit: async (d) => {
+      if (!justif) throw new Error('Prenez d’abord la facture en photo (étape 1).');
+      if (num(d.montant) <= 0) throw new Error('Indiquez le montant payé.');
+      try {
+        await q(sb.from('factures').insert({ projet_id: d.projet_id, montant: num(d.montant), libelle: d.libelle.trim(), fournisseur_libre: d.fournisseur_libre || null, categorie: d.categorie, date_facture: d.date_facture, numero: d.numero || null, justificatif: justif.chemin }));
+      } catch (e) { throw new Error(erreurFactureEquipe(e)); }
+      toast('🧾 Facture envoyée ✅ La comptabilité est prévenue.');
+      apres?.();
+    },
+  });
+}
+
+// Côté Comptabilité / Direction : accepter ou refuser
+async function verifierFactureEquipe(f, accepter, refresh) {
+  try {
+    if (accepter) {
+      await q(sb.rpc('verifier_facture', { p_facture: f.id, p_accepter: true }));
+      toast(`Facture acceptée ✅ ${nomMembre(f.created_by)} est prévenu(e).`);
+      refresh();
+      return;
+    }
+    ouvrirModale({
+      titre: '↩️ Refuser la facture',
+      boutonOk: 'Refuser',
+      corps: `<p style="margin-bottom:10px">« ${esc(f.libelle)} » · ${money(f.montant)}, ajoutée par <b>${esc(nomMembre(f.created_by))}</b>.</p>
+        ${F.area('motif', 'Pourquoi ? (envoyé à la personne)', '', { required: true, placeholder: 'Ex. Photo illisible, facture d’un autre chantier, montant différent du ticket…' })}`,
+      onSubmit: async (d) => {
+        try { await q(sb.rpc('verifier_facture', { p_facture: f.id, p_accepter: false, p_motif: d.motif })); } catch (e) { throw new Error(erreurFactureEquipe(e)); }
+        if (f.justificatif) sb.storage.from('justificatifs').remove([f.justificatif]);
+        toast('Facture refusée : la personne est prévenue avec le motif.');
+        refresh();
+      },
+    });
+  } catch (e) { toast(erreurFactureEquipe(e), 'err'); }
+}
+
 PAGES.compta = async () => {
   const [factures, projets] = await Promise.all([
     q(sb.from('factures').select('*, projets(nom), fournisseurs(nom), lots(nom)').order('date_facture', { ascending: false }).limit(1000)),
@@ -5769,6 +5885,7 @@ PAGES.compta = async () => {
   const total = factures.reduce((s, f) => s + num(f.montant), 0);
   const paye = factures.filter((f) => f.statut === 'payee').reduce((s, f) => s + num(f.montant), 0);
   const echues = factures.filter((f) => f.statut === 'a_payer' && f.date_echeance && f.date_echeance < todayISO());
+  const aVerifier = factures.filter((f) => f.validation === 'a_verifier');
   const p = page(`
     ${entete('Comptabilité', 'Factures, dépenses et situation financière', `<button class="btn" id="csv">📊 Export Excel</button>${can('direction', 'comptable') ? `${DEMO ? '' : '<label class="btn">📷 Scanner des factures<input type="file" id="scan-f" accept="image/*,application/pdf" multiple hidden></label>'}<button class="btn primary" id="nfa">＋ Saisir une facture</button>` : ''}`)}
     <div class="grid k4">
@@ -5777,11 +5894,12 @@ PAGES.compta = async () => {
       ${kpi('Reste à payer', moneyShort(total - paye), '', total - paye > 0 ? 'warn' : '')}
       ${kpi('Échéances dépassées', echues.length, echues.length ? moneyShort(echues.reduce((s, f) => s + num(f.montant), 0)) : '✅ Aucune', echues.length ? 'alert' : '')}
     </div>
+    ${aVerifier.length ? `<div class="notice warn section fe-alerte">🧾 <b>${aVerifier.length} facture${aVerifier.length > 1 ? 's' : ''} ajoutée${aVerifier.length > 1 ? 's' : ''} par les équipes</b> attend${aVerifier.length > 1 ? 'ent' : ''} votre vérification (${moneyShort(aVerifier.reduce((s, f) => s + num(f.montant), 0))}). <button type="button" class="btn sm primary" id="voir-verif">Les vérifier</button></div>` : ''}
     <div class="tabs section"><button class="tab ${ongletCompta === 'factures' ? 'active' : ''}" data-o="factures">Factures et dépenses</button><button class="tab ${ongletCompta === 'budget' ? 'active' : ''}" data-o="budget">Budget et réalisé</button></div>
     <div id="zone"></div>`);
   const zone = $('#zone', p);
   let fp = '', fs = '', fc = '';
-  const filtrees = () => factures.filter((f) => (!fp || f.projet_id === fp) && (!fs || f.statut === fs || (fs === 'echue' && echues.includes(f))) && (!fc || f.categorie === fc));
+  const filtrees = () => factures.filter((f) => (!fp || f.projet_id === fp) && (!fs || f.statut === fs || (fs === 'echue' && echues.includes(f)) || (fs === 'a_verifier' && f.validation === 'a_verifier')) && (!fc || f.categorie === fc));
   const rendre = () => {
     if (ongletCompta === 'budget') {
       const actifs = projets.filter((x) => x.statut !== 'termine');
@@ -5794,7 +5912,7 @@ PAGES.compta = async () => {
     }
     zone.innerHTML = `<div class="card"><div class="toolbar">
         <select class="input" id="fp"><option value="">Tous les projets</option>${projets.map((x) => `<option value="${x.id}" ${fp === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select>
-        <select class="input" id="fs"><option value="">Tous les statuts</option><option value="a_payer" ${fs === 'a_payer' ? 'selected' : ''}>⏳ À payer</option><option value="echue" ${fs === 'echue' ? 'selected' : ''}>⏰ Échues</option><option value="payee" ${fs === 'payee' ? 'selected' : ''}>✅ Payées</option></select>
+        <select class="input" id="fs"><option value="">Tous les statuts</option><option value="a_payer" ${fs === 'a_payer' ? 'selected' : ''}>⏳ À payer</option><option value="echue" ${fs === 'echue' ? 'selected' : ''}>⏰ Échues</option><option value="payee" ${fs === 'payee' ? 'selected' : ''}>✅ Payées</option><option value="a_verifier" ${fs === 'a_verifier' ? 'selected' : ''}>🔎 À vérifier (équipes)</option></select>
         <select class="input" id="fc"><option value="">Toutes catégories</option>${Object.entries(CATEGORIES).map(([k, l]) => `<option value="${k}" ${fc === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span class="muted" id="total" style="margin-left:auto;font-size:13px"></span></div><div id="tf"></div></div>`;
     const l = filtrees();
@@ -5807,6 +5925,7 @@ PAGES.compta = async () => {
   };
   $$('[data-o]', p).forEach((b) => (b.onclick = () => { ongletCompta = b.dataset.o; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x === b)); rendre(); }));
   $('#nfa', p)?.addEventListener('click', () => formulaireFacture(null, () => naviguer()));
+  $('#voir-verif', p)?.addEventListener('click', () => { ongletCompta = 'factures'; fs = 'a_verifier'; $$('[data-o]', p).forEach((x) => x.classList.toggle('active', x.dataset.o === 'factures')); rendre(); $('#tf', p)?.scrollIntoView({ behavior: 'smooth' }); });
   $('#csv', p).onclick = () => boutonExcel(filtrees(), projets);
   $('#scan-f', p)?.addEventListener('change', (e) => { const f = [...e.target.files]; e.target.value = ''; scannerFactures(f, () => naviguer()); });
   rendre();
