@@ -1,11 +1,9 @@
 {
-  "version": "3.13",
+  "version": "3.14",
   "date": "2026-11-20",
   "nouveautes": [
-    "🧒 Koko comprend beaucoup mieux : « où en est Villa Cocody », « pourquoi c’est à 6 % », « chantiers en retard », « ouvre le planning de Cocody »…",
-    "Il explique l’avancement d’un chantier (lots, rapports en attente, rapports sans lot) et ouvre la bonne page.",
-    "Quand il hésite, il propose des boutons au lieu de répéter la même phrase. Il comprend aussi les mots mal prononcés.",
-    "⌨️ Nouveau : on peut écrire à Koko (bouton clavier dans sa bulle).",
-    "📅 Salaires : la Direction peut corriger le mois d’un versement (3.12)."
+    "📚 Savoir du jour : tous les domaines du BTP. En plus du béton armé, des Eurocodes et de la sécurité : topographie, métré et quantités, OGC (organisation et gestion de chantier), RDM, géotechnique et fondations, routes et VRD, hydraulique et assainissement, charpente métallique et bois.",
+    "113 fiches et 24 questions de quiz. Chaque jour, la fiche change de domaine.",
+    "🧒 Koko comprend mieux (3.13)."
   ]
 }

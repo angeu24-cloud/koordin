@@ -2066,3 +2066,7 @@ body.en-film .koko { display: none; }
 .koko-ecrire input { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
 .koko-ecrire button { width: 40px; border-radius: 12px; border: 0; background: var(--gold); color: var(--gold-ink, #1a1203); font-size: 16px; font-weight: 800; cursor: pointer; }
 .koko-clavier { background: none; border: 0; font-size: 15px; cursor: pointer; padding: 2px 4px; }
+
+/* 3.14 : nouveaux domaines du savoir */
+.savoir-carte.s-topo::before { content: '📏'; } .savoir-carte.s-metre::before { content: '🧮'; } .savoir-carte.s-ogc::before { content: '📋'; } .savoir-carte.s-rdm::before { content: '⚖️'; }
+.savoir-carte.s-geo::before { content: '🪨'; } .savoir-carte.s-vrd::before { content: '🛣️'; } .savoir-carte.s-hydro::before { content: '💧'; } .savoir-carte.s-metal::before { content: '🔩'; }

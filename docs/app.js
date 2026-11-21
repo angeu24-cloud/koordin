@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.13';
+const VERSION = '3.14';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1742,7 +1742,7 @@ const KOKO_CONSEILS = {
   communiques: ['Un communiqué ici, et toute l’équipe est informée 📢'],
   'mon-espace': ['Votre espace personnel : vos salaires et vos signatures 🔒'],
   controles: ['Une étape terminée ? Demandez un contrôle avant de passer à la suite 🔍', 'L’agent coche chaque point, prend des photos et signe : la fiche PDF est prête aussitôt.'],
-  savoir: ['Une règle du BAEL ou un bon geste de chantier chaque jour 📚', 'Testez-vous avec le quiz, et partagez les fiches à votre équipe sur WhatsApp 🎯'],
+  savoir: ['Chaque jour une fiche : béton armé, topo, métré, OGC, RDM, VRD… 📚', 'Testez-vous avec le quiz, et partagez les fiches à votre équipe sur WhatsApp 🎯'],
   abonnement: ['Votre formule KOORDIN se gère ici.'],
   parametres: ['Les réglages de votre entreprise sont ici ⚙️'],
 };
@@ -2537,6 +2537,9 @@ const INCLINAISON = { x: 0, y: 0 };
 const SAVOIR_CATS = {
   bael: ['📐', 'BAEL'], euro: ['🇪🇺', 'Eurocodes'], beton: ['🧱', 'Béton et mise en œuvre'], techno: ['🏗️', 'Technologie du bâtiment'],
   secu: ['🦺', 'Sécurité'], tropical: ['☀️', 'Climat tropical'], second: ['🔧', 'Second œuvre'],
+  topo: ['📏', 'Topographie'], metre: ['🧮', 'Métré et quantités'], ogc: ['📋', 'Organisation et gestion de chantier'],
+  rdm: ['⚖️', 'Résistance des matériaux'], geo: ['🪨', 'Géotechnique et fondations'], vrd: ['🛣️', 'Routes et VRD'],
+  hydro: ['💧', 'Hydraulique et assainissement'], metal: ['🔩', 'Charpente métallique et bois'],
 };
 const SAVOIR = [
   { c: 'bael', t: 'Enrobage minimal des armatures', x: 'Distance entre l’acier et la paroi : 5 cm pour les ouvrages à la mer ou exposés aux embruns ; 3 cm pour les parois exposées aux intempéries ou aux condensations (2 cm si le béton dépasse 40 MPa) ; 1 cm pour les parois à l’abri, en local clos et couvert. Sur chantier, utilisez toujours des cales d’enrobage.', r: 'BAEL 91 révisé 99, art. A.7.1' },
@@ -2594,6 +2597,70 @@ const SAVOIR = [
   { c: 'second', t: 'Peindre un enduit neuf', x: 'Un enduit ciment doit sécher plusieurs semaines (souvent 3 à 4) avant d’être peint, ou recevoir un fixateur adapté. Sinon, la peinture cloque et farine.', r: 'DTU 59.1' },
   { c: 'second', t: 'Électricité : les sections', x: 'Repères de la norme NF C 15-100 : 1,5 mm² pour les circuits d’éclairage, 2,5 mm² pour les prises de courant 16 A (20 A au disjoncteur), et un interrupteur différentiel 30 mA pour protéger les personnes.', r: 'NF C 15-100' },
   { c: 'second', t: 'Pente des évacuations', x: 'Les canalisations d’eaux usées se posent avec une pente de 1 à 3 cm par mètre. Trop faible, elles se bouchent ; trop forte, l’eau part sans les matières.', r: 'DTU 60.11' },
+  { c: 'topo', t: 'Le nivellement direct', x: 'Avec le niveau de chantier : dénivelée = lecture arrière − lecture avant. Altitude du point visé = altitude connue + lecture arrière − lecture avant. Revenez toujours sur un repère connu (cheminement fermé) pour contrôler : l’écart de fermeture doit être presque nul.', r: 'Topographie de chantier, nivellement géométrique' },
+  { c: 'topo', t: 'Des portées égales annulent l’erreur du niveau', x: 'Placez le niveau à égale distance des deux mires (arrière et avant). Une petite erreur de réglage de l’appareil s’annule alors dans la différence des lectures. Contrôlez aussi le calage de la bulle à chaque station.', r: 'Topographie, méthode des portées équidistantes' },
+  { c: 'topo', t: 'L’angle droit avec le 3-4-5', x: 'Pour tracer un angle droit sans appareil : 3 m sur un côté, 4 m sur l’autre, la diagonale doit faire exactement 5 m (ou 6-8-10 pour plus de précision). Pour un rectangle, vérifiez que les deux diagonales sont égales.', r: 'Théorème de Pythagore, implantation' },
+  { c: 'topo', t: 'Les chaises d’implantation', x: 'Les chaises se placent hors de la zone de fouille, à 1 à 2 m environ des axes. Les clous et cordeaux tendus entre elles permettent de retrouver les axes des murs et poteaux après le terrassement. Protégez-les des engins.', r: 'Implantation des ouvrages' },
+  { c: 'topo', t: 'Pente en pour cent', x: 'Pente (%) = dénivelée ÷ distance horizontale × 100. 1 % = 1 cm par mètre ; 2 cm de chute sur 1 m = 2 %. Sur 25 m à 1,5 %, la chute est de 37,5 cm.', r: 'Topographie, calcul des pentes' },
+  { c: 'topo', t: 'Les grades', x: 'Beaucoup de théodolites et stations totales lisent en grades (gon) : un tour complet fait 400 gon, un angle droit 100 gon. 1 gon = 0,9 degré.', r: 'Unités d’angle en topographie' },
+  { c: 'topo', t: 'Distance entre deux points connus', x: 'Avec les coordonnées : distance = √(ΔX² + ΔY²). Exemple : ΔX = 30 m et ΔY = 40 m donnent 50 m. Le gisement est l’angle mesuré depuis le nord (axe des Y) dans le sens des aiguilles d’une montre.', r: 'Topographie, coordonnées rectangulaires' },
+  { c: 'topo', t: 'Les échelles des plans', x: 'Au 1/100, 1 cm sur le plan = 1 m sur le terrain ; au 1/50, 1 cm = 50 cm ; au 1/200, 1 cm = 2 m ; au 1/500, 1 cm = 5 m. Ne mesurez jamais sur un plan photocopié : l’échelle peut être faussée, utilisez les cotes.', r: 'Lecture de plans' },
+  { c: 'topo', t: 'Protéger ses repères', x: 'Gardez au moins deux repères de nivellement fixes (borne, clou dans un ouvrage stable) hors de la zone des travaux, et notez leurs altitudes dans le dossier. Un seul repère détruit et toute l’altimétrie du chantier est à refaire.', r: 'Bonnes pratiques topographiques' },
+
+  { c: 'metre', t: 'Le poids des aciers', x: 'Masse d’une barre (kg/m) ≈ 0,00617 × d² (d en mm). HA 8 : 0,395 kg/m ; HA 10 : 0,617 ; HA 12 : 0,888 ; HA 14 : 1,208 ; HA 16 : 1,578. Une barre de 12 m en HA 12 pèse environ 10,7 kg.', r: 'Tables des aciers pour béton armé' },
+  { c: 'metre', t: 'Les ingrédients d’1 m³ de béton dosé à 350', x: 'Repère courant : 350 kg de ciment (7 sacs de 50 kg), environ 400 litres de sable, 800 litres de gravillons et 175 litres d’eau. La formulation exacte dépend des granulats : faites-la valider pour les ouvrages importants.', r: 'Formulation courante des bétons' },
+  { c: 'metre', t: 'Combien de parpaings au m² ?', x: 'Un parpaing de 20 × 40 cm couvre 0,08 m² : il en faut 12,5 par m² de mur. Ajoutez environ 5 % de casse. Pour 80 m² de murs : 1 000 blocs + 50.', r: 'Métré de maçonnerie' },
+  { c: 'metre', t: 'Le foisonnement des terres', x: 'Une terre creusée prend plus de place : coefficient de foisonnement d’environ 1,1 à 1,4 selon le sol (souvent 1,25 pour une terre ordinaire). 40 m³ en place donnent environ 50 m³ à évacuer : comptez les camions en conséquence.', r: 'Terrassements, cubatures' },
+  { c: 'metre', t: 'Les unités du métré', x: 'Béton en m³, coffrages en m², aciers en kg, maçonnerie et enduits en m², canalisations et bordures en mètre linéaire (ml), appareils et menuiseries à l’unité (u) ou au m². Le métré par ouvrage alimente le devis quantitatif et estimatif (DQE).', r: 'Règles du métré, DQE' },
+  { c: 'metre', t: 'Volume d’une semelle', x: 'Volume = longueur × largeur × hauteur. Une semelle de 1,20 × 1,20 × 0,40 m fait 0,576 m³. Pour 12 semelles identiques : environ 6,9 m³, plus 3 à 5 % de pertes.', r: 'Métré du béton' },
+  { c: 'metre', t: 'Prévoir les pertes', x: 'Ajoutez une marge de pertes : environ 3 à 5 % pour le béton, 5 % pour les parpaings, 5 à 10 % pour le carrelage (plus pour la pose en diagonale), 5 à 10 % pour les aciers (chutes et recouvrements).', r: 'Usages de métré' },
+  { c: 'metre', t: 'Quantité de peinture', x: 'Une peinture couvre souvent 8 à 12 m² par litre et par couche selon le support (voir la fiche technique). Pour 300 m² en deux couches à 10 m²/L : 60 litres, plus l’impression sur un enduit neuf.', r: 'Fiches techniques des fabricants' },
+  { c: 'metre', t: 'Ratios d’acier indicatifs', x: 'Ordres de grandeur pour vérifier un métré : environ 40 à 60 kg d’acier par m³ pour des semelles, 70 à 100 kg/m³ pour des dalles, 100 à 150 kg/m³ pour poteaux et poutres. Un écart important doit faire vérifier les plans d’armatures.', r: 'Ratios usuels, à confirmer par les plans BA' },
+
+  { c: 'ogc', t: 'Le chemin critique', x: 'Dans un planning (PERT ou Gantt), le chemin critique est la suite de tâches sans marge. Tout retard sur une de ces tâches retarde la fin du chantier. Surveillez-les en priorité et renforcez-les en moyens.', r: 'Planification, méthode PERT' },
+  { c: 'ogc', t: 'Calculer une durée de tâche', x: 'Durée = quantité ÷ (rendement × nombre d’équipes). Exemple : 120 m² de maçonnerie, 8 m² par jour et par maçon, 2 maçons : 7,5 jours. Les rendements varient selon l’équipe et le chantier : mesurez les vôtres avec les rapports journaliers.', r: 'Organisation de chantier, temps unitaires' },
+  { c: 'ogc', t: 'Le plan d’installation de chantier', x: 'Le PIC montre les accès, la clôture, la base vie, les zones de stockage, l’aire de ferraillage, la centrale à béton, la grue et sa zone de survol. Un bon PIC évite les manutentions inutiles et les accidents.', r: 'Organisation et gestion de chantier' },
+  { c: 'ogc', t: 'Commander tôt ce qui est long', x: 'Les aciers, menuiseries, équipements et matériaux importés ont de longs délais. Établissez dès le début un tableau des approvisionnements avec les dates de commande et de livraison au plus tard.', r: 'Gestion des approvisionnements' },
+  { c: 'ogc', t: 'La réunion de chantier', x: 'Une réunion par semaine avec un compte rendu diffusé à tous : avancement, décisions, qui fait quoi et pour quand. Ce document fait foi en cas de litige sur les délais ou les travaux supplémentaires.', r: 'Pilotage de chantier' },
+  { c: 'ogc', t: 'Le journal de chantier', x: 'Notez chaque jour la météo, l’effectif, les travaux, les livraisons et les incidents. C’est la preuve des jours d’intempéries ou des retards causés par d’autres. Dans KOORDIN, c’est le rapport du jour.', r: 'Bonnes pratiques de gestion de chantier' },
+  { c: 'ogc', t: 'L’ordre de service', x: 'Le démarrage des travaux, une modification ou un arrêt se donnent par ordre de service écrit. Ne lancez pas de travaux supplémentaires sans écrit signé : ils risquent de ne jamais être payés.', r: 'Marchés de travaux' },
+  { c: 'ogc', t: 'Suivre le budget chaque semaine', x: 'Comparez pour chaque lot le budget, l’engagé (commandes) et le réalisé. Un écart de plus de 5 à 10 % doit déclencher une analyse et une décision. KOORDIN vous alerte dès 90 % du budget engagé.', r: 'Contrôle des coûts' },
+  { c: 'ogc', t: 'La situation de travaux', x: 'Chaque mois, la situation facture les travaux réalisés : quantités exécutées × prix unitaires du marché, moins l’avance à rembourser et la retenue de garantie (souvent 5 %). Elle s’appuie sur un métré contradictoire.', r: 'Marchés de travaux, facturation' },
+  { c: 'ogc', t: 'Le coût d’un engin', x: 'Coût horaire d’un engin = amortissement + entretien et pièces + carburant + assurance + conducteur. Un engin immobilisé coûte aussi : planifiez son arrivée au plus près du besoin.', r: 'Gestion du matériel' },
+
+  { c: 'rdm', t: 'Poutre sur deux appuis, charge répartie', x: 'Avec une charge q (kN/m) sur une portée L : moment maximal M = qL²/8 au milieu, réactions et effort tranchant maximal V = qL/2 aux appuis. Doubler la portée multiplie le moment par 4.', r: 'Résistance des matériaux' },
+  { c: 'rdm', t: 'La console (porte-à-faux)', x: 'Pour une console de longueur L avec une charge répartie q : M = qL²/2 à l’encastrement, soit 4 fois plus qu’une poutre sur deux appuis de même portée. Les aciers principaux d’un balcon sont donc en haut.', r: 'Résistance des matériaux' },
+  { c: 'rdm', t: 'Charge ponctuelle au milieu', x: 'Une charge P au milieu d’une poutre sur deux appuis donne un moment maximal M = PL/4 au milieu et des réactions P/2 sur chaque appui.', r: 'Résistance des matériaux' },
+  { c: 'rdm', t: 'La hauteur fait la rigidité', x: 'Moment d’inertie d’une section rectangulaire : I = b × h³ / 12. Doubler la hauteur multiplie la rigidité par 8 ; doubler la largeur seulement par 2. Une poutre posée « à plat » est beaucoup plus souple.', r: 'Résistance des matériaux' },
+  { c: 'rdm', t: 'La flèche d’une poutre', x: 'Pour une charge répartie sur deux appuis : f = 5qL⁴ / (384 EI). La flèche varie avec la portée à la puissance 4 : une portée 20 % plus longue donne environ deux fois plus de flèche.', r: 'Résistance des matériaux' },
+  { c: 'rdm', t: 'Poids des matériaux', x: 'Béton armé : 25 kN/m³ (2,5 t/m³) ; acier : 78,5 kN/m³ ; eau : 10 kN/m³. Une dalle pleine de 15 cm pèse donc 0,15 × 25 = 3,75 kN/m², avant revêtements et cloisons.', r: 'Eurocode 1 et usages' },
+  { c: 'rdm', t: 'Les unités de contrainte', x: '1 MPa = 1 N/mm² ≈ 10 kg/cm². 1 bar = 0,1 MPa ≈ 10 t/m². Un béton de 25 MPa supporte donc environ 250 kg par cm² avant rupture.', r: 'Conversions usuelles' },
+  { c: 'rdm', t: 'Le flambement', x: 'Charge critique d’Euler : Pcr = π² EI / Lf². La longueur de flambement Lf dépend des appuis : L pour un poteau articulé aux deux bouts, environ 2L pour un poteau encastré en pied et libre en tête. Un poteau élancé flambe bien avant d’écraser.', r: 'Résistance des matériaux' },
+
+  { c: 'geo', t: 'Dimensionner la surface d’une semelle', x: 'Surface ≈ charge transmise à l’état de service ÷ contrainte admissible du sol. Exemple : 30 t sur un sol à 2 bars (20 t/m²) demande 1,5 m², soit environ 1,25 × 1,25 m. La contrainte du sol vient de l’étude géotechnique.', r: 'Fondations superficielles, DTU 13.12' },
+  { c: 'geo', t: 'Jamais sur la terre végétale', x: 'Décapez toujours la terre végétale et ne fondez jamais sur des remblais non compactés ou des déchets. Les fondations doivent toutes reposer sur le même bon sol pour éviter les tassements différentiels.', r: 'DTU 13.12' },
+  { c: 'geo', t: 'Compacter par couches', x: 'Un remblai se compacte par couches de 20 à 30 cm, à la bonne humidité, jusqu’à la densité demandée (souvent 95 % de l’optimum Proctor modifié). Une épaisse couche compactée d’un seul coup reste molle en profondeur.', r: 'Essai Proctor (NF P 94-093)' },
+  { c: 'geo', t: 'Les argiles gonflantes', x: 'Certaines argiles gonflent en saison des pluies et se rétractent en saison sèche : les murs fissurent. Fondez plus profond, drainez autour du bâtiment, faites des trottoirs étanches et éloignez les grands arbres.', r: 'Retrait-gonflement des argiles' },
+  { c: 'geo', t: 'Les essais de sol', x: 'Le pénétromètre dynamique donne rapidement la résistance du sol en profondeur ; le pressiomètre (essai Ménard) sert au calcul des fondations ; les sondages carottés montrent les couches. Une étude G2 adapte les essais au projet.', r: 'NF P 94-500, missions géotechniques' },
+  { c: 'geo', t: 'L’eau dans les fouilles', x: 'Pompez les eaux avant de couler et ne bétonnez jamais dans une fouille noyée. Si la nappe est haute, prévoyez un drainage périphérique et un sous-sol étanche (cuvelage).', r: 'Bonnes pratiques de terrassement' },
+
+  { c: 'vrd', t: 'Les couches d’une chaussée', x: 'De bas en haut : plate-forme (sol support), couche de forme, couche de fondation, couche de base, puis couche de roulement (enduit, enrobé ou pavés). Chaque couche est compactée et contrôlée avant la suivante.', r: 'Conception des chaussées' },
+  { c: 'vrd', t: 'Le dévers de la chaussée', x: 'Une chaussée en ligne droite a une pente transversale d’environ 2 à 2,5 % pour évacuer l’eau vers les fossés ou caniveaux. Sans pente, l’eau stagne et détruit la route.', r: 'Géométrie routière' },
+  { c: 'vrd', t: 'L’indice CBR', x: 'L’essai CBR mesure la portance d’un sol ou d’un matériau de chaussée. Plus le CBR est élevé, plus le sol porte. Un sol support faible demande une couche de forme ou une chaussée plus épaisse.', r: 'Essai CBR (NF P 94-078)' },
+  { c: 'vrd', t: 'Pente des caniveaux', x: 'Donnez aux caniveaux et collecteurs d’eaux pluviales une pente suffisante, en général au moins 0,5 %, pour que l’eau entraîne le sable. Vérifiez la pente au niveau avant de couler.', r: 'Assainissement routier' },
+  { c: 'vrd', t: 'Les regards de visite', x: 'Prévoyez un regard à chaque changement de direction, de pente ou de diamètre, à chaque jonction, et en ligne droite environ tous les 50 à 80 m pour pouvoir curer les canalisations.', r: 'Réseaux d’assainissement' },
+
+  { c: 'hydro', t: 'Débit, vitesse, section', x: 'Débit Q = vitesse × section. Un tuyau de 100 mm (0,00785 m²) où l’eau circule à 1 m/s débite environ 7,9 litres par seconde.', r: 'Hydraulique générale' },
+  { c: 'hydro', t: 'La pression de l’eau', x: '10 m de hauteur d’eau donnent environ 1 bar de pression. Un réservoir placé 15 m au-dessus du robinet le plus haut donne environ 1,5 bar, avant les pertes dans les tuyaux.', r: 'Hydrostatique' },
+  { c: 'hydro', t: 'Le débit des eaux de pluie', x: 'Méthode rationnelle : Q = C × i × A, avec C le coefficient de ruissellement (environ 0,9 pour une toiture ou du béton, 0,1 à 0,3 pour un espace vert), i l’intensité de la pluie et A la surface. Les surfaces bétonnées font beaucoup ruisseler.', r: 'Hydrologie urbaine' },
+  { c: 'hydro', t: 'Fosse septique et puits', x: 'Placez la fosse et l’épandage le plus loin possible des puits d’eau potable (souvent au moins 15 à 30 m selon le sol) et en aval. Faites vidanger la fosse régulièrement.', r: 'Assainissement autonome' },
+  { c: 'hydro', t: 'Le coup de bélier', x: 'Fermer une vanne brusquement crée une surpression qui peut casser les canalisations. Fermez lentement et prévoyez des anti-béliers sur les réseaux sous pompe.', r: 'Hydraulique des réseaux' },
+
+  { c: 'metal', t: 'Les nuances d’acier de charpente', x: 'S235 : limite élastique de 235 MPa ; S355 : 355 MPa. Le chiffre est la limite élastique. Vérifiez la nuance sur les certificats matière à la livraison.', r: 'Eurocode 3 et NF EN 10025' },
+  { c: 'metal', t: 'Les classes de boulons', x: 'Un boulon 8.8 a une résistance à la rupture de 800 MPa et une limite élastique de 0,8 × 800 = 640 MPa. Un boulon 10.9 : 1 000 MPa et 900 MPa. Ne remplacez jamais un boulon par une classe inférieure.', r: 'Eurocode 3, NF EN ISO 898-1' },
+  { c: 'metal', t: 'Protéger l’acier de la rouille', x: 'Galvanisation à chaud, ou primaire anticorrosion puis peinture de finition. En bord de mer ou de lagune, renforcez la protection et prévoyez l’entretien.', r: 'NF EN ISO 12944' },
+  { c: 'metal', t: 'Le bois de charpente', x: 'Utilisez un bois sec (humidité de moins de 20 % environ) et traité contre les insectes et champignons, surtout contre les termites en zone tropicale. Un bois trop humide se déforme en séchant.', r: 'Eurocode 5, DTU 31.1' },
+  { c: 'metal', t: 'Pente des toitures en tôle', x: 'La pente minimale dépend du profil de tôle et des recouvrements : souvent autour de 10 à 15 % pour une tôle ondulée courante. Suivez la notice du fabricant ; une pente trop faible fait refouler l’eau aux recouvrements.', r: 'DTU 40.35 et notices des fabricants' },
   { c: 'second', t: 'Carrelage de salle d’eau', x: 'Donnez une pente d’environ 1 à 2 % vers le siphon et posez une étanchéité sous carrelage dans les douches. Laissez des joints de fractionnement sur les grandes surfaces.', r: 'DTU 52.2' },
 ];
 const SAVOIR_QUIZ = [
@@ -2607,9 +2674,24 @@ const SAVOIR_QUIZ = [
   { q: 'Que faire si le béton est trop ferme sur chantier ?', o: ['Rajouter de l’eau', 'Utiliser un plastifiant', 'Rajouter du sable'], b: 1 },
   { q: 'Quelle est la longueur d’appui minimale d’un linteau de chaque côté ?', o: ['5 cm', '10 cm', '20 cm'], b: 2 },
   { q: 'Quelle pente minimale pour une toiture-terrasse ?', o: ['Environ 1 %', '0 %', '10 %'], b: 0 },
+  { q: 'Combien de parpaings 20 × 40 faut-il par m² de mur ?', o: ['8', '12,5', '20'], b: 1 },
+  { q: 'Combien pèse environ un mètre de HA 12 ?', o: ['0,4 kg', '0,89 kg', '1,6 kg'], b: 1 },
+  { q: 'En nivellement, la dénivelée est égale à…', o: ['lecture avant − lecture arrière', 'lecture arrière − lecture avant', 'lecture arrière + lecture avant'], b: 1 },
+  { q: 'Pour tracer un angle droit au ruban, on utilise le triangle…', o: ['2-3-4', '3-4-5', '5-5-5'], b: 1 },
+  { q: 'Combien de grades fait un angle droit ?', o: ['90', '100', '400'], b: 1 },
+  { q: 'Une pente de 2 % correspond à…', o: ['2 mm par mètre', '2 cm par mètre', '20 cm par mètre'], b: 1 },
+  { q: 'Le moment maximal d’une poutre sur deux appuis avec charge répartie vaut…', o: ['qL²/8', 'qL/2', 'qL²/2'], b: 0 },
+  { q: 'Doubler la hauteur d’une poutre rectangulaire multiplie sa rigidité par…', o: ['2', '4', '8'], b: 2 },
+  { q: '10 m de hauteur d’eau donnent environ…', o: ['0,1 bar', '1 bar', '10 bars'], b: 1 },
+  { q: 'Dans un planning, le chemin critique est…', o: ['la suite de tâches sans marge', 'le chemin d’accès au chantier', 'la tâche la plus chère'], b: 0 },
+  { q: 'Une terre creusée occupe plus de place : on parle de…', o: ['tassement', 'foisonnement', 'retrait'], b: 1 },
+  { q: 'Un béton armé pèse environ…', o: ['1,5 t/m³', '2,5 t/m³', '7,8 t/m³'], b: 1 },
+  { q: 'Que signifie la classe de boulon 8.8 ?', o: ['8 mm de diamètre, 8 cm de long', '800 MPa à la rupture, limite à 80 %', '8 boulons par platine'], b: 1 },
+  { q: 'Un remblai se compacte par couches d’environ…', o: ['5 cm', '20 à 30 cm', '1 m'], b: 1 },
 ];
 const jourDeLAnnee = (d = new Date()) => Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
-const savoirDuJour = (decalage = 0) => SAVOIR[(jourDeLAnnee() + d0Savoir() + decalage) % SAVOIR.length];
+// Pas de 37 : on passe d'un domaine à l'autre d'un jour à l'autre (topo, métré, BA, OGC…)
+const savoirDuJour = (decalage = 0) => SAVOIR[((jourDeLAnnee() + d0Savoir() + decalage) * 37) % SAVOIR.length];
 const d0Savoir = () => (new Date().getFullYear() * 7) % SAVOIR.length;
 const texteSavoir = (s) => `💡 Le savoir du jour (${SAVOIR_CATS[s.c][1]}) — ${s.t}\n${s.x}\nRéférence : ${s.r}.\n— Partagé depuis KOORDIN`;
 
@@ -2651,7 +2733,7 @@ function encartSavoir() {
 let filtreSavoir = 'tous';
 PAGES.savoir = async () => {
   const p = page(`
-    ${entete('Normes et conseils', 'BAEL, Eurocodes, mise en œuvre, sécurité : le savoir du chantier')}
+    ${entete('Normes et conseils', 'Béton armé, topographie, métré, OGC, RDM, géotechnique, VRD, hydraulique, charpente, sécurité…')}
     <div id="sv-jour" class="encart-savoir"></div>
     <div class="card">
       <div class="toolbar"><input class="input" id="sv-cherche" type="search" placeholder="Rechercher : enrobage, poteau, cure, escalier…" style="flex:1;min-width:0">
