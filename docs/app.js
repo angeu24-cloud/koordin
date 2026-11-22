@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.18';
+const VERSION = '3.19';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -505,11 +505,31 @@ const legende = (items) => `<div class="legend">${items.map(([lbl, v]) => `<span
 
 // ─────────────────────────────── Démarrage ───────────────────────────────
 
+const AMBIANCES = {
+  nuit: ['🌙', 'Nuit dorée', 'Sombre et or, le style KOORDIN', 'dark'],
+  jour: ['☀️', 'Jour', 'Clair, très lisible en plein soleil', 'light'],
+  bleu: ['🔷', 'Bleu pro', 'Blanc et bleu marine, sérieux', 'light'],
+  chantier: ['🦺', 'Chantier', 'Noir et jaune sécurité', 'dark'],
+};
 function appliquerTheme() {
-  let t = null;
-  try { t = localStorage.getItem('koordin-theme'); } catch { /* stockage indisponible */ }
-  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-  else if (t === 'auto') delete document.documentElement.dataset.theme;
+  let t = null, st = null;
+  try { t = localStorage.getItem('koordin-theme'); st = localStorage.getItem('koordin-style'); } catch { /* stockage indisponible */ }
+  const r = document.documentElement;
+  if (st && AMBIANCES[st]) { r.dataset.style = st; r.dataset.theme = AMBIANCES[st][3]; }
+  else {
+    delete r.dataset.style;
+    if (t === 'light' || t === 'dark') r.dataset.theme = t;
+    else delete r.dataset.theme;
+  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta && !S.entreprise?.couleur_marque) meta.content = { bleu: '#0a2a5e', chantier: '#111111', jour: '#f4f5f8' }[r.dataset.style] || '#0a0d16';
+}
+function choisirAmbiance(cle) {
+  try {
+    if (cle === 'auto') { localStorage.removeItem('koordin-style'); localStorage.setItem('koordin-theme', 'auto'); }
+    else { localStorage.setItem('koordin-style', cle); localStorage.setItem('koordin-theme', AMBIANCES[cle][3]); }
+  } catch { /* rien */ }
+  appliquerTheme();
 }
 
 async function demarrer() {
@@ -1272,6 +1292,59 @@ const TRACES = {
 const icone = (nom, taille = 22) => TRACES[nom]
   ? `<svg class="ic" width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACES[nom]}</svg>`
   : '';
+// ═══════════════════════════════ 3.9 : ICÔNES VIVANTES (illustrées, en couleur, animées) ═══════════════════════════════
+// Dessins 48×48. Les éléments « .k » / « .ks » prennent la couleur d'encre (bleu nuit), les classes « v-… » s'animent.
+const VIVES = {
+  dashboard: `<path d="M8 32A16 16 0 0 1 15.5 18.4" fill="none" stroke="#22C55E" stroke-width="6.5"/><path d="M16.5 17.9A16 16 0 0 1 31.5 17.9" fill="none" stroke="#FFC531" stroke-width="6.5"/><path d="M32.5 18.4A16 16 0 0 1 40 32" fill="none" stroke="#FF5A4E" stroke-width="6.5"/><g class="v-aiguille" style="transform-origin:24px 32px"><path class="ks" d="M24 32 31 21" stroke-width="3.2" stroke-linecap="round"/></g><circle class="k" cx="24" cy="32" r="4.2"/><circle cx="22.8" cy="30.8" r="1.3" fill="#fff" opacity=".6"/><rect x="13" y="39" width="22" height="4" rx="2" fill="#C9D3E0"/>`,
+  projets: `<rect x="5" y="40" width="38" height="3" rx="1.5" fill="#C9D3E0"/><rect x="6" y="20" width="16" height="21" rx="1.5" fill="#3D8BFF"/><rect x="6" y="20" width="16" height="4" rx="1.5" fill="#2F6FD6"/><path d="M9 27h4v4H9zM15 27h4v4h-4zM9 33h4v4H9zM15 33h4v4h-4z" fill="#DCEBFF"/><rect x="32" y="8" width="3.4" height="33" fill="#FFC531"/><path d="M32.3 13l2.8 4-2.8 4 2.8 4-2.8 4 2.8 4-2.8 4" fill="none" stroke="#E0A400" stroke-width="1.1"/><rect x="18" y="6" width="27" height="3.2" rx="1.2" fill="#FFC531"/><rect class="k" x="39" y="9" width="5" height="4" rx="1"/><rect x="31" y="9.5" width="5.5" height="4.5" rx="1" fill="#FF8A3D"/><g class="v-balance" style="transform-origin:26px 9px"><path class="ks" d="M26 9v8" stroke-width="1.3"/><rect x="23" y="17" width="6" height="4.5" rx="1" fill="#FF8A3D"/></g>`,
+  communiques: `<path d="M10 20h6l14-8v24l-14-8h-6a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3z" fill="#FF8A3D"/><path d="M30 12v24" stroke="#E5671B" stroke-width="3.4" stroke-linecap="round"/><rect class="k" x="12" y="28" width="5" height="9" rx="2"/><path d="M17.5 20.5l10-5.5" stroke="#fff" opacity=".5" stroke-width="2" stroke-linecap="round"/><path class="v-onde" d="M35 19a7 7 0 0 1 0 10" stroke="#FFC531" stroke-width="3" fill="none" stroke-linecap="round"/><path class="v-onde v-d2" d="M39 15a12.5 12.5 0 0 1 0 18" stroke="#FFC531" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+  'nouveau-rapport': `<rect x="7" y="8" width="26" height="33" rx="4" fill="#3D8BFF"/><rect x="10" y="12" width="20" height="26" rx="2" fill="#fff"/><rect x="14" y="5" width="12" height="7" rx="2.5" fill="#FFC531"/><path d="M14 19h12M14 24h12M14 29h7" stroke="#C9D3E0" stroke-width="2.4" stroke-linecap="round"/><g class="v-pulse" style="transform-origin:35px 35px"><circle cx="35" cy="35" r="9" fill="#22C55E"/><path d="M35 30.5v9M30.5 35h9" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>`,
+  rapports: `<rect x="8" y="8" width="27" height="34" rx="4" fill="#3D8BFF"/><rect x="11" y="12" width="21" height="27" rx="2" fill="#fff"/><rect x="15.5" y="5" width="12" height="7" rx="2.5" fill="#FFC531"/><path d="M15 19h13M15 24h13M15 29h8" stroke="#C9D3E0" stroke-width="2.4" stroke-linecap="round"/><g class="v-ecrit"><g transform="rotate(35 35 31)"><rect x="32" y="19" width="6" height="18" rx="1" fill="#FF8A3D"/><rect x="32" y="17" width="6" height="3" rx="1" fill="#FF5A4E"/><path d="M32 37h6l-3 5.5z" fill="#FFD9B0"/><path class="k" d="M34.1 40.4h1.8L35 42.5z"/></g></g>`,
+  pointage: `<rect class="k" x="20.5" y="4" width="7" height="5" rx="1.5"/><path class="ks" d="M35.5 10.5l3 3" stroke-width="3.2" stroke-linecap="round"/><circle cx="24" cy="27" r="16" fill="#FF5A4E"/><circle cx="24" cy="27" r="12.5" fill="#fff"/><path d="M24 16.5v2.2M24 35.3v2.2M13.5 27h2.2M32.3 27h2.2" stroke="#C9D3E0" stroke-width="2" stroke-linecap="round"/><path d="M24 27l5.5 3.2" stroke="#FF5A4E" stroke-width="2.4" stroke-linecap="round"/><g class="v-tourne" style="transform-origin:24px 27px"><path class="ks" d="M24 27v-8.5" stroke-width="2.6" stroke-linecap="round"/></g><circle class="k" cx="24" cy="27" r="2.1"/><path d="M11.5 21.5a13.5 13.5 0 0 1 6.5-7.8" stroke="#fff" opacity=".55" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+  achats: `<g class="v-roule"><rect x="15" y="11" width="10" height="10" rx="1.5" fill="#C98B4E"/><path d="M20 11v4" stroke="#F3D9B5" stroke-width="2"/><rect x="25" y="7.5" width="11" height="13.5" rx="1.5" fill="#3D8BFF"/><path d="M12.5 17h26l-3.2 11.5H14.8z" fill="#FF8A3D"/><path class="ks" d="M5 9h5l4 20h22l4-14H12" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle class="k" cx="17" cy="37" r="3.6"/><circle class="k" cx="33" cy="37" r="3.6"/><circle cx="17" cy="37" r="1.3" fill="#fff"/><circle cx="33" cy="37" r="1.3" fill="#fff"/></g>`,
+  compta: `<g transform="rotate(-12 20 20)"><rect x="5" y="11" width="29" height="17" rx="3" fill="#22C55E"/><rect x="8" y="14" width="23" height="11" rx="2" fill="none" stroke="#15803D" stroke-width="1.4"/><circle cx="19.5" cy="19.5" r="4.5" fill="#86EFAC"/></g><path d="M26 38v4a9 3.5 0 0 0 18 0v-4z" fill="#E0A400"/><ellipse cx="35" cy="38" rx="9" ry="3.5" fill="#FFC531"/><path d="M26 33v4a9 3.5 0 0 0 18 0v-4z" fill="#E0A400"/><ellipse cx="35" cy="33" rx="9" ry="3.5" fill="#FFC531"/><g class="v-saute"><path d="M26 27v4a9 3.5 0 0 0 18 0v-4z" fill="#E0A400"/><ellipse cx="35" cy="27" rx="9" ry="3.5" fill="#FFD966"/><ellipse cx="35" cy="27" rx="4.5" ry="1.6" fill="#E0A400" opacity=".6"/></g>`,
+  ventes: `<path d="M10 6h18l8 8v28H10z" fill="#fff"/><path class="ks" d="M10 6h18l8 8v28H10z" fill="none" stroke-width="2.4" stroke-linejoin="round"/><path class="ks" d="M28 6v8h8" fill="#DCEBFF" stroke-width="2.4" stroke-linejoin="round"/><path d="M15 20h12M15 25h15M15 30h7" stroke="#3D8BFF" stroke-width="2.4" stroke-linecap="round"/><g class="v-balance" style="transform-origin:40px 29px"><path d="M27 34l9-9h8v8l-9 9z" fill="#FFC531"/><path d="M27 34l9-9h2l-9.5 9.5z" fill="#fff" opacity=".35"/><circle cx="40" cy="29" r="1.7" fill="#fff"/></g>`,
+  stock: `<rect x="5" y="25" width="19" height="16" rx="1.5" fill="#C98B4E"/><rect x="24" y="25" width="19" height="16" rx="1.5" fill="#B57A40"/><path d="M14.5 25v6M33.5 25v6" stroke="#F3D9B5" stroke-width="3"/><rect x="8" y="34" width="7" height="4" rx="1" fill="#fff" opacity=".85"/><g class="v-saute"><rect x="14" y="8" width="20" height="17" rx="1.5" fill="#DDA15E"/><path d="M24 8v6" stroke="#F3D9B5" stroke-width="3"/><path d="M17 20h6" stroke="#fff" opacity=".7" stroke-width="2.2" stroke-linecap="round"/></g>`,
+  equipe: `<path d="M21 40a10 10 0 0 1 20 0z" fill="#3D8BFF"/><circle cx="31" cy="21" r="6" fill="#8D5524"/><path d="M24 19a7 7 0 0 1 14 0z" fill="#FF8A3D"/><rect x="22.5" y="18" width="17" height="2.6" rx="1.3" fill="#E5671B"/><g class="v-hoche" style="transform-origin:18px 32px"><circle cx="18" cy="25" r="7" fill="#C68642"/><path d="M10 23a8 8 0 0 1 16 0z" fill="#FFC531"/><rect x="8.5" y="22" width="19" height="3" rx="1.5" fill="#E0A400"/></g><path d="M6 44a12 12 0 0 1 24 0z" fill="#FF8A3D"/><path d="M8.6 39h18.8" stroke="#FFF3B0" stroke-width="2.2"/>`,
+  ia: `<path d="M22 6l3.5 10.5L36 20l-10.5 3.5L22 34l-3.5-10.5L8 20l10.5-3.5z" fill="#8B5CF6"/><path d="M22 12l1.8 5.5L29 20l-5.2 1.7L22 27l-1.8-5.3L15 20l5.2-2.5z" fill="#C4B5FD"/><path class="v-scintille" style="transform-origin:37px 37px" d="M37 30l1.8 5.2L44 37l-5.2 1.8L37 44l-1.8-5.2L30 37l5.2-1.8z" fill="#FFC531"/><circle class="v-scintille v-d2" style="transform-origin:38px 10px" cx="38" cy="10" r="2.6" fill="#14B8A6"/>`,
+  abonnement: `<rect x="5" y="11" width="38" height="26" rx="4" fill="#8B5CF6"/><rect x="5" y="17" width="38" height="5" fill="#2E1065"/><rect x="10" y="27" width="8" height="6" rx="1.5" fill="#FFC531"/><path d="M23 30h8" stroke="#DDD6FE" stroke-width="2.4" stroke-linecap="round"/><circle class="v-pulse" style="transform-origin:37px 30px" cx="37" cy="30" r="3.5" fill="#C4B5FD"/>`,
+  parametres: `<g class="v-roue" style="transform-origin:24px 24px"><path d="M37.1 20.8 L41.8 21.5 L41.8 26.5 L37.1 27.2 L35.5 31.0 L38.4 34.8 L34.8 38.4 L31.0 35.5 L27.2 37.1 L26.5 41.8 L21.5 41.8 L20.8 37.1 L17.0 35.5 L13.2 38.4 L9.6 34.8 L12.5 31.0 L10.9 27.2 L6.2 26.5 L6.2 21.5 L10.9 20.8 L12.5 17.0 L9.6 13.2 L13.2 9.6 L17.0 12.5 L20.8 10.9 L21.5 6.2 L26.5 6.2 L27.2 10.9 L31.0 12.5 L34.8 9.6 L38.4 13.2 L35.5 17.0Z" fill="#64748B" stroke="#64748B" stroke-width="2" stroke-linejoin="round"/><circle cx="24" cy="24" r="8" fill="#FF8A3D"/><circle cx="24" cy="24" r="3.5" fill="#fff"/></g>`,
+  console: `<path d="M24 5l15 6v11c0 9.5-6.4 16.8-15 20-8.6-3.2-15-10.5-15-20V11z" fill="#3D8BFF"/><path d="M24 5v37c8.6-3.2 15-10.5 15-20V11z" fill="#2F6FD6"/><path class="v-trace" pathLength="1" d="M16.5 23.5l5.5 5.5 9.5-10.5" stroke="#fff" stroke-width="3.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  materiel: `<path d="M6 16.5c3-5.5 14-6.5 18 0z" fill="#B57A40"/><path d="M4 16h22l-2 14H4z" fill="#FFC531"/><path d="M6 19h17" stroke="#fff" opacity=".45" stroke-width="2" stroke-linecap="round"/><path d="M27 20h8l6 7v7H27z" fill="#FF8A3D"/><path d="M30 23h4.6l3.6 4.2H30z" fill="#DCEBFF"/><rect class="k" x="3" y="30" width="40" height="5" rx="1.5"/><g class="v-roue" style="transform-origin:11px 37px"><circle class="k" cx="11" cy="37" r="5"/><path d="M11 33.5v7M7.5 37h7" stroke="#C9D3E0" stroke-width="1.8"/></g><g class="v-roue" style="transform-origin:34px 37px"><circle class="k" cx="34" cy="37" r="5"/><path d="M34 33.5v7M30.5 37h7" stroke="#C9D3E0" stroke-width="1.8"/></g>`,
+  securite: `<g class="v-hoche" style="transform-origin:24px 36px"><path d="M8 32a16 16 0 0 1 32 0z" fill="#FFC531"/><rect x="21" y="16.2" width="6" height="16" rx="2" fill="#FFD966"/><path d="M4 32h40v3a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" fill="#E0A400"/><path d="M13 27a11 11 0 0 1 5.5-8" stroke="#fff" opacity=".6" stroke-width="2.5" fill="none" stroke-linecap="round"/></g>`,
+  'mon-espace': `<path d="M10 44a14 14 0 0 1 28 0z" fill="#3D8BFF"/><path d="M20 30.5l4 5 4-5z" fill="#fff"/><g class="v-hoche" style="transform-origin:24px 30px"><circle cx="24" cy="22" r="8" fill="#C68642"/><path d="M15 20a9 9 0 0 1 18 0z" fill="#FFC531"/><rect x="13" y="19" width="22" height="3" rx="1.5" fill="#E0A400"/><circle class="k" cx="21" cy="24" r="1"/><circle class="k" cx="27" cy="24" r="1"/><path class="ks" d="M21.5 27a3.5 3.5 0 0 0 5 0" stroke-width="1.3" fill="none" stroke-linecap="round"/></g>`,
+  appels: `<rect x="4" y="13" width="28" height="22" rx="5" fill="#14B8A6"/><path d="M32 21l11-6v18l-11-6z" fill="#0F8F82"/><circle class="v-clignote" cx="12" cy="20" r="3" fill="#FF5A4E"/><rect x="10" y="27" width="15" height="3" rx="1.5" fill="#99F6E4"/><path d="M8 16.5h8" stroke="#fff" opacity=".4" stroke-width="2" stroke-linecap="round"/>`,
+  contrats: `<path d="M9 5h20l8 8v30H9z" fill="#fff"/><path class="ks" d="M9 5h20l8 8v30H9z" fill="none" stroke-width="2.4" stroke-linejoin="round"/><path class="ks" d="M29 5v8h8" fill="#FDE68A" stroke-width="2.4" stroke-linejoin="round"/><path d="M14 18h12M14 23h16" stroke="#C9D3E0" stroke-width="2.4" stroke-linecap="round"/><path class="v-trace" pathLength="1" d="M13 33c3-5 5-5 5 0s3 3 5-2 3 2 6 0" stroke="#3D8BFF" stroke-width="2.2" fill="none" stroke-linecap="round"/><g class="v-pulse" style="transform-origin:35px 37px"><circle cx="35" cy="37" r="7" fill="#FF5A4E"/><path d="M32 37l2 2 4-4" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`,
+  salaires: `<rect x="6" y="18" width="36" height="22" rx="3" fill="#E5671B"/><g class="v-sort"><rect x="11" y="8" width="26" height="16" rx="2" fill="#22C55E"/><circle cx="24" cy="15.5" r="3.6" fill="#86EFAC"/><path d="M14 11.5h3M31 19.5h3" stroke="#86EFAC" stroke-width="1.6" stroke-linecap="round"/></g><path d="M6 21l18 11 18-11v16a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z" fill="#FF8A3D"/><path d="M6 37l13-8M42 37l-13-8" stroke="#E5671B" stroke-width="1.5"/>`,
+  controles: `<rect x="6" y="8" width="25" height="33" rx="3.5" fill="#22C55E"/><rect x="9" y="12" width="19" height="26" rx="2" fill="#fff"/><rect class="k" x="13.5" y="5" width="10" height="6" rx="2"/><path d="M12.5 19.5l2 2 3.5-3.5M12.5 27.5l2 2 3.5-3.5" stroke="#22C55E" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 20h4M21 28h4" stroke="#C9D3E0" stroke-width="2.2" stroke-linecap="round"/><g class="v-loupe"><circle cx="33" cy="32" r="7" fill="#DCEBFF" fill-opacity=".85"/><circle class="ks" cx="33" cy="32" r="7" fill="none" stroke-width="3"/><path class="ks" d="M38 37l5 5" stroke-width="4" stroke-linecap="round"/><path d="M29.5 30a4 4 0 0 1 2.5-2.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/></g>`,
+  savoir: `<path d="M4 19c6-3 13-3 20 1v22c-7-4-14-4-20-1z" fill="#3D8BFF"/><path d="M44 19c-6-3-13-3-20 1v22c7-4 14-4 20-1z" fill="#2F6FD6"/><path d="M7 21c5-2 10-2 15 1v17c-5-3-10-3-15-1z" fill="#fff"/><path d="M41 21c-5-2-10-2-15 1v17c5-3 10-3 15-1z" fill="#EEF4FF"/><g class="v-brille" style="transform-origin:24px 10px"><circle cx="24" cy="10" r="6" fill="#FFC531"/><path d="M22 9.5a2.5 2.5 0 0 1 2-2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/><rect x="21.5" y="15" width="5" height="3.2" rx="1" fill="#94A3B8"/><path d="M24 1.5v1.6M15.5 10h1.6M30.9 10h1.6M18 4l1.1 1.1M30 4l-1.1 1.1" stroke="#FFC531" stroke-width="2" stroke-linecap="round"/></g>`,
+  cloche: `<g class="v-sonne" style="transform-origin:24px 7px"><path d="M12 33V22a12 12 0 0 1 24 0v11l3 4H9z" fill="#FFC531"/><path d="M16.5 22a8 8 0 0 1 5-7.5" stroke="#fff" opacity=".6" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="24" cy="41" r="4" fill="#E0A400"/></g><circle cx="24" cy="7" r="2.6" fill="#E0A400"/>`,
+  plus: `<rect class="v-pulse" style="transform-origin:14.5px 14.5px" x="7" y="7" width="15" height="15" rx="4.5" fill="#FF8A3D"/><rect class="v-pulse v-d2" style="transform-origin:33.5px 14.5px" x="26" y="7" width="15" height="15" rx="7.5" fill="#3D8BFF"/><rect class="v-pulse v-d3" style="transform-origin:14.5px 33.5px" x="7" y="26" width="15" height="15" rx="7.5" fill="#22C55E"/><rect class="v-pulse v-d4" style="transform-origin:33.5px 33.5px" x="26" y="26" width="15" height="15" rx="4.5" fill="#FFC531"/>`,
+  caisse: `<g class="v-saute"><circle cx="21" cy="11" r="6.5" fill="#FFC531"/><circle cx="21" cy="11" r="3.6" fill="#E0A400"/></g><rect x="5" y="15" width="37" height="26" rx="5" fill="#8B5E34"/><rect x="5" y="15" width="37" height="7" rx="3.5" fill="#A0703F"/><rect x="29" y="24" width="15" height="11" rx="3.5" fill="#6B4423"/><circle cx="35" cy="29.5" r="2.3" fill="#FFC531"/>`,
+  'mes-factures': `<path d="M11 5h25v37l-4.2-3-4.2 3-4.2-3-4.2 3-4.2-3L11 42z" fill="#fff"/><path class="ks" d="M11 5h25v37l-4.2-3-4.2 3-4.2-3-4.2 3-4.2-3L11 42z" fill="none" stroke-width="2.4" stroke-linejoin="round"/><path d="M16.5 13h14M16.5 19h14M16.5 25h8" stroke="#C9D3E0" stroke-width="2.4" stroke-linecap="round"/><g class="v-pulse" style="transform-origin:36px 35px"><rect x="28" y="29" width="16" height="12" rx="3" fill="#FF8A3D"/><rect x="31" y="26.5" width="6" height="3.5" rx="1" fill="#FF8A3D"/><circle cx="36" cy="35" r="3.3" fill="#fff"/><circle cx="36" cy="35" r="1.6" fill="#1E3A5F"/></g>`,
+  tendance: `<rect x="7" y="30" width="7" height="12" rx="2" fill="#93C5FD"/><rect x="18" y="24" width="7" height="18" rx="2" fill="#60A5FA"/><rect x="29" y="17" width="7" height="25" rx="2" fill="#3D8BFF"/><path class="v-trace" pathLength="1" d="M6 23l10-8 7 5 15-13" stroke="#22C55E" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 6.5h7v7" stroke="#22C55E" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+};
+// Couleur douce de la tuile derrière chaque dessin
+const FOND_VIF = {
+  dashboard: '#E8F8EE', projets: '#E3EEFF', communiques: '#FFEEDF', 'nouveau-rapport': '#E3EEFF', rapports: '#E3EEFF', pointage: '#FFE8E6',
+  achats: '#FFEEDF', compta: '#FFF5D6', ventes: '#FFF5D6', stock: '#F6EADB', equipe: '#E3EEFF', ia: '#EFE8FF', abonnement: '#EFE8FF',
+  parametres: '#EDF0F4', console: '#E3EEFF', materiel: '#FFF5D6', securite: '#FFF5D6', 'mon-espace': '#E3EEFF', appels: '#DDF7F3',
+  contrats: '#FFE8E6', caisse: '#F6EADB', 'mes-factures': '#FFEEDF', salaires: '#E8F8EE', controles: '#E8F8EE', savoir: '#FFF5D6', cloche: '#FFF5D6', plus: '#EDF0F4', tendance: '#E8F8EE',
+};
+const iconeVive = (nom, taille = 28) => VIVES[nom]
+  ? `<svg class="vv" width="${taille}" height="${taille}" viewBox="0 0 48 48" fill="none" aria-hidden="true">${VIVES[nom]}</svg>`
+  : '';
+const tuileVive = (nom, taille = 30) => VIVES[nom] ? `<span class="tv" style="--tv:${FOND_VIF[nom] || '#EDF0F4'}">${iconeVive(nom, taille)}</span>` : '';
+
+// Fait bouger le dessin d'une icône (au toucher, à l'ouverture d'une page)
+function animerIcone(el) {
+  if (!el || reduireAnimations()) return;
+  el.classList.remove('vv-go'); void el.offsetWidth; el.classList.add('vv-go');
+  clearTimeout(el._vv); el._vv = setTimeout(() => el.classList.remove('vv-go'), 1700);
+}
+document.addEventListener('pointerdown', (e) => { const a = e.target.closest?.('a, button'); if (a?.querySelector('.vv')) animerIcone(a); }, { passive: true });
+document.addEventListener('pointerover', (e) => { if (e.pointerType !== 'mouse') return; const a = e.target.closest?.('a, button'); if (a?.querySelector('.vv') && !a.contains(e.relatedTarget)) animerIcone(a); });
+const icoVive = (nom, taille, repli) => (VIVES[nom] ? iconeVive(nom, taille) : repli);
 const ICONE_EMOJI = { '🏗️': 'projets', '📈': 'tendance', '💰': 'compta', '📋': 'rapports', '📣': 'communiques', '👁️': 'oeil' };
 
 // Menu du bas : 4 raccourcis par métier + « Plus »
@@ -1301,7 +1374,7 @@ function ouvrirFeuilleMenu() {
     <div class="lanceur-tete"><div class="feuille-titre">Toutes les rubriques</div>
       <label class="lanceur-recherche">${icone('oeil', 16)}<input type="search" placeholder="Rechercher une rubrique…" aria-label="Rechercher une rubrique"></label></div>
     <div class="lanceur-corps">${groupes.map(([k, t, l]) => `<div class="lanceur-groupe"><div class="lanceur-titre">${esc(t)}</div>
-      <div class="feuille-grille">${l.map((m) => `<a class="feuille-item g-${k} ${m.r === actif ? 'active' : ''}" href="#/${m.r}" data-cherche="${esc(`${m.label} ${m.court}`.toLowerCase())}" style="--i:${n++}"><span class="feuille-ic">${icone(m.r, 24) || m.ico}</span><span>${esc(m.court)}</span></a>`).join('')}</div></div>`).join('')}</div>
+      <div class="feuille-grille">${l.map((m) => `<a class="feuille-item g-${k} ${m.r === actif ? 'active' : ''}" href="#/${m.r}" data-cherche="${esc(`${m.label} ${m.court}`.toLowerCase())}" style="--i:${n++}"><span class="feuille-ic ${VIVES[m.r] ? 'vive' : ''}" style="--tv:${FOND_VIF[m.r] || '#EDF0F4'}">${icoVive(m.r, 36, icone(m.r, 24) || m.ico)}</span><span>${esc(m.court)}</span></a>`).join('')}</div></div>`).join('')}</div>
   </div>`;
   const fermer = () => { ov.classList.add('sortie'); setTimeout(() => ov.remove(), 180); };
   ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.feuille-item')) fermer(); });
@@ -1320,7 +1393,7 @@ function menuVisible() {
 
 function construireInterface() {
   const items = menuVisible();
-  const lien = (m) => `<a class="nav-item g-${groupeDe(m.r)}" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${icone(m.r) || m.ico}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
+  const lien = (m) => `<a class="nav-item g-${groupeDe(m.r)}" href="#/${m.r}" data-nav="${m.r}"><span class="ico">${icoVive(m.r, 26, icone(m.r) || m.ico)}</span><span class="lbl-long">${esc(m.label)}</span><span class="lbl-court">${esc(m.court)}</span></a>`;
   const { principaux, autres } = separerNavigation(items);
   const p = S.profil;
   $('#root').innerHTML = `<div class="app">
@@ -1339,7 +1412,7 @@ function construireInterface() {
     </header>
     <nav class="sidebar">${GROUPES_MENU.map(([k, t]) => [t, items.filter((m) => groupeDe(m.r) === k)]).filter(([, l]) => l.length).map(([t, l]) => `<div class="nav-groupe">${esc(t)}</div>${l.map(lien).join('')}`).join('')}</nav>
     <main class="main" id="main"></main>
-    <nav class="bottom-nav"><span class="nav-bulle" aria-hidden="true"></span>${principaux.slice(0, 2).map(lien).join('')}<button type="button" class="nav-fab" id="nav-fab" aria-label="Créer : actions rapides"><span>${icone('ajouter', 26)}</span></button>${principaux.slice(2).map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icone('plus')}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
+    <nav class="bottom-nav"><span class="nav-bulle" aria-hidden="true"></span>${principaux.slice(0, 2).map(lien).join('')}<button type="button" class="nav-fab" id="nav-fab" aria-label="Créer : actions rapides"><span>${icone('ajouter', 26)}</span></button>${principaux.slice(2).map(lien).join('')}${autres.length ? `<button type="button" class="nav-item nav-plus" id="nav-plus" aria-label="Toutes les rubriques"><span class="ico">${icoVive('plus', 26, icone('plus'))}</span><span class="lbl-court">Plus</span></button>` : ''}</nav>
   </div>`;
   $('#nav-plus')?.addEventListener('click', ouvrirFeuilleMenu);
   $('#nav-fab')?.addEventListener('click', ouvrirFeuilleCreer);
@@ -1356,14 +1429,14 @@ function ouvrirMenuUtilisateur(e) {
   const m = document.createElement('div');
   m.className = 'menu';
   m.id = 'menu-user';
-  let theme = 'auto';
-  try { theme = localStorage.getItem('koordin-theme') || 'auto'; } catch { /* rien */ }
+  let style = 'auto';
+  try { style = localStorage.getItem('koordin-style') || (localStorage.getItem('koordin-theme') === 'light' ? 'jour' : localStorage.getItem('koordin-theme') === 'dark' ? 'nuit' : 'auto'); } catch { /* rien */ }
   m.innerHTML = `
     <div style="padding:8px 10px 10px;border-bottom:1px solid var(--border);margin-bottom:4px">
       <b style="font-size:13px">${esc(S.profil.nom)}</b><div class="muted" style="font-size:12px">${esc(afficherIdentifiant(S.profil.email))}</div></div>
-    <button data-theme-set="auto">${theme === 'auto' ? '●' : '○'} Thème automatique</button>
-    <button data-theme-set="light">${theme === 'light' ? '●' : '○'} Thème clair (chantier)</button>
-    <button data-theme-set="dark">${theme === 'dark' ? '●' : '○'} Thème sombre</button>
+    <div class="menu-titre">🎨 Apparence</div>
+    <div class="ambiances">${Object.entries(AMBIANCES).map(([k, [ic, nom]]) => `<button type="button" class="ambiance a-${k} ${style === k ? 'actif' : ''}" data-theme-set="${k}"><span class="ambiance-apercu"><i></i><i></i></span><b>${ic} ${nom}</b></button>`).join('')}</div>
+    <button data-theme-set="auto">${style === 'auto' ? '●' : '○'} Automatique (comme le téléphone)</button>
     ${S.installPrompt ? '<button id="m-install">📲 Installer l’application</button>' : ''}
     ${DEMO ? '' : '<button id="m-espace">👤 Mon espace</button>'}
     ${DEMO ? '' : '<button id="m-guide">🎓 Guide vidéo</button>'}
@@ -1373,12 +1446,10 @@ function ouvrirMenuUtilisateur(e) {
     <button id="m-out">${DEMO ? '🔄 Changer de rôle' : '🚪 Se déconnecter'}</button>`;
   document.body.appendChild(m);
   $$('[data-theme-set]', m).forEach((b) => (b.onclick = () => {
-    try {
-      localStorage.setItem('koordin-theme', b.dataset.themeSet);
-    } catch { /* rien */ }
-    appliquerTheme();
+    choisirAmbiance(b.dataset.themeSet);
     fermerPanneaux();
     naviguer();
+    if (b.dataset.themeSet !== 'auto') toast(`${AMBIANCES[b.dataset.themeSet][0]} Style « ${AMBIANCES[b.dataset.themeSet][1]} » appliqué. Vous pouvez en changer quand vous voulez (menu de votre profil).`);
   }));
   $('#m-install', m)?.addEventListener('click', async () => { S.installPrompt.prompt(); S.installPrompt = null; fermerPanneaux(); });
   $('#m-news', m)?.addEventListener('click', () => { fermerPanneaux(); afficherNouveautes(); });
@@ -1473,7 +1544,11 @@ async function naviguer() {
   const [page, id] = h.split('/');
   const autorise = page === 'projet' || (page === 'nouveau-rapport' && can(...ROLES_RAPPORT)) || menuVisible().some((m) => m.r === page);
   const cible = PAGES[page] && autorise ? page : 'dashboard';
-  $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (cible === 'projet' ? 'projets' : cible)));
+  $$('[data-nav]').forEach((a) => {
+    const actif = a.dataset.nav === (cible === 'projet' ? 'projets' : cible);
+    if (actif && !a.classList.contains('active') && a.closest('.bottom-nav')) setTimeout(() => animerIcone(a), 60);
+    a.classList.toggle('active', actif);
+  });
   const plus = $('#nav-plus');
   if (plus) plus.classList.toggle('active', !$$('.bottom-nav [data-nav]').some((a) => a.classList.contains('active')));
   placerBulle();
@@ -1546,7 +1621,7 @@ function page(html) {
   return $('#main .page');
 }
 const entete = (titre, sousTitre = '', actions = '') => `<div class="page-head"><div><h1 class="page-title">${titre}</h1>${sousTitre ? `<p class="page-sub">${sousTitre}</p>` : ''}</div><div class="page-actions">${actions}</div></div>`;
-const kpi = (label, valeur, pied = '', cls = '', ico = '') => `<div class="kpi ${cls}">${ico ? `<div class="kpi-ico" aria-hidden="true">${ICONE_EMOJI[ico] ? icone(ICONE_EMOJI[ico], 20) : ico}</div>` : ''}<div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
+const kpi = (label, valeur, pied = '', cls = '', ico = '') => `<div class="kpi ${cls}">${ico ? `<div class="kpi-ico ${VIVES[ICONE_EMOJI[ico]] ? 'vive' : ''}" aria-hidden="true" style="--tv:${FOND_VIF[ICONE_EMOJI[ico]] || '#EDF0F4'}">${ICONE_EMOJI[ico] ? icoVive(ICONE_EMOJI[ico], 28, icone(ICONE_EMOJI[ico], 20)) : ico}</div>` : ''}<div class="kpi-label">${esc(label)}</div><div class="kpi-value">${valeur}</div>${pied ? `<div class="kpi-foot">${pied}</div>` : ''}</div>`;
 
 function bonjour() {
   const h = new Date().getHours();
@@ -1583,7 +1658,7 @@ function actionsDisponibles() {
     { r: 'ia', ic: 'ia', t: 'Assistant IA', s: 'Poser une question' },
   ].filter((a) => (a.ok ?? true) && (visibles.has(a.r) || (a.r === 'nouveau-rapport' && can(...ROLES_RAPPORT))));
 }
-const tuileAction = (a, i = 0) => `<a class="ar-tuile g-${groupeDe(a.r)}" href="#/${a.r}" ${a.attr || ''} style="--i:${i}"><span class="ar-ic">${icone(a.ic, 22)}</span><b>${esc(a.t)}</b><small>${esc(a.s)}</small></a>`;
+const tuileAction = (a, i = 0) => { const n = VIVES[a.r] ? a.r : a.ic; return `<a class="ar-tuile g-${groupeDe(a.r)}" href="#/${a.r}" ${a.attr || ''} style="--i:${i}"><span class="ar-ic ${VIVES[n] ? 'vive' : ''}" style="--tv:${FOND_VIF[n] || '#EDF0F4'}">${icoVive(n, 34, icone(a.ic, 22))}</span><b>${esc(a.t)}</b><small>${esc(a.s)}</small></a>`; };
 
 function jauge(valeur, libelle, prevu = null) {
   const v = Math.max(0, Math.min(100, Math.round(num(valeur))));
@@ -2065,8 +2140,11 @@ function kokoParler(texte, { test = false } = {}) {
   if (synthe.speaking || synthe.pending) { synthe.cancel(); setTimeout(lancer, 150); } else lancer();
   // Si la voix ne démarre pas, on explique pourquoi (une seule fois par session, ou à la demande)
   setTimeout(() => {
-    if (demarre || numero !== essaiVoix || (KOKO.aideVoix && !test)) return;
+    let dejaVu = false;
+    try { dejaVu = localStorage.getItem('koordin-koko-aide-voix') === '1'; } catch { /* rien */ }
+    if (demarre || numero !== essaiVoix || ((KOKO.aideVoix || dejaVu) && !test)) return;
     KOKO.aideVoix = true;
+    try { localStorage.setItem('koordin-koko-aide-voix', '1'); } catch { /* rien */ }
     const aucune = !(synthe.getVoices?.() || []).some((v) => /^fr/i.test(v.lang));
     kokoDire(aucune
       ? 'Je n’ai pas de voix française sur ce téléphone 😕 Installez « Speech Services by Google » depuis le Play Store, puis réessayez.'

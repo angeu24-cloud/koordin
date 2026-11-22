@@ -1,10 +1,10 @@
 {
-  "version": "3.18",
-  "date": "2026-11-21",
+  "version": "3.19",
+  "date": "2026-11-22",
   "nouveautes": [
-    "✨ Correcteur des rapports : accents oubliés (béton, maçonnerie, ferraillage…), abréviations (pb, ds, bcp…), ponctuation et majuscules. Bouton « Corriger mon texte », et correction automatique à l’envoi.",
-    "✏️ La Direction et la Coordination peuvent corriger le texte d’un rapport. Le texte d’origine du technicien reste consultable.",
-    "📄 Rapport client : relecture avant l’envoi (textes déjà corrigés et modifiables), et un résumé de la période écrit automatiquement.",
-    "📦 Un stock par chantier (3.17)."
+    "🎨 Nouveau : choisissez le style de l’application (touchez votre photo de profil en haut à droite → Apparence) : 🌙 Nuit dorée, ☀️ Jour, 🔷 Bleu pro ou 🦺 Chantier.",
+    "✨ Icônes illustrées en couleur, qui bougent quand on les touche : la grue balance sa charge, le chrono tourne, le camion roule…",
+    "🧒 Koko plus discret : le message sur la voix ne s’affiche plus qu’une seule fois.",
+    "✏️ Correcteur des rapports et relecture avant l’envoi au client (3.18)."
   ]
 }
