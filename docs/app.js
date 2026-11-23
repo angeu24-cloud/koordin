@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.19';
+const VERSION = '3.20';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -1643,7 +1643,8 @@ const reduireAnimations = () => window.matchMedia?.('(prefers-reduced-motion: re
 function actionsDisponibles() {
   const visibles = new Set(menuVisible().map((m) => m.r));
   return [
-    { r: 'nouveau-rapport', ic: 'nouveau-rapport', t: 'Rapport du jour', s: 'Travaux et photos', ok: can(...ROLES_RAPPORT) },
+    { r: 'nouveau-rapport', ic: 'nouveau-rapport', t: 'Rapport du jour', s: 'Travaux et photos', ok: can(...ROLES_RAPPORT) && !can('direction') },
+    { r: 'rapports', ic: 'rapports', t: 'Rapport du soir', s: 'Pour le maître d’ouvrage', attr: 'data-rapport-soir', ok: can('direction', 'coordinateur') },
     { r: 'appels', ic: 'appels', t: 'Appel vidéo', s: 'Chantier en direct' },
     { r: 'pointage', ic: 'pointage', t: 'Pointage', s: 'Présences du jour' },
     { r: 'controles', ic: 'controles', t: 'Contrôle', s: 'Vérifier une étape' },
@@ -4260,6 +4261,251 @@ function rapportClient(projet) {
   };
 }
 
+// ═══════════════════════════════ 3.20 : RAPPORT DU SOIR AU MAÎTRE D'OUVRAGE ═══════════════════════════════
+// Chaque soir : les rapports des équipes, les photos, les besoins urgents et les prévisions deviennent
+// un rapport rédigé, relu par la Direction, puis envoyé au maître d'ouvrage en PDF.
+// Rédaction professionnelle par l'IA (Claude) quand elle est activée, sinon rédaction automatique.
+const lignesSaisies = (t) => String(t || '').split('\n').map((x) => x.replace(/^[-–•]\s*/, '').trim()).filter(Boolean);
+const texteSoigne = (t) => corrigerTexte(t || '').texte;
+const jourComplet = (iso) => parseDay(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+async function donneesRapportSoir(projet, date) {
+  const fin = new Date(parseDay(date)); fin.setDate(fin.getDate() + 4);
+  const [rapports, lots, taches, galerie, vp] = await Promise.all([
+    q(sb.from('rapports').select('id, lot_id, meteo, effectif, travaux, incidents, besoins, avancement, statut, created_at').eq('projet_id', projet.id).eq('date_rapport', date).neq('statut', 'rejete').order('created_at')),
+    q(sb.from('lots').select('id, nom, avancement').eq('projet_id', projet.id).order('ordre')),
+    sb.from('taches').select('nom, lot_id, date_debut, date_fin, avancement').eq('projet_id', projet.id).order('date_debut').then((r) => r.data || [], () => []),
+    sb.rpc('galerie_projet', { p_projet: projet.id }).then((r) => r.data || [], () => []),
+    sb.from('v_projets').select('avancement, avancement_attendu, jours_de_retard, date_fin_prevue').eq('id', projet.id).single().then((r) => r.data || {}, () => ({})),
+  ]);
+  const photos = galerie.filter((g) => new Date(g.date_photo).toLocaleDateString('sv-SE') === date).slice(0, 12);
+  const prochaines = taches.filter((t) => num(t.avancement) < 100 && t.date_fin >= date && t.date_debut <= fin.toLocaleDateString('sv-SE')).slice(0, 6);
+  return { rapports, lots, prochaines, photos, avancement: vp };
+}
+
+// Rédaction automatique (gratuite, sans internet) : phrases types + correcteur
+function redactionAutomatique(projet, date, d, consignes) {
+  const nomLot = (id) => d.lots.find((l) => l.id === id)?.nom || '';
+  const parLot = new Map();
+  d.rapports.forEach((r) => { const k = nomLot(r.lot_id) || 'Travaux généraux'; parLot.set(k, [...(parLot.get(k) || []), texteSoigne(r.travaux)]); });
+  const travaux = [...parLot].map(([intitule, textes]) => ({ intitule, description: textes.join(' ') }));
+  const effectif = d.rapports.reduce((s, r) => s + (num(r.effectif) || 0), 0);
+  const meteos = [...new Set(d.rapports.map((r) => r.meteo).filter(Boolean))];
+  const av = d.avancement || {};
+  const synthese = [
+    `Nous vous prions de trouver ci-après le compte rendu de la journée du ${jourComplet(date)} sur le chantier « ${projet.nom} ».`,
+    d.rapports.length ? `Nos équipes sont intervenues sur ${travaux.length > 1 ? `${travaux.length} postes : ${travaux.map((t) => t.intitule.toLowerCase()).join(', ')}` : `le poste ${travaux[0].intitule.toLowerCase()}`}.` : 'Aucune activité n’a été enregistrée sur le chantier ce jour.',
+    av.avancement != null ? `L’avancement global du chantier s’établit à ${num(av.avancement)} %${av.avancement_attendu != null ? `, pour un objectif de ${num(av.avancement_attendu)} % à cette date` : ''}.` : '',
+  ].filter(Boolean).join(' ');
+  return {
+    objet: `Rapport journalier du ${parseDay(date).toLocaleDateString('fr-FR')} — ${projet.nom}`,
+    synthese,
+    conditions: [meteos.length ? `Météo : ${meteos.join(', ').toLowerCase()}.` : '', effectif ? `Effectif présent sur le chantier : ${effectif} personne${effectif > 1 ? 's' : ''}.` : ''].filter(Boolean).join(' ') || 'Conditions de travail normales.',
+    travaux,
+    points_attention: d.rapports.flatMap((r) => lignesSaisies(r.incidents)).map(texteSoigne),
+    besoins_urgents: d.rapports.flatMap((r) => lignesSaisies(r.besoins)).map(texteSoigne),
+    previsions: d.prochaines.length ? `Pour les prochains jours, sont prévus : ${d.prochaines.map((t) => t.nom.toLowerCase()).join(', ')}.` : 'Poursuite des travaux en cours selon le planning.',
+    legendes_photos: d.photos.map((p) => texteSoigne(p.legende || 'Vue du chantier')),
+    conclusion: 'Nous restons à votre entière disposition pour tout complément d’information.',
+    mot_direction: consignes ? texteSoigne(consignes) : '',
+  };
+}
+
+async function redactionIA(projet, date, d, consignes, photosChoisies) {
+  const nomLot = (id) => d.lots.find((l) => l.id === id)?.nom || '';
+  const { data: signes } = photosChoisies.length ? await sb.storage.from('photos-chantier').createSignedUrls(photosChoisies.map((p) => p.chemin), 3600) : { data: [] };
+  const urls = (signes || []).map((x) => x.signedUrl).filter(Boolean);
+  const donnees = {
+    entreprise: S.entreprise?.nom, date: jourComplet(date),
+    chantier: { nom: projet.nom, maitre_ouvrage: projet.client || null, lieu: projet.localisation || null, avancement_global: d.avancement?.avancement ?? null, avancement_prevu_a_date: d.avancement?.avancement_attendu ?? null, fin_prevue: d.avancement?.date_fin_prevue || projet.date_fin_prevue || null, jours_de_retard: d.avancement?.jours_de_retard || 0 },
+    rapports_des_equipes: d.rapports.map((r) => ({ lot: nomLot(r.lot_id) || null, meteo: r.meteo, effectif: r.effectif, travaux: r.travaux, incidents: r.incidents, besoins: r.besoins, avancement_du_lot_declare: r.avancement })),
+    avancement_par_lot: d.lots.map((l) => ({ lot: l.nom, avancement: l.avancement })),
+    previsions_planning: d.prochaines.map((t) => ({ tache: t.nom, lot: nomLot(t.lot_id) || null, du: t.date_debut, au: t.date_fin })),
+    legendes_des_equipes_pour_les_photos: photosChoisies.map((p) => p.legende || null),
+    consignes_de_la_direction: consignes || null,
+  };
+  const { data: rep, error } = await sb.functions.invoke('koordin-ia', { body: { rapport_soir: { photos: urls, donnees } } });
+  if (error) {
+    let msg = '';
+    try { msg = (await error.context?.json())?.erreur || ''; } catch { /* rien */ }
+    throw new Error(msg || 'La rédaction IA n’est pas encore activée (clé Anthropic à ajouter dans Supabase).');
+  }
+  if (rep?.erreur) throw new Error(rep.erreur);
+  if (!rep?.rapport) throw new Error('Réponse vide de l’assistant.');
+  return { ...rep.rapport, mot_direction: '' };
+}
+
+async function choisirChantierRapportSoir() {
+  const projets = (await listeProjets()).filter((x) => x.statut !== 'termine');
+  if (!projets.length) return toast('Aucun chantier en cours.', 'warn');
+  if (projets.length === 1) return ouvrirRapportSoir(await q(sb.from('projets').select('*').eq('id', projets[0].id).single()));
+  ouvrirModale({
+    titre: '🌙 Rapport du soir', boutonOk: 'Continuer',
+    corps: F.select('projet', 'Pour quel chantier ?', projets.map((x) => [x.id, x.nom]), '', { required: true, vide: '— Choisir —', full: true }),
+    onSubmit: async (d) => { ouvrirRapportSoir(await q(sb.from('projets').select('*').eq('id', d.projet).single())); },
+  });
+}
+
+async function ouvrirRapportSoir(projet, date = todayISO()) {
+  const m = ouvrirModale({ titre: `🌙 Rapport du soir · ${projet.nom}`, large: true, corps: loading() });
+  const corps = $('.modal-body', m.el);
+  let d, contenu = null, choix = new Set(), iaUtilisee = false, existant = null;
+  const charger = async () => {
+    corps.innerHTML = loading();
+    [d, existant] = await Promise.all([
+      donneesRapportSoir(projet, date),
+      sb.from('rapports_moa').select('*').eq('projet_id', projet.id).eq('date_rapport', date).maybeSingle().then((r) => r.data, () => null),
+    ]);
+    choix = new Set(d.photos.slice(0, 8).map((p) => p.chemin));
+    if (existant?.contenu?.objet) { contenu = existant.contenu; iaUtilisee = existant.redige_par_ia; if (existant.photos?.length) choix = new Set(existant.photos); return editeur(); }
+    preparation();
+  };
+  const urlPhotos = async () => urlsPhotos(d.photos.map((p) => p.chemin));
+  const preparation = async () => {
+    const url = await urlPhotos();
+    const besoins = d.rapports.filter((r) => r.besoins?.trim()).length, incidents = d.rapports.filter((r) => r.incidents?.trim()).length;
+    corps.innerHTML = `<div class="rs-entete">
+        <label class="field">Journée du<input class="input" type="date" id="rs-date" value="${date}" max="${todayISO()}"></label>
+        <div class="rs-compte"><span>📋 <b>${d.rapports.length}</b> rapport${d.rapports.length > 1 ? 's' : ''} des équipes</span><span>📷 <b>${d.photos.length}</b> photo${d.photos.length > 1 ? 's' : ''}</span><span>⚠️ <b>${incidents}</b> incident${incidents > 1 ? 's' : ''}</span><span>🚨 <b>${besoins}</b> besoin${besoins > 1 ? 's' : ''}</span></div></div>
+      ${d.rapports.length ? '' : '<div class="notice warn">Aucun rapport des équipes pour cette journée. Vous pouvez quand même préparer un rapport court.</div>'}
+      ${d.photos.length ? `<div class="field">Photos à joindre <small class="muted">(8 au maximum, touchez pour retirer)</small></div><div class="rs-photos">${d.photos.map((p) => `<button type="button" class="rs-photo ${choix.has(p.chemin) ? 'choisie' : ''}" data-ch="${esc(p.chemin)}"><img src="${esc(url(p.chemin) || '')}" alt="" loading="lazy"><span>✓</span></button>`).join('')}</div>` : ''}
+      ${F.area('consignes', 'Informations ou consignes à ajouter (facultatif)', '', { placeholder: 'Ex. Insister sur la livraison du ciment prévue demain matin ; rappeler la visite de chantier de jeudi.' })}
+      <div class="rs-redaction">
+        <button type="button" class="btn primary" id="rs-ia">✨ Rédaction professionnelle (IA)</button>
+        <button type="button" class="btn" id="rs-auto">📝 Rédaction automatique</button>
+      </div>
+      <p class="hint">L’IA rédige un texte soigné, sans fautes, à partir des rapports et des photos. La rédaction automatique, gratuite et immédiate, met les informations en forme. Vous relisez et modifiez toujours avant l’envoi.</p>`;
+    activerCorrecteurNavigateur(corps);
+    $('#rs-date', corps).onchange = (e) => { date = e.target.value || todayISO(); charger(); };
+    $$('.rs-photo', corps).forEach((b) => (b.onclick = () => {
+      const c = b.dataset.ch;
+      if (choix.has(c)) choix.delete(c); else if (choix.size < 8) choix.add(c); else return toast('8 photos au maximum.', 'warn');
+      b.classList.toggle('choisie', choix.has(c));
+    }));
+    const consignes = () => $('[name="consignes"]', corps).value.trim();
+    const photosChoisies = () => d.photos.filter((p) => choix.has(p.chemin));
+    $('#rs-auto', corps).onclick = () => { contenu = redactionAutomatique(projet, date, { ...d, photos: photosChoisies() }, consignes()); iaUtilisee = false; editeur(); };
+    $('#rs-ia', corps).onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = '✨ Rédaction en cours… (30 secondes environ)';
+      try { contenu = await redactionIA(projet, date, d, consignes(), photosChoisies()); iaUtilisee = true; editeur(); }
+      catch (err) {
+        b.disabled = false; b.textContent = '✨ Rédaction professionnelle (IA)';
+        toast(`${err.message} J’utilise la rédaction automatique à la place.`, 'warn', 9000);
+        contenu = redactionAutomatique(projet, date, { ...d, photos: photosChoisies() }, consignes()); iaUtilisee = false; editeur();
+      }
+    };
+  };
+  // Relecture : chaque partie est modifiable
+  const editeur = async () => {
+    const photos = d.photos.filter((p) => choix.has(p.chemin));
+    const url = await urlPhotos();
+    const c = contenu;
+    corps.innerHTML = `<div class="notice ${iaUtilisee ? 'ok' : ''}">${iaUtilisee ? '✨ Rédigé par l’IA.' : '📝 Rédaction automatique.'} <b>Relisez et modifiez si besoin</b> avant de créer le PDF.${existant ? ` <small>(enregistré ${ago(existant.modifie_le)})</small>` : ''}</div>
+      <div class="rs-form">
+        <label class="field full">Objet<input class="input" data-f="objet" value="${esc(c.objet || '')}"></label>
+        <label class="field full">Synthèse de la journée<textarea class="input" data-f="synthese" rows="4">${esc(c.synthese || '')}</textarea></label>
+        <label class="field full">Conditions de travail<textarea class="input" data-f="conditions" rows="2">${esc(c.conditions || '')}</textarea></label>
+        <div class="field full">Travaux réalisés</div>
+        <div id="rs-travaux">${(c.travaux || []).map((t, i) => `<div class="rs-trav"><input class="input" data-t="${i}" data-k="intitule" value="${esc(t.intitule)}"><textarea class="input" data-t="${i}" data-k="description" rows="3">${esc(t.description)}</textarea></div>`).join('')}</div>
+        <label class="field full">Points d’attention <small class="muted">(un par ligne)</small><textarea class="input" data-f="points_attention" rows="3">${esc((c.points_attention || []).join('\n'))}</textarea></label>
+        <label class="field full">🚨 Besoins urgents et décisions attendues <small class="muted">(un par ligne)</small><textarea class="input" data-f="besoins_urgents" rows="3">${esc((c.besoins_urgents || []).join('\n'))}</textarea></label>
+        <label class="field full">Prévisions<textarea class="input" data-f="previsions" rows="2">${esc(c.previsions || '')}</textarea></label>
+        ${c.mot_direction !== undefined ? `<label class="field full">Information de la direction <small class="muted">(facultatif)</small><textarea class="input" data-f="mot_direction" rows="2">${esc(c.mot_direction || '')}</textarea></label>` : ''}
+        ${photos.length ? `<div class="field full">Légendes des photos</div><div class="rs-legendes">${photos.map((p, i) => `<div class="rs-leg"><img src="${esc(url(p.chemin) || '')}" alt=""><input class="input" data-leg="${i}" value="${esc((c.legendes_photos || [])[i] || texteSoigne(p.legende || 'Vue du chantier'))}"></div>`).join('')}</div>` : ''}
+        <label class="field full">Conclusion<textarea class="input" data-f="conclusion" rows="2">${esc(c.conclusion || '')}</textarea></label>
+      </div>
+      <div class="rs-actions"><button type="button" class="btn ghost" id="rs-retour">↩️ Refaire la rédaction</button><button type="button" class="btn" id="rs-corriger">✨ Corriger les fautes</button><button type="button" class="btn" id="rs-sauver">💾 Enregistrer</button><button type="button" class="btn primary" id="rs-pdf">📄 Créer le PDF pour le maître d’ouvrage</button></div>`;
+    activerCorrecteurNavigateur(corps);
+    const lire = () => {
+      const val = (k) => $(`[data-f="${k}"]`, corps)?.value.trim() ?? '';
+      const travaux = (c.travaux || []).map((_, i) => ({ intitule: $(`[data-t="${i}"][data-k="intitule"]`, corps).value.trim(), description: $(`[data-t="${i}"][data-k="description"]`, corps).value.trim() })).filter((t) => t.intitule || t.description);
+      contenu = { objet: val('objet'), synthese: val('synthese'), conditions: val('conditions'), travaux, points_attention: lignesSaisies(val('points_attention')), besoins_urgents: lignesSaisies(val('besoins_urgents')), previsions: val('previsions'), mot_direction: val('mot_direction'), conclusion: val('conclusion'), legendes_photos: photos.map((_, i) => $(`[data-leg="${i}"]`, corps)?.value.trim() || '') };
+      return contenu;
+    };
+    const sauver = async (envoi = false) => {
+      const ligne = { projet_id: projet.id, date_rapport: date, contenu: lire(), photos: photos.map((p) => p.chemin), redige_par_ia: iaUtilisee, modifie_le: new Date().toISOString(), ...(envoi ? { envoye_le: new Date().toISOString() } : {}) };
+      try { existant = await q(sb.from('rapports_moa').upsert(ligne, { onConflict: 'projet_id,date_rapport' }).select().single()); return true; }
+      catch (e) { toast(/rapports_moa/.test(String(e?.message)) ? 'L’enregistrement nécessite la mise à jour 3.20 de la base de données. Le PDF reste possible.' : messageErreur(e), 'warn', 7000); return false; }
+    };
+    $('#rs-retour', corps).onclick = () => preparation();
+    $('#rs-corriger', corps).onclick = () => { const n = corrigerChamps($$('textarea, input.input', corps).filter((x) => x.type !== 'date')); toast(n ? `✨ ${n} correction${n > 1 ? 's' : ''} faite${n > 1 ? 's' : ''}.` : '✅ Rien à corriger.'); };
+    $('#rs-sauver', corps).onclick = async () => { if (await sauver()) toast('💾 Rapport enregistré.'); };
+    $('#rs-pdf', corps).onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Mise en page…';
+      try {
+        await sauver(true);
+        const imgs = (await Promise.all(photos.map(async (p, i) => { const u = url(p.chemin); const im = u ? await imagePourPDF(u, 4 / 3) : null; return im ? { ...im, legende: contenu.legendes_photos[i] } : null; }))).filter(Boolean);
+        const blob = await fabriquerPDFRapportSoir(projet, date, contenu, imgs);
+        const nom = `Rapport-journalier-${projet.nom}-${parseDay(date).toLocaleDateString('fr-FR')}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '.pdf';
+        presenterPDF(blob, nom, `Bonjour, veuillez trouver ci-joint le rapport journalier du ${parseDay(date).toLocaleDateString('fr-FR')} pour le chantier « ${projet.nom} ». Cordialement, ${S.profil.nom} — ${S.entreprise?.nom || ''}`);
+      } catch (err) { console.error(err); toast(messageErreur(err), 'err'); }
+      finally { b.disabled = false; b.textContent = '📄 Créer le PDF pour le maître d’ouvrage'; }
+    };
+  };
+  try { await charger(); } catch (e) { corps.innerHTML = empty('⚠️', messageErreur(e)); }
+}
+
+async function fabriquerPDFRapportSoir(projet, date, c, images) {
+  const JsPDF = await chargerJsPDF();
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const L = 210, H = 297, M = 16, LU = L - 2 * M, NUIT = [17, 21, 33], GRIS = [100, 108, 128], OR = couleurPDF();
+  await enteteDocumentPDF(doc, 'RAPPORT JOURNALIER', jourComplet(date), `Chantier : ${projet.nom}`);
+  let y = 46;
+  const police = (t, g = false, coul = NUIT) => { doc.setFont('helvetica', g ? 'bold' : 'normal'); doc.setFontSize(t); doc.setTextColor(...coul); };
+  const place = (h) => { if (y + h > H - 20) { doc.addPage(); y = 20; } };
+  const para = (t, { taille = 10.5, coul = NUIT, gras = false, retrait = 0, inter = 5 } = {}) => {
+    police(taille, gras, coul);
+    doc.splitTextToSize(textePDF(t), LU - retrait).forEach((l) => { place(inter); doc.text(l, M + retrait, y); y += inter; });
+  };
+  let n = 0;
+  const titre = (t) => { place(14); y += 3; n++; police(11.5, true, OR); doc.text(textePDF(`${n}. ${t}`), M, y); y += 2; doc.setDrawColor(...OR); doc.setLineWidth(0.4); doc.line(M, y, M + 22, y); y += 6; };
+  const puces = (l, vide) => { if (!l?.length) return para(vide, { coul: GRIS }); l.forEach((x) => { para(`-  ${x}`, { retrait: 2 }); y += 1; }); };
+  // Destinataire et objet
+  police(10, false, GRIS); doc.text(textePDF(`À l’attention de : ${projet.client || 'Monsieur le Maître d’ouvrage'}`), M, y); y += 5.5;
+  if (projet.localisation) { doc.text(textePDF(`Lieu : ${projet.localisation}`), M, y); y += 5.5; }
+  police(11, true); doc.splitTextToSize(textePDF(`Objet : ${c.objet}`), LU).forEach((l) => { doc.text(l, M, y); y += 5.5; });
+  y += 2;
+  titre('Synthèse de la journée'); para(c.synthese);
+  if (c.mot_direction) { titre('Information de la direction'); para(c.mot_direction); }
+  titre('Conditions de travail'); para(c.conditions);
+  titre('Travaux réalisés');
+  if (!c.travaux?.length) para('Aucun travail réalisé ce jour.', { coul: GRIS });
+  c.travaux?.forEach((t) => { place(10); para(t.intitule, { gras: true, taille: 10.5 }); para(t.description, { retrait: 0 }); y += 2; });
+  titre('Points d’attention'); puces(c.points_attention, 'Aucun point particulier à signaler.');
+  titre('Besoins urgents et décisions attendues');
+  if (c.besoins_urgents?.length) {
+    const h = c.besoins_urgents.reduce((s, x) => s + doc.splitTextToSize(textePDF(`-  ${x}`), LU - 10).length * 5 + 1, 6);
+    place(h); doc.setFillColor(255, 244, 228); doc.setDrawColor(...OR); doc.roundedRect(M, y - 4, LU, h, 2, 2, 'FD');
+    y += 1; c.besoins_urgents.forEach((x) => { para(`-  ${x}`, { retrait: 4, gras: true }); y += 1; }); y += 3;
+  } else para('Aucun besoin urgent ce jour.', { coul: GRIS });
+  titre('Prévisions'); para(c.previsions);
+  if (images.length) {
+    const lp = (LU - 6) / 2, hp = lp * 0.75;
+    place(hp + 30);
+    titre('Photos de la journée');
+    for (let i = 0; i < images.length; i += 2) {
+      place(hp + 12);
+      images.slice(i, i + 2).forEach((im, j) => {
+        const x = M + j * (lp + 6);
+        doc.addImage(im.data, 'JPEG', x, y, lp, hp);
+        police(8.5, false, GRIS);
+        doc.splitTextToSize(textePDF(im.legende || ''), lp).slice(0, 2).forEach((l, k) => doc.text(l, x, y + hp + 4.5 + k * 3.8));
+      });
+      y += hp + 14;
+    }
+  }
+  y += 4; para(c.conclusion);
+  place(24); y += 6;
+  police(10, false, GRIS); doc.text(textePDF(`Fait le ${parseDay(date).toLocaleDateString('fr-FR')}`), M, y); y += 6;
+  police(10.5, true); doc.text(textePDF(`Pour ${S.entreprise?.nom || 'l’entreprise'}`), M, y); y += 5.5;
+  police(10); doc.text(textePDF(`${S.profil.nom} — ${ROLES[S.profil.role]?.label || ''}`), M, y);
+  piedPDF(doc, `${S.entreprise?.nom || ''}  ·  ${projet.nom}  ·  Rapport journalier du ${parseDay(date).toLocaleDateString('fr-FR')}`);
+  return doc.output('blob');
+}
+
+// Bouton « Rapport du soir » dans les actions rapides
+document.addEventListener('click', (e) => { const b = e.target.closest?.('[data-rapport-soir]'); if (b) { e.preventDefault(); e.stopPropagation(); choisirChantierRapportSoir(); } }, true);
+
 // ─────────────────────────────── Accès client (suivi en lecture seule) ───────────────────────────────
 // Le client ouvre un lien secret (#/suivi/<jeton>) sans compte : avancement, planning,
 // rapports validés et photos. Aucun montant, aucun incident interne, aucun nom d'ouvrier.
@@ -4438,7 +4684,7 @@ PAGES.projet = async (id) => {
     <div class="page-actions dc-actions">
       ${can(...ROLES_RAPPORT) && projet.statut !== 'termine' ? `<a class="btn" href="#/nouveau-rapport" data-projet-rapport="${projet.id}">➕ Rapport</a>` : ''}
       ${!DEMO ? '<button class="btn" id="film-p">🎬 Film du chantier</button><button class="btn" id="aa-p">↔️ Avant / Après</button><button class="btn" id="story-p">📱 Story de la semaine</button>' : ''}
-      ${can('direction', 'coordinateur') ? '<button class="btn" id="rc-p">📄 Rapport client</button>' : ''}
+      ${can('direction', 'coordinateur') ? '<button class="btn primary" id="rs-p">🌙 Rapport du soir</button><button class="btn" id="rc-p">📄 Rapport client</button>' : ''}
       ${can('direction', 'coordinateur') && !DEMO ? '<button class="btn" id="ac-p">👁️ Accès client</button>' : ''}
       ${can('direction', 'coordinateur') ? '<button class="btn" id="edit-p">✏️ Modifier</button>' : ''}
       ${can('direction') ? '<button class="btn danger" id="del-p">Supprimer</button>' : ''}
@@ -4448,6 +4694,7 @@ PAGES.projet = async (id) => {
 
   $('#edit-p', p)?.addEventListener('click', () => formulaireProjet(projet));
   $('#rc-p', p)?.addEventListener('click', () => rapportClient(projet));
+  $('#rs-p', p)?.addEventListener('click', () => ouvrirRapportSoir(projet));
   $('#film-p', p)?.addEventListener('click', () => filmChantier(projet));
   $('#aa-p', p)?.addEventListener('click', () => avantApres(projet));
   $('#story-p', p)?.addEventListener('click', () => storySemaine(projet.id));
@@ -4916,7 +5163,7 @@ const CORRECTIONS_MOTS = {
 };
 const CORRECTIONS_EXPRESSIONS = [
   [/\brez de chauss[eé]e\b/gi, 'rez-de-chaussée'], [/\bb[eé]ton arm[eé]\b/gi, 'béton armé'], [/\bras\b(?=\s*[.!]?\s*$)/gi, 'rien à signaler'],
-  [/\b[rR]\s*\+\s*(\d)\b/g, 'R+$1'], [/(\d\s*h(?:\d\d)?)\s+a\s+(\d)/gi, '$1 à $2'], [/\bdos[eé] a (\d)/gi, 'dosé à $1'], [/\bpr[eé] ?dalle\b/gi, 'prédalle'], [/\bpoteaux? b[eé]ton\b/gi, (m) => m.replace(/b[eé]ton/i, 'béton')],
+  [/\b[rR]\s*\+\s*(\d)\b/g, 'R+$1'], [/(\d\s*h(?:\d\d)?)\s+a\s+(\d)/gi, '$1 à $2'], [/\bdos[eé] a (\d)/gi, 'dosé à $1'], [/\ba (\d{1,2}\s*h(?:\s*\d{2})?)\b/g, 'à $1'], [/\bpr[eé] ?dalle\b/gi, 'prédalle'], [/\bpoteaux? b[eé]ton\b/gi, (m) => m.replace(/b[eé]ton/i, 'béton')],
 ];
 const garderCasse = (modele, mot) => (modele === modele.toUpperCase() && modele.length > 1 ? mot.toUpperCase() : modele[0] === modele[0].toUpperCase() ? mot[0].toUpperCase() + mot.slice(1) : mot);
 function corrigerTexte(texte) {
