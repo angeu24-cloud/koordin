@@ -7,7 +7,7 @@
 
 const CFG = window.KOORDIN_CONFIG || {};
 // Version de l'application : à augmenter en même temps que version.json à chaque mise à jour publiée.
-const VERSION = '3.20';
+const VERSION = '3.21';
 const DEMO = !!window.KOORDIN_DEMO;
 let sb = null;
 
@@ -445,7 +445,21 @@ function detruireGraphiques() {
   S.charts = [];
 }
 
-function graphiqueBarres(canvas, { labels, series, horizontal = false, format = (v) => v, max }) {
+let chartCharge = null;
+function chargerChart() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  chartCharge ||= new Promise((ok, ko) => {
+    const sc = document.createElement('script');
+    sc.src = 'vendor/chart.umd.js?v=1';
+    sc.onload = () => (window.Chart ? ok(window.Chart) : ko(new Error('Graphiques')));
+    sc.onerror = () => { chartCharge = null; ko(new Error('Graphiques')); };
+    document.head.appendChild(sc);
+  });
+  return chartCharge;
+}
+function graphiqueBarres(canvas, options) {
+  if (!window.Chart) { chargerChart().then(() => { if (canvas?.isConnected) graphiqueBarres(canvas, options); }).catch(() => {}); return null; }
+  const { labels, series, horizontal = false, format = (v) => v, max } = options;
   const grille = cssVar('--grid');
   const texte = cssVar('--text-2');
   const surface = cssVar('--surface');
@@ -2430,8 +2444,9 @@ function chargerTrois() {
 }
 const webglPossible = () => { try { const c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch { return false; } };
 
+const reseauLent = () => { const c = navigator.connection; return !!(c && (c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || ''))); };
 async function lancerMaquette3D(hote) {
-  if (!hote || hote.dataset.lance || reduireAnimations() || !webglPossible()) return;
+  if (!hote || hote.dataset.lance || reduireAnimations() || reseauLent() || !webglPossible()) return;
   hote.dataset.lance = '1';
   let T;
   try { T = await chargerTrois(); } catch { return; }

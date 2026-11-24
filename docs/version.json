@@ -1,10 +1,10 @@
 {
-  "version": "3.20",
+  "version": "3.21",
   "date": "2026-11-23",
   "nouveautes": [
-    "🌙 Rapport du soir au maître d’ouvrage : à partir des rapports des équipes, des photos, des besoins urgents et du planning, KOORDIN rédige un rapport journalier professionnel (bouton « Rapport du soir » d’un chantier ou des actions rapides).",
-    "✨ Rédaction professionnelle par l’IA quand elle est activée, sinon rédaction automatique. Vous relisez et modifiez chaque partie, puis le PDF est prêt à envoyer par WhatsApp ou e-mail.",
-    "Chaque rapport du soir est gardé : vous pouvez le rouvrir et le renvoyer.",
-    "🎨 4 styles au choix et icônes illustrées (3.19)."
+    "⚡ KOORDIN s’ouvre plus vite : les fichiers déjà présents sur le téléphone s’affichent tout de suite, sans attendre le réseau ; la nouvelle version se récupère en arrière-plan.",
+    "📦 Fichiers compressés, police et graphiques chargés seulement quand on en a besoin : première ouverture environ 25 % plus rapide en 4G faible.",
+    "🏗️ La maquette 3D de l’accueil ne se charge plus sur un réseau lent ou en mode économie de données.",
+    "🌙 Rapport du soir au maître d’ouvrage (3.20)."
   ]
 }

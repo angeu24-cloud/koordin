@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v51';
-const FICHIERS = ['./', 'index.html', 'styles.css?v=51', 'app.js?v=51', 'config.js?v=51', 'vendor/supabase.js', 'vendor/chart.umd.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v52';
+const FICHIERS = ['./', 'index.html', 'styles.min.css?v=52', 'app.min.js?v=52', 'config.js?v=52', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
@@ -15,23 +15,28 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Réseau d'abord (pour toujours avoir la dernière version), cache si hors ligne.
+const mettreEnCache = (req, rep) => { if (rep && rep.ok) { const copie = rep.clone(); caches.open(CACHE).then((c) => c.put(req, copie)); } return rep; };
+// Réseau avec délai : au-delà, on montre la version gardée sur le téléphone
+const reseauAvecDelai = (req, ms) => new Promise((ok, ko) => {
+  const t = setTimeout(() => ko(new Error('lent')), ms);
+  fetch(req, { cache: 'no-cache' }).then((r) => { clearTimeout(t); ok(r); }, (e) => { clearTimeout(t); ko(e); });
+});
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   // Les vidéos du guide sont lues directement (trop lourdes pour le cache)
   if (/\/guide-[a-z]+\.(mp4|jpg)$/.test(url.pathname)) return;
-  // Toujours vérifier auprès du serveur pour récupérer la dernière version publiée
-  const reseau = e.request.mode === 'navigate' ? fetch(e.request) : fetch(e.request, { cache: 'no-cache' });
-  e.respondWith(
-    reseau
-      .then((rep) => {
-        const copie = rep.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copie));
-        return rep;
-      })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match('index.html')))
-  );
+  const page = e.request.mode === 'navigate' || /\/(index\.html|version\.json)?$/.test(url.pathname);
+  if (page) {
+    // La page d'accueil et le numéro de version : réseau d'abord (3 s), sinon cache
+    const reseau = fetch(e.request, { cache: 'no-cache' }).then((r) => mettreEnCache(e.request, r));
+    e.respondWith(reseauAvecDelai(e.request, 3000).then((r) => mettreEnCache(e.request, r))
+      .catch(() => caches.match(e.request).then((r) => r || reseau).catch(() => caches.match('index.html'))));
+    return;
+  }
+  // Fichiers de l'application (versionnés) : cache d'abord, c'est instantané ; sinon réseau puis cache
+  e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request).then((rep) => mettreEnCache(e.request, rep))));
 });
 
 // ─── Notifications (même quand KOORDIN est fermé) ───
