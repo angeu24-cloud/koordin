@@ -1,10 +1,9 @@
 {
-  "version": "3.21",
-  "date": "2026-11-23",
+  "version": "3.22",
+  "date": "2026-11-25",
   "nouveautes": [
-    "⚡ KOORDIN s’ouvre plus vite : les fichiers déjà présents sur le téléphone s’affichent tout de suite, sans attendre le réseau ; la nouvelle version se récupère en arrière-plan.",
-    "📦 Fichiers compressés, police et graphiques chargés seulement quand on en a besoin : première ouverture environ 25 % plus rapide en 4G faible.",
-    "🏗️ La maquette 3D de l’accueil ne se charge plus sur un réseau lent ou en mode économie de données.",
-    "🌙 Rapport du soir au maître d’ouvrage (3.20)."
+    "🔒 KOORDIN est protégé : le code publié est brouillé et l’application refuse de fonctionner sur un site copié.",
+    "📜 Mentions de propriété et conditions d’utilisation visibles sur l’écran de connexion.",
+    "⚡ Ouverture plus rapide (3.21) et rapport du soir au maître d’ouvrage (3.20)."
   ]
 }
