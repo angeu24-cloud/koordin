@@ -1,10 +1,11 @@
 {
-  "version": "3.24",
+  "version": "3.25",
   "date": "2026-11-26",
   "nouveautes": [
-    "📅 Planning Gantt professionnel : tâches regroupées par lot, zoom jours / semaines / mois, jalons 🔷, liens entre tâches et chemin critique.",
-    "✋ Glissez une barre pour décaler une tâche (appui long sur téléphone) : les tâches liées suivent toutes seules.",
-    "🧩 Planning type en un clic (villa, immeuble, bâtiment simple), PDF du planning et nouveau Planning général de tous les chantiers.",
-    "🎙️ Rapport dicté et 🌦️ alerte météo (3.23)."
+    "👛 Caisse plus simple : montants rapides (+1 000, +5 000…), gros boutons « Pour quoi ? », chantier retenu, détail facultatif.",
+    "🎙️ « Dire ma dépense » : « 15 000 francs de carburant pour le groupe » remplit tout seul le formulaire.",
+    "✏️ Corriger un argent reçu : retrancher une partie ou annuler l’entrée, avec le motif ; rien n’est effacé, tout reste visible.",
+    "↩️ « J’ai rendu de l’argent » pour rendre ce qui reste de la caisse.",
+    "📅 Planning Gantt (3.24)."
   ]
 }
