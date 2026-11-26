@@ -1,9 +1,11 @@
 {
-  "version": "3.27",
+  "version": "3.28",
   "date": "2026-11-26",
   "nouveautes": [
-    "🙋 Demande de remise à zéro : un technicien qui ne se retrouve plus le demande, avec le motif ; la Direction ou la Comptabilité accepte ou refuse.",
-    "🔄 Remise à zéro d’une caisse, réservée à la Direction et à la Comptabilité (3.26).",
-    "👛 Caisse plus simple et corrections d’argent reçu (3.25)."
+    "🌙 Rapport du soir plus fidèle : les travaux sont rangés par bâtiment et par corps d’état (Villa duplex — maçonnerie…), les « travaux prévus pour demain » vont dans les prévisions.",
+    "📥 Un rapport reçu le soir mais daté de la veille est maintenant repris dans le rapport du soir.",
+    "🆕 Si de nouveaux rapports arrivent après l’enregistrement du rapport du soir, KOORDIN le signale et propose de le rédiger à nouveau.",
+    "📅 Brouillon de rapport commencé un autre jour : la date est remise à aujourd’hui, avec un avertissement.",
+    "🙋 Demande de remise à zéro de caisse (3.27)."
   ]
 }
