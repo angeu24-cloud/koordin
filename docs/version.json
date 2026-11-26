@@ -1,9 +1,9 @@
 {
-  "version": "3.26",
+  "version": "3.27",
   "date": "2026-11-26",
   "nouveautes": [
-    "🔄 Remettre une caisse à zéro (Direction, Comptabilité) : la personne repart de zéro, ou du montant qu’elle a en main ; l’ancien journal reste visible et l’écart est noté avec le motif.",
-    "👛 Caisse plus simple : montants rapides, gros boutons « Pour quoi ? », « Dire ma dépense » (3.25).",
-    "✏️ Corriger un argent reçu et noter l’argent rendu (3.25)."
+    "🙋 Demande de remise à zéro : un technicien qui ne se retrouve plus le demande, avec le motif ; la Direction ou la Comptabilité accepte ou refuse.",
+    "🔄 Remise à zéro d’une caisse, réservée à la Direction et à la Comptabilité (3.26).",
+    "👛 Caisse plus simple et corrections d’argent reçu (3.25)."
   ]
 }
