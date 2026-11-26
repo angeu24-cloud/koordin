@@ -1,11 +1,8 @@
 {
-  "version": "3.28",
+  "version": "3.29",
   "date": "2026-11-26",
   "nouveautes": [
-    "🌙 Rapport du soir plus fidèle : les travaux sont rangés par bâtiment et par corps d’état (Villa duplex — maçonnerie…), les « travaux prévus pour demain » vont dans les prévisions.",
-    "📥 Un rapport reçu le soir mais daté de la veille est maintenant repris dans le rapport du soir.",
-    "🆕 Si de nouveaux rapports arrivent après l’enregistrement du rapport du soir, KOORDIN le signale et propose de le rédiger à nouveau.",
-    "📅 Brouillon de rapport commencé un autre jour : la date est remise à aujourd’hui, avec un avertissement.",
-    "🙋 Demande de remise à zéro de caisse (3.27)."
+    "📥 Importer un planning déjà fait : Excel (.xlsx), MS Project (XML) ou PDF / photo lu par l’assistant IA. Vérifiez la liste, décalez la date de départ si besoin, puis ajustez en glissant les barres.",
+    "🌙 Rapport du soir fidèle aux rapports des techniciens (3.28)."
   ]
 }
