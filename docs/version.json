@@ -1,10 +1,9 @@
 {
-  "version": "3.43",
+  "version": "3.44",
   "date": "2026-11-27",
   "nouveautes": [
-    "🇬🇧 KOORDIN in English: Paramètres → 🌍 Langue · Language (or on the sign-in screen). Idéal pour vos partenaires anglophones.",
-    "👷 Sous-traitants : avancement de leurs travaux noté sur le chantier, et paiement selon le travail fait (3.42).",
-    "🗓️ Rapport de la semaine au maître d’ouvrage, rappelé chaque vendredi (3.41).",
-    "📐 Plans du chantier avec versions (3.40)."
+    "🤖 Ajuster le planning à la réalité : KOORDIN compare le planning avec le démarrage réel, les rapports et les photos du chantier, puis propose de nouvelles dates. Vous validez tâche par tâche.",
+    "↩️ Un geste pour revenir à l’ancien planning si besoin.",
+    "🇬🇧 KOORDIN en anglais (3.43) · 👷 Sous-traitants (3.42) · 🗓️ Rapport de la semaine (3.41)."
   ]
 }
