@@ -1,8 +1,9 @@
 {
-  "version": "3.37",
+  "version": "3.38",
   "date": "2026-11-27",
   "nouveautes": [
-    "💳 Abonnement payé en ligne : Orange Money, MTN MoMo, Moov Money, Wave ou carte bancaire (CinetPay). La licence est prolongée automatiquement dès la confirmation.",
-    "💾 Sauvegarde Excel complète (3.36)."
+    "📊 Rentabilité des chantiers (Direction, Comptabilité) : marché, facturé, encaissé, coûts réels (achats, caisse, journaliers, sous-traitants, matériel) et marge attendue à la fin de chaque chantier.",
+    "❌ Alerte quand un chantier devient déficitaire ; détail des coûts sur la page de chaque chantier.",
+    "💳 Paiement en ligne des abonnements (3.37)."
   ]
 }
