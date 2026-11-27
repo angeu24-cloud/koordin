@@ -1,9 +1,10 @@
 {
-  "version": "3.45",
+  "version": "3.46",
   "date": "2026-11-27",
   "nouveautes": [
-    "📊 L’avancement du chantier est calculé à partir du planning : chaque lot suit ses tâches (pondérées par leur durée), le chantier suit ses lots (pondérés par leur budget).",
-    "📅 L’avancement prévu à date suit maintenant les dates du planning, et non plus une ligne droite entre début et fin du contrat.",
-    "🤖 Ajuster le planning à la réalité (3.44)."
+    "📅 Programme du jour : chaque soir, les techniciens reçoivent leurs tâches du lendemain tirées du planning. Sur l’accueil : aujourd’hui, demain, la semaine.",
+    "✅ Chaque tâche se note « Fait », « En partie » ou « Pas fait » (avec le motif) : le planning avance tout seul et la Direction est prévenue des blocages.",
+    "🖨️ Feuille de route à imprimer (jour ou semaine), avec cases à cocher et signature.",
+    "🧮 Calculs de chantier dans « Normes et calculs » : béton, parpaings, acier, terrassement, dalle, escalier, pente, carrelage, peinture, durée d’une tâche."
   ]
 }
