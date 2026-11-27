@@ -1,10 +1,9 @@
 {
-  "version": "3.55",
+  "version": "3.56",
   "date": "2026-11-27",
   "nouveautes": [
-    "📌 Fil intelligent : faites une demande à quelqu’un avec une heure limite ; il répond « C’est fait » avec une photo, KOORDIN relance en cas de retard.",
-    "🟡 Validation en un geste (« Peut-on couler la dalle ? ») et 📜 registre des décisions du chantier, repris dans les courriers.",
-    "🤖 Le chantier parle : rapports validés, retards, livraisons, nouveaux plans, éprouvettes, pluie prévue. Et « 👋 Ce que vous avez manqué » à votre retour.",
-    "✓✓ Accusés de lecture (3.54)."
+    "☀️ Le point du jour : chaque matin, un seul message dans le Fil de chaque chantier, avec la météo, les tâches du jour, les retards et les éprouvettes.",
+    "✅ ½ ✖ Cochez les tâches directement dans le Fil : toute l’équipe voit les coches en direct et le planning avance tout seul.",
+    "📌 Fil intelligent (3.55) : demandes avec heure limite, validations, registre des décisions."
   ]
 }
