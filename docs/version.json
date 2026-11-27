@@ -1,8 +1,9 @@
 {
-  "version": "3.29",
-  "date": "2026-11-26",
+  "version": "3.30",
+  "date": "2026-11-27",
   "nouveautes": [
-    "📥 Importer un planning déjà fait : Excel (.xlsx), MS Project (XML) ou PDF / photo lu par l’assistant IA. Vérifiez la liste, décalez la date de départ si besoin, puis ajustez en glissant les barres.",
-    "🌙 Rapport du soir fidèle aux rapports des techniciens (3.28)."
+    "🗺️ Carte et météo : tous vos chantiers sur une carte, la ville, le temps qu’il fait sur place (température, ressenti, humidité, vent), les prévisions sur 5 jours et les alertes.",
+    "📍 Sur la page de chaque chantier : une petite carte sous la météo, et le bouton « Agrandir la carte et la météo ».",
+    "📥 Import de planning (3.29)."
   ]
 }
