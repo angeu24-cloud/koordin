@@ -33,5 +33,29 @@
   "categories": [
     "business",
     "productivity"
-  ]
+  ],
+  "share_target": {
+    "action": "./partage",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "fichiers",
+          "accept": [
+            "image/*",
+            "audio/*",
+            ".opus",
+            ".ogg",
+            ".m4a",
+            ".mp3",
+            ".aac"
+          ]
+        }
+      ]
+    }
+  }
 }

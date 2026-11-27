@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v350';
-const FICHIERS = ['./', 'index.html', 'styles.min.css?v=350', 'app.min.js?v=350', 'config.js?v=350', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v351';
+const FICHIERS = ['./', 'index.html', 'styles.min.css?v=351', 'app.min.js?v=351', 'config.js?v=351', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
@@ -24,6 +24,23 @@ const reseauAvecDelai = (req, ms) => new Promise((ok, ko) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // « Partager vers KOORDIN » (depuis WhatsApp ou la galerie) : on garde les fichiers, puis on ouvre la page de partage
+  if (e.request.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/partage')) {
+    e.respondWith((async () => {
+      try {
+        const fd = await e.request.formData();
+        const cache = await caches.open('koordin-partage');
+        for (const k of await cache.keys()) await cache.delete(k);
+        const texte = [fd.get('title'), fd.get('text'), fd.get('url')].filter(Boolean).join(' ').trim();
+        const fichiers = fd.getAll('fichiers').filter((f) => f && f.size);
+        let i = 0;
+        for (const f of fichiers) await cache.put(`./partage-fichier?n=${i++}&nom=${encodeURIComponent(f.name || '')}`, new Response(f, { headers: { 'Content-Type': f.type || 'application/octet-stream' } }));
+        if (texte) await cache.put(`./partage-texte?texte=${encodeURIComponent(texte.slice(0, 2000))}`, new Response(''));
+      } catch (err) { /* rien : la page de partage dira qu'il n'y a rien */ }
+      return Response.redirect('./#/partage', 303);
+    })());
+    return;
+  }
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   // Les vidéos du guide sont lues directement (trop lourdes pour le cache)
   if (/\/guide-[a-z]+\.(mp4|jpg)$/.test(url.pathname)) return;
