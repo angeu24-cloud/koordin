@@ -1,10 +1,8 @@
 {
-  "version": "3.31",
+  "version": "3.32",
   "date": "2026-11-27",
   "nouveautes": [
-    "🪪 Pointage par carte QR : imprimez une carte par ouvrier (onglet Ouvriers), scannez-la le matin et le soir avec la caméra du téléphone.",
-    "📷 Chaque scan enregistre l’heure, une photo, la position GPS et la distance au chantier. Moins de 5 heures entre l’arrivée et le départ : demi-journée automatique.",
-    "💵 Les pointages QR comptent directement dans la paie de la semaine.",
-    "🗺️ Carte des chantiers et météo de la zone (3.30)."
+    "📸 Caisse : prenez le reçu en photo, l’assistant lit le montant, la catégorie et le détail. Vous vérifiez et vous enregistrez.",
+    "🪪 Pointage par carte QR (3.31)."
   ]
 }
