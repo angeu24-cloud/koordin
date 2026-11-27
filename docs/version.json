@@ -1,9 +1,10 @@
 {
-  "version": "3.40",
+  "version": "3.43",
   "date": "2026-11-27",
   "nouveautes": [
-    "📐 Plans du chantier (onglet « Plans ») : chacun voit toujours la version en vigueur sur son téléphone ; les anciennes versions sont marquées « remplacée ».",
-    "📍 Remarques épinglées directement sur le plan (avec photo), marquées résolues quand c’est corrigé.",
-    "✍️ Documents signés (3.39)."
+    "🇬🇧 KOORDIN in English: Paramètres → 🌍 Langue · Language (or on the sign-in screen). Idéal pour vos partenaires anglophones.",
+    "👷 Sous-traitants : avancement de leurs travaux noté sur le chantier, et paiement selon le travail fait (3.42).",
+    "🗓️ Rapport de la semaine au maître d’ouvrage, rappelé chaque vendredi (3.41).",
+    "📐 Plans du chantier avec versions (3.40)."
   ]
 }

@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "KOORDIN — Pilotage de chantiers",
   "short_name": "KOORDIN",
   "description": "Centralisez vos chantiers BTP : direction, coordination, terrain, achats, comptabilité, magasin.",
@@ -28,5 +29,9 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "categories": [
+    "business",
+    "productivity"
   ]
 }
