@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v334';
-const FICHIERS = ['./', 'index.html', 'styles.min.css?v=334', 'app.min.js?v=334', 'config.js?v=334', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v335';
+const FICHIERS = ['./', 'index.html', 'styles.min.css?v=335', 'app.min.js?v=335', 'config.js?v=335', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));

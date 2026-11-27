@@ -1,8 +1,8 @@
 {
-  "version": "3.34",
+  "version": "3.35",
   "date": "2026-11-27",
   "nouveautes": [
-    "🧪 Éprouvettes béton : notez chaque prélèvement (élément, classe, affaissement) ; KOORDIN rappelle les écrasements à 7 et 28 jours et dit si le béton est conforme.",
-    "🔗 Planning relié aux rapports et alertes de retard (3.33)."
+    "📈 Courbe d’avancement en S (page du chantier, onglet Aperçu) : avancement prévu et réel semaine par semaine, et pour la Direction le budget prévu face aux dépenses.",
+    "🧪 Éprouvettes béton (3.34)."
   ]
 }
