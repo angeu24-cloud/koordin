@@ -1,9 +1,9 @@
 {
-  "version": "3.38",
+  "version": "3.39",
   "date": "2026-11-27",
   "nouveautes": [
-    "📊 Rentabilité des chantiers (Direction, Comptabilité) : marché, facturé, encaissé, coûts réels (achats, caisse, journaliers, sous-traitants, matériel) et marge attendue à la fin de chaque chantier.",
-    "❌ Alerte quand un chantier devient déficitaire ; détail des coûts sur la page de chaque chantier.",
-    "💳 Paiement en ligne des abonnements (3.37)."
+    "✍️ Documents signés sur le téléphone (onglet « Documents » du chantier) : bons de livraison, attachements, comptes rendus de réunion, constats, ordres de service, levées de réserves.",
+    "🔒 Chaque personne signe du doigt ; le document clos est verrouillé avec une empreinte de sécurité, et le PDF se partage tout de suite (WhatsApp, e-mail).",
+    "📊 Rentabilité des chantiers (3.38)."
   ]
 }
