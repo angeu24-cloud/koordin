@@ -1,9 +1,9 @@
 {
-  "version": "3.39",
+  "version": "3.40",
   "date": "2026-11-27",
   "nouveautes": [
-    "✍️ Documents signés sur le téléphone (onglet « Documents » du chantier) : bons de livraison, attachements, comptes rendus de réunion, constats, ordres de service, levées de réserves.",
-    "🔒 Chaque personne signe du doigt ; le document clos est verrouillé avec une empreinte de sécurité, et le PDF se partage tout de suite (WhatsApp, e-mail).",
-    "📊 Rentabilité des chantiers (3.38)."
+    "📐 Plans du chantier (onglet « Plans ») : chacun voit toujours la version en vigueur sur son téléphone ; les anciennes versions sont marquées « remplacée ».",
+    "📍 Remarques épinglées directement sur le plan (avec photo), marquées résolues quand c’est corrigé.",
+    "✍️ Documents signés (3.39)."
   ]
 }
