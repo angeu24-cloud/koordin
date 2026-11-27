@@ -1,9 +1,9 @@
 {
-  "version": "3.44",
+  "version": "3.45",
   "date": "2026-11-27",
   "nouveautes": [
-    "🤖 Ajuster le planning à la réalité : KOORDIN compare le planning avec le démarrage réel, les rapports et les photos du chantier, puis propose de nouvelles dates. Vous validez tâche par tâche.",
-    "↩️ Un geste pour revenir à l’ancien planning si besoin.",
-    "🇬🇧 KOORDIN en anglais (3.43) · 👷 Sous-traitants (3.42) · 🗓️ Rapport de la semaine (3.41)."
+    "📊 L’avancement du chantier est calculé à partir du planning : chaque lot suit ses tâches (pondérées par leur durée), le chantier suit ses lots (pondérés par leur budget).",
+    "📅 L’avancement prévu à date suit maintenant les dates du planning, et non plus une ligne droite entre début et fin du contrat.",
+    "🤖 Ajuster le planning à la réalité (3.44)."
   ]
 }
