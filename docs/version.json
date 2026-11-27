@@ -1,9 +1,9 @@
 {
-  "version": "3.53",
+  "version": "3.54",
   "date": "2026-11-27",
   "nouveautes": [
-    "✉️ Les Courriers du chantier (onglet « ✍️ Documents » → Courriers) : ordre de service, relance fournisseur, mise en demeure, compte rendu, demande d’agrément ou de réception, point d’avancement.",
-    "✨ Dites ce que vous voulez (écrit ou dicté) : l’IA rédige le courrier avec les vraies données du chantier. Numéro automatique, signature au doigt, PDF à l’en-tête de l’entreprise.",
-    "📊 Les Tableaux du chantier (3.52) · 💬 Le Fil du chantier (3.51)."
+    "✓✓ Accusés de lecture dans le Fil du chantier : ✓ envoyé, ✓✓ bleu quand tout le monde a lu. Touchez les coches pour voir qui a lu, et à quelle heure.",
+    "✍️ « … écrit » : vous voyez quand quelqu’un est en train de vous répondre.",
+    "✉️ Les Courriers du chantier (3.53) · 📊 Les Tableaux (3.52)."
   ]
 }
