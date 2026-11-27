@@ -1,8 +1,8 @@
 {
-  "version": "3.36",
+  "version": "3.37",
   "date": "2026-11-27",
   "nouveautes": [
-    "💾 Sauvegarde Excel (Paramètres) : toutes vos données dans un seul fichier, une feuille par sujet (chantiers, planning, rapports, factures, caisse, pointage, stock, éprouvettes…), pour tous les chantiers ou un seul.",
-    "📈 Courbe d’avancement en S (3.35)."
+    "💳 Abonnement payé en ligne : Orange Money, MTN MoMo, Moov Money, Wave ou carte bancaire (CinetPay). La licence est prolongée automatiquement dès la confirmation.",
+    "💾 Sauvegarde Excel complète (3.36)."
   ]
 }
