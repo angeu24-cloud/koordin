@@ -1,8 +1,9 @@
 {
-  "version": "3.32",
+  "version": "3.33",
   "date": "2026-11-27",
   "nouveautes": [
-    "📸 Caisse : prenez le reçu en photo, l’assistant lit le montant, la catégorie et le détail. Vous vérifiez et vous enregistrez.",
-    "🪪 Pointage par carte QR (3.31)."
+    "🔗 Rapport du jour relié au planning : le technicien choisit la tâche avancée et son pourcentage ; à la validation, la barre du Gantt avance toute seule.",
+    "⏱️ Retards du planning : KOORDIN repère les tâches en retard (surtout sur le chemin critique) et calcule de combien la fin du chantier risque de glisser.",
+    "📸 Reçus de caisse lus par l’assistant (3.32)."
   ]
 }
