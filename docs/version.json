@@ -1,10 +1,9 @@
 {
-  "version": "3.46",
+  "version": "3.47",
   "date": "2026-11-27",
   "nouveautes": [
-    "📅 Programme du jour : chaque soir, les techniciens reçoivent leurs tâches du lendemain tirées du planning. Sur l’accueil : aujourd’hui, demain, la semaine.",
-    "✅ Chaque tâche se note « Fait », « En partie » ou « Pas fait » (avec le motif) : le planning avance tout seul et la Direction est prévenue des blocages.",
-    "🖨️ Feuille de route à imprimer (jour ou semaine), avec cases à cocher et signature.",
-    "🧮 Calculs de chantier dans « Normes et calculs » : béton, parpaings, acier, terrassement, dalle, escalier, pente, carrelage, peinture, durée d’une tâche."
+    "🏢 Bâtiments d’un chantier (villas duplex, villas annexes, VRD…) : chacun a son planning et son avancement. Le chantier fait la moyenne.",
+    "📥 À l’import d’un planning, choisissez le bâtiment concerné. Dans le rapport du jour, le technicien choisit aussi le bâtiment.",
+    "📅 Programme du jour et feuille de route (3.46) · 🧮 Calculs de chantier."
   ]
 }
