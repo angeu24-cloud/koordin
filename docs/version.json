@@ -1,9 +1,10 @@
 {
-  "version": "3.51",
+  "version": "3.52",
   "date": "2026-11-27",
   "nouveautes": [
-    "💬 Le Fil du chantier : une discussion par chantier pour toute l’équipe — messages, photos, vocaux (écrits automatiquement en texte). Rien ne se perd, tout se retrouve.",
-    "📝 Un message devient une ligne de votre rapport du jour, ou une tâche du planning, en un geste. « Mon rapport du jour » se remplit à partir de vos messages.",
-    "📥 Depuis WhatsApp ou la galerie : Partager → KOORDIN, et la photo ou le vocal part dans le bon chantier."
+    "📊 Les Tableaux du chantier (onglet « 📊 Tableaux ») : métré, DQE, attachement, nomenclature des aciers, suivi des livraisons, tableau libre. Les calculs se font tout seuls.",
+    "⬇️ Export Excel avec les vraies formules, ou PDF. 📥 Importez aussi vos tableaux Excel existants.",
+    "💼 Un DQE peut alimenter le budget des lots et devenir le devis du client en un geste.",
+    "💬 Le Fil du chantier (3.51)."
   ]
 }
