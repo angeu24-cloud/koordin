@@ -1,9 +1,9 @@
 {
-  "version": "3.47",
+  "version": "3.48",
   "date": "2026-11-27",
   "nouveautes": [
-    "🏢 Bâtiments d’un chantier (villas duplex, villas annexes, VRD…) : chacun a son planning et son avancement. Le chantier fait la moyenne.",
-    "📥 À l’import d’un planning, choisissez le bâtiment concerné. Dans le rapport du jour, le technicien choisit aussi le bâtiment.",
-    "📅 Programme du jour et feuille de route (3.46) · 🧮 Calculs de chantier."
+    "💬 Donner mon avis : depuis le menu (avatar), envoyez une idée, un problème ou votre avis à l’équipe KOORDIN, et recevez sa réponse.",
+    "⏳ Rappels automatiques 7 jours, 3 jours et la veille de la fin de votre abonnement ou de votre essai.",
+    "🏢 Bâtiments d’un chantier (3.47) · 📅 Programme du jour (3.46)."
   ]
 }
