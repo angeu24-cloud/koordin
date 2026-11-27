@@ -1,9 +1,8 @@
 {
-  "version": "3.33",
+  "version": "3.34",
   "date": "2026-11-27",
   "nouveautes": [
-    "🔗 Rapport du jour relié au planning : le technicien choisit la tâche avancée et son pourcentage ; à la validation, la barre du Gantt avance toute seule.",
-    "⏱️ Retards du planning : KOORDIN repère les tâches en retard (surtout sur le chemin critique) et calcule de combien la fin du chantier risque de glisser.",
-    "📸 Reçus de caisse lus par l’assistant (3.32)."
+    "🧪 Éprouvettes béton : notez chaque prélèvement (élément, classe, affaissement) ; KOORDIN rappelle les écrasements à 7 et 28 jours et dit si le béton est conforme.",
+    "🔗 Planning relié aux rapports et alertes de retard (3.33)."
   ]
 }
