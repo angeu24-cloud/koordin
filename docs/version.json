@@ -1,9 +1,8 @@
 {
-  "version": "3.54",
+  "version": "3.62",
   "date": "2026-11-27",
   "nouveautes": [
-    "✓✓ Accusés de lecture dans le Fil du chantier : ✓ envoyé, ✓✓ bleu quand tout le monde a lu. Touchez les coches pour voir qui a lu, et à quelle heure.",
-    "✍️ « … écrit » : vous voyez quand quelqu’un est en train de vous répondre.",
-    "✉️ Les Courriers du chantier (3.53) · 📊 Les Tableaux (3.52)."
+    "➕ Le menu du bouton + est plus compact (tout tient à l’écran) et se ferme avec ✕ : il ne passe plus sous la barre du téléphone.",
+    "👷 Fil « Avec l’extérieur » : invitez sous-traitants et maître d’ouvrage par un lien (3.61)."
   ]
 }

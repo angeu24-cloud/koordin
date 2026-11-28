@@ -1,7 +1,7 @@
 // KOORDIN — service worker : l'application s'ouvre même avec un réseau faible.
 // Les fichiers de l'application sont mis en cache ; les données viennent toujours de Supabase.
-const CACHE = 'koordin-v354';
-const FICHIERS = ['./', 'index.html', 'styles.min.css?v=354', 'app.min.js?v=354', 'config.js?v=354', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
+const CACHE = 'koordin-v362';
+const FICHIERS = ['./', 'index.html', 'styles.min.css?v=362', 'app.min.js?v=362', 'config.js?v=362', 'vendor/supabase.js', 'icon.svg', 'icon-192.png', 'badge-96.png', 'manifest.webmanifest', 'version.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
@@ -44,7 +44,12 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   // Les vidéos du guide sont lues directement (trop lourdes pour le cache)
   if (/\/guide-[a-z]+\.(mp4|jpg)$/.test(url.pathname)) return;
-  const page = e.request.mode === 'navigate' || /\/(index\.html|version\.json)?$/.test(url.pathname);
+  // Le numéro de version : toujours demandé au réseau (même lent), le cache seulement sans réseau
+  if (/\/version\.json$/.test(url.pathname)) {
+    e.respondWith(fetch(e.request, { cache: 'no-store' }).then((r) => mettreEnCache(e.request, r)).catch(() => caches.match(e.request)));
+    return;
+  }
+  const page = e.request.mode === 'navigate' || /\/(index\.html)?$/.test(url.pathname);
   if (page) {
     // La page d'accueil et le numéro de version : réseau d'abord (3 s), sinon cache
     const reseau = fetch(e.request, { cache: 'no-cache' }).then((r) => mettreEnCache(e.request, r));
