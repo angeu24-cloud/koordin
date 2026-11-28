@@ -1,11 +1,9 @@
 {
-  "version": "3.60",
+  "version": "3.61",
   "date": "2026-11-27",
   "nouveautes": [
-    "🎙️ Talkie-walkie : gardez le doigt sur 🎤, parlez, relâchez : le vocal part tout seul (glissez à gauche pour annuler).",
-    "✏️ Photo annotée : entourez le défaut ou dessinez une flèche sur la photo avant de l’envoyer.",
-    "👍 Réactions : appuyez deux fois sur un message pour un 👍, ou choisissez ✅ 👀 🙏 ⚠️ dans le menu ⋯.",
-    "@ Mentions : tapez @ et choisissez une personne : elle reçoit une notification.",
-    "💬 Écrire à l’équipe depuis l’accueil et réponses rapides (3.59)."
+    "👷 Fil « Avec l’extérieur » : invitez un sous-traitant, le maître d’ouvrage ou le bureau de contrôle sur le fil d’un chantier, par un simple lien WhatsApp, sans compte.",
+    "🔒 L’invité ne voit que ce fil : ni l’argent, ni les autres chantiers, ni la discussion interne. Vous coupez son accès quand vous voulez.",
+    "🎙️ Talkie-walkie, ✏️ photo annotée, 👍 réactions et @mentions (3.60)."
   ]
 }
