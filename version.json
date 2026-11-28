@@ -1,9 +1,10 @@
 {
-  "version": "3.57",
+  "version": "3.58",
   "date": "2026-11-27",
   "nouveautes": [
-    "🏠 Un accueil plus simple : « 🔔 À faire maintenant » en haut, avec seulement ce qui vous attend (rapports à valider, demandes, messages, contrôles…).",
-    "📊 Les chiffres et graphiques sont rangés derrière « Voir les chiffres », et les alertes (retards, météo, béton) tiennent sur une seule ligne.",
-    "☀️ Le point du jour dans le Fil (3.56) : tâches à cocher, météo, retards."
+    "💬 Le Fil est maintenant dans la barre du bas pour tout le monde, avec une pastille rouge quand il y a des messages non lus.",
+    "☰ Menu plus court : « Mes rubriques » montre seulement celles de votre métier ; le reste est rangé dans « Autres rubriques ».",
+    "🏗️ Fiche chantier rangée en 6 groupes : Aperçu, Fil, Travaux, Documents, Argent, Équipe.",
+    "🏠 Accueil essentiel (3.57) : « À faire maintenant » en haut."
   ]
 }
