@@ -1,9 +1,8 @@
 {
-  "version": "3.61",
+  "version": "3.62",
   "date": "2026-11-27",
   "nouveautes": [
-    "👷 Fil « Avec l’extérieur » : invitez un sous-traitant, le maître d’ouvrage ou le bureau de contrôle sur le fil d’un chantier, par un simple lien WhatsApp, sans compte.",
-    "🔒 L’invité ne voit que ce fil : ni l’argent, ni les autres chantiers, ni la discussion interne. Vous coupez son accès quand vous voulez.",
-    "🎙️ Talkie-walkie, ✏️ photo annotée, 👍 réactions et @mentions (3.60)."
+    "➕ Le menu du bouton + est plus compact (tout tient à l’écran) et se ferme avec ✕ : il ne passe plus sous la barre du téléphone.",
+    "👷 Fil « Avec l’extérieur » : invitez sous-traitants et maître d’ouvrage par un lien (3.61)."
   ]
 }
