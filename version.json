@@ -1,10 +1,11 @@
 {
-  "version": "3.59",
+  "version": "3.60",
   "date": "2026-11-27",
   "nouveautes": [
-    "💬 « Écrire à l’équipe » tout en haut de l’accueil : on écrit, on envoie une photo ou un vocal sans chercher.",
-    "⚡ Réponses rapides en un geste dans le Fil : 👍 Bien reçu, ✅ C’est fait, 🚧 En cours, 📍 J’arrive, ⚠️ Problème, 📦 Il nous faut…",
-    "🔄 « Vérifier les mises à jour » en bas du menu Plus (et dans le menu de votre profil).",
-    "☰ Menu court et Fil dans la barre du bas (3.58)."
+    "🎙️ Talkie-walkie : gardez le doigt sur 🎤, parlez, relâchez : le vocal part tout seul (glissez à gauche pour annuler).",
+    "✏️ Photo annotée : entourez le défaut ou dessinez une flèche sur la photo avant de l’envoyer.",
+    "👍 Réactions : appuyez deux fois sur un message pour un 👍, ou choisissez ✅ 👀 🙏 ⚠️ dans le menu ⋯.",
+    "@ Mentions : tapez @ et choisissez une personne : elle reçoit une notification.",
+    "💬 Écrire à l’équipe depuis l’accueil et réponses rapides (3.59)."
   ]
 }
