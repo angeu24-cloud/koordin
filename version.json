@@ -1,9 +1,9 @@
 {
-  "version": "3.56",
+  "version": "3.57",
   "date": "2026-11-27",
   "nouveautes": [
-    "☀️ Le point du jour : chaque matin, un seul message dans le Fil de chaque chantier, avec la météo, les tâches du jour, les retards et les éprouvettes.",
-    "✅ ½ ✖ Cochez les tâches directement dans le Fil : toute l’équipe voit les coches en direct et le planning avance tout seul.",
-    "📌 Fil intelligent (3.55) : demandes avec heure limite, validations, registre des décisions."
+    "🏠 Un accueil plus simple : « 🔔 À faire maintenant » en haut, avec seulement ce qui vous attend (rapports à valider, demandes, messages, contrôles…).",
+    "📊 Les chiffres et graphiques sont rangés derrière « Voir les chiffres », et les alertes (retards, météo, béton) tiennent sur une seule ligne.",
+    "☀️ Le point du jour dans le Fil (3.56) : tâches à cocher, météo, retards."
   ]
 }
